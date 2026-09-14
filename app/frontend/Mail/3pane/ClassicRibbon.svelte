@@ -88,31 +88,44 @@
   <hbox class="divider" aria-hidden="true" />
 
   <vbox class="group row separated" class:hidden={ribbonHidden.status} style:order={ribbonOrders.status}>
-    <button type="button" class="ribbon-btn" disabled={!hasSelection}
+    <button type="button" class="ribbon-btn read-action" disabled={!hasSelection}
+      aria-pressed={!!messageRead}
       title={messageRead ? $t`Mark as unread` : $t`Mark as read`}
       on:click={() => catchErrors(toggleRead)}>
-      <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
-        <MailIcon size="20px" />
-      </span>
-      <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
-        <MailOpenIcon size="20px" />
-      </span>
+      {#if messageRead}
+        <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
+          <MailOpenIcon size="20px" />
+        </span>
+        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+          <MailIcon size="20px" />
+        </span>
+      {:else}
+        <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
+          <MailIcon size="20px" />
+        </span>
+        <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+          <MailOpenIcon size="20px" />
+        </span>
+      {/if}
       <span>{messageRead ? $t`Unread` : $t`Mark as read`}</span>
     </button>
-    <button type="button" class="ribbon-btn flag-action" class:on={messageStarred} disabled={!hasSelection}
-      title={$t`Flagged`}
+    <button type="button" class="ribbon-btn flag-action" class:on={messageStarred}
+      aria-pressed={!!messageStarred} disabled={!hasSelection}
+      title={messageStarred ? $t`Flagged` : $t`Flag`}
       on:click={() => catchErrors(toggleStar)}>
       <FlagIcon size="20px" />
       <span>{$t`Flag`}</span>
     </button>
-    <button type="button" class="ribbon-btn important-action" class:on={messageImportant} disabled={!hasSelection}
-      title={$t`Important`}
+    <button type="button" class="ribbon-btn important-action" class:on={messageImportant}
+      aria-pressed={!!messageImportant} disabled={!hasSelection}
+      title={messageImportant ? $t`Mark as not important` : $t`Mark as important`}
       on:click={() => catchErrors(toggleImportant)}>
       <ImportantIcon size="20px" />
       <span>{$t`Important`}</span>
     </button>
     {#if $availableTags.hasItems}
-      <button type="button" class="ribbon-btn categories-action" disabled={!hasSelection}
+      <button type="button" class="ribbon-btn categories-action" class:on={anySelectedHasTags}
+        aria-haspopup="menu" aria-expanded={catMenuOpen} disabled={!hasSelection}
         bind:this={catAnchor}
         title={$t`Set categories`}
         on:click|stopPropagation={onCategoriesClick}>
@@ -267,21 +280,26 @@
   // stale enabled state after a selection change. It stays in the click
   // handlers below, where a point-in-time snapshot is what we want.
   $: hasSelection = !!(message || selectedMessages?.hasItems || $selectedMessagesStore?.hasItems);
+  // Bump after message mutations so state icons refresh without a $message store sub.
+  let flagsEpoch = 0;
   let replyAllRev = 0;
   let replyAllUnsub: (() => void) | null = null;
+  function onMessageChange() {
+    replyAllRev++;
+    flagsEpoch++;
+  }
   $: {
     replyAllUnsub?.();
-    replyAllUnsub = subscribeCanReplyAll(message, () => replyAllRev++);
+    replyAllUnsub = subscribeCanReplyAll(message, onMessageChange);
   }
   $: canReplyAll = replyAllRev >= 0 && computeCanReplyAll(message);
-  // Bump after mutations so labels refresh without $message store sub (null-safe)
-  let flagsEpoch = 0;
   $: messageSpam = flagsEpoch >= 0 && message?.isSpam;
   $: messageRead = flagsEpoch >= 0 && message?.isRead;
   $: messageStarred = flagsEpoch >= 0 && message?.isStarred;
   $: messageImportant = flagsEpoch >= 0 && message?.isImportant;
   $: anySelectedHasTags = flagsEpoch >= 0 && !!(
     ($selectedMessagesStore?.contents?.some(m => m.tags?.hasItems)) ||
+    (selectedMessages?.contents?.some(m => m.tags?.hasItems)) ||
     message?.tags?.hasItems
   );
 
