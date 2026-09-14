@@ -23,6 +23,8 @@ import AccountSubAccounts from "./AccountSubAccounts.svelte";
 import AccountMailServer from "./Mail/Account/Server.svelte";
 import AccountFolders from "./Mail/Account/Folders.svelte";
 import AccountIdentity from "./Mail/Account/Identity.svelte";
+import AccountMailAppearance from "./Mail/Account/Appearance.svelte";
+import AccountMailNotifications from "./Mail/Account/Notifications.svelte";
 import AccountXMPPServer from "./Chat/AccountXMPPServer.svelte";
 import ChatNotifications from "./Chat/Notifications.svelte";
 import CalendarNotifications from "./Calendar/Notifications.svelte";
@@ -84,6 +86,8 @@ mailSettings.forApp = mailApp;
 settingsCategories.add(mailSettings);
 
 accountSettings.add(new AccSetting(MailAccount, "mail-connected", gt`Connected accounts`, MailConnectedAccounts, true));
+accountSettings.add(new AccSetting(MailAccount, "mail-appearance", gt`Appearance`, AccountMailAppearance));
+accountSettings.add(new AccSetting(MailAccount, "mail-notifications", gt`Notifications`, AccountMailNotifications));
 // #if [!WEBMAIL]
 accountSettings.add(new AccSetting(MailAccount, "mail-server", gt`Server`, AccountMailServer));
 // #endif

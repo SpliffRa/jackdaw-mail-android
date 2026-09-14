@@ -47,8 +47,9 @@
 <script lang="ts">
   import { newSearchEMail } from "../../../logic/Mail/Store/setStorage";
   import { globalSearchTerm } from "../../AppsBar/selectedApp";
+  import { selectedAccount, selectedFolder, selectedMessage } from "../Selected";
+  import { currentMailSearchAccount } from "./searchScope";
   import type { EMail } from "../../../logic/Mail/EMail";
-  import { selectedMessage } from "../Selected";
   import SearchCriteria from "./SearchCriteria.svelte";
   import SavedSearchUI from "./SavedSearchUI.svelte";
   import RulesFromSearchUI from "./RulesFromSearchUI.svelte";
@@ -70,24 +71,43 @@
 
   let isOpen = true;
   const kLimit = 200;
-  let search = newSearchEMail();
+
+  function newCurrentMailboxSearch() {
+    let search = newSearchEMail();
+    search.account = currentMailSearchAccount($selectedAccount, $selectedFolder);
+    return search;
+  }
+
+  let search = newCurrentMailboxSearch();
   let tags = search.tags;
   let attachmentTypes = search.hasAttachmentMIMETypes;
+  let searchGeneration = 0;
+
+  $: $selectedAccount, $selectedFolder, syncSearchScope();
+  function syncSearchScope() {
+    let account = currentMailSearchAccount($selectedAccount, $selectedFolder);
+    if (search.account != account) {
+      searchGeneration++;
+      search.account = account;
+    }
+  }
 
   $: search.bodyText = $globalSearchTerm;
   $: isOpen && $globalSearchTerm, $search, $tags, $attachmentTypes, startSearchDebounced();
   const startSearchDebounced = debounce(() => startSearch(), 300);
   async function startSearch() {
+    let generation = ++searchGeneration;
+    let activeSearch = search;
     try {
       $selectedMessage = null;
-      if (search.bodyText == null) { // <==> $globalSearchTerm == null
+      if (activeSearch.bodyText == null) { // <==> $globalSearchTerm == null
         searchMessages = null;
         return;
       }
       searchMessages = new ArrayColl<EMail>();
 
-      let result = await search.startSearch(kLimit + 1);
-      if (!isOpen) {
+      let result = await activeSearch.startSearch(kLimit + 1);
+      if (!isOpen || generation != searchGeneration || activeSearch !== search) {
         return;
       }
       searchMessages = result;

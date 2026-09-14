@@ -12,7 +12,7 @@
     {#if !$appGlobal.isSmall}
       <MessageZoomControls />
       <vbox class="display-mode">
-        <DisplayModeSwitcher />
+        <DisplayModeSwitcher {message} />
       </vbox>
     {/if}
   </hbox>

@@ -235,6 +235,13 @@ export class IMAPEMail extends EMail {
           this.folder.account.log(this.folder, conn, "delete email flag", this.uid, this.subject);
           await conn.messageDelete(this.uid, { uid: true });
         });
+        this.folder.countTotal = Math.max(0, this.folder.countTotal - 1);
+        if (!this.isRead) {
+          this.folder.countUnread = Math.max(0, this.folder.countUnread - 1);
+        }
+        if (this.isNewArrived) {
+          this.folder.countNewArrived = Math.max(0, this.folder.countNewArrived - 1);
+        }
       } else if (strategy == DeleteStrategy.MoveToTrash) {
         let trash = this.folder.account.findSpecialFolder(SpecialFolder.Trash);
         assert(trash, gt`Trash folder is not set. Cannot delete the email. Please go to folder properties and set Use As: Trash.`);

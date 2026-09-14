@@ -12,7 +12,7 @@ import { assert } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
 import { ArrayColl, Collection } from "svelte-collections";
 import { Buffer } from "buffer";
-import type { ImapFlow, MailboxLockObject } from "../../../../desktop/backend/node_modules/imapflow";
+import type { ImapFlow, MailboxLockObject, StatusObject } from "../../../../desktop/backend/node_modules/imapflow";
 
 export class IMAPFolder extends Folder {
   declare account: IMAPAccount;
@@ -21,6 +21,7 @@ export class IMAPFolder extends Folder {
   declare readonly deletions: Set<number>;
   uidvalidity: number = 0;
   protected poller: ReturnType<typeof setInterval>;
+  protected pollInFlight = false;
   protected returnToInboxDebounce = new Debounce(2);
 
   constructor(account: IMAPAccount) {
@@ -47,15 +48,35 @@ export class IMAPFolder extends Folder {
   fromFlow(folderInfo: any) {
     this.name = folderInfo.name;
     this.path = folderInfo.path;
-    if (folderInfo.status) {
-      this.countTotal = folderInfo.status.messages;
-      this.countUnread = folderInfo.status.unseen;
-      this.countNewArrived = folderInfo.status.recent;
-    }
+    this.applyStatus(folderInfo.status);
     this.setSpecialUse(folderInfo.specialUse);
     if (this.name.toUpperCase() == "INBOX") {
       this.name = gt`Inbox`;
     }
+  }
+
+  /** Apply server-reported mailbox counts without trusting malformed values. */
+  applyStatus(status: Partial<StatusObject> | null | undefined, updateRecent = true): boolean {
+    let countTotal = sanitize.integer(status?.messages, null);
+    let countUnread = sanitize.integer(status?.unseen, null);
+    let countNewArrived = sanitize.integer(status?.recent, null);
+    let changed = false;
+    if (countTotal != null) {
+      let nextCountTotal = Math.max(0, countTotal);
+      changed ||= this.countTotal != nextCountTotal;
+      this.countTotal = nextCountTotal;
+    }
+    if (countUnread != null) {
+      let nextCountUnread = Math.max(0, countUnread);
+      changed ||= this.countUnread != nextCountUnread;
+      this.countUnread = nextCountUnread;
+    }
+    if (updateRecent && countNewArrived != null) {
+      let nextCountNewArrived = Math.max(0, countNewArrived);
+      changed ||= this.countNewArrived != nextCountNewArrived;
+      this.countNewArrived = nextCountNewArrived;
+    }
+    return changed;
   }
 
   async runCommand<T>(imapFunc: (conn: ImapFlow) => Promise<T>, purpose = ConnectionPurpose.Main, connection: ImapFlow = null): Promise<T> {
@@ -95,6 +116,24 @@ export class IMAPFolder extends Folder {
     }
   }
 
+  /** Refresh counts after changes made by another mail client. */
+  async refreshStatus(): Promise<void> {
+    let status = await this.runCommand(async (conn) => {
+      this.account.log(this, conn, "status");
+      return await conn.status(this.path, {
+        messages: true,
+        recent: true,
+        unseen: true,
+      });
+    }, ConnectionPurpose.Fetch);
+    // \\Recent is session-specific. Keep the local "new" marker until the
+    // user opens the folder, while total/unread counts remain authoritative.
+    let changed = this.applyStatus(status, false);
+    if (changed && this.dbID) {
+      await this.storage.saveFolderProperties(this);
+    }
+  }
+
   /** IDLE on the INBOX, not the last-selected folder, so that we get new mail. */
   protected async startIDLEonINBOX(conn: ImapFlow) {
     if (this != this.account.inbox &&
@@ -108,16 +147,22 @@ export class IMAPFolder extends Folder {
   /** Lists all messages in this folder.
    * But doesn't download their contents. @see downloadMessages()
    * @returns new messages */
-  async listMessages(): Promise<Collection<IMAPEMail>>  {
+  async listMessages(reconcileDeletions = false): Promise<Collection<IMAPEMail>>  {
     await this.readFolder();
-    if (this.countTotal === 0) {
-      return new ArrayColl<IMAPEMail>();
-    }
     let lock = await this.listMessagesLock.lock();
     try {
+      await this.refreshStatus();
       if (this.countNewArrived) {
         this.countNewArrived = 0;
         await this.storage.saveFolderProperties(this);
+      }
+      if (this.countTotal === 0) {
+        await this.checkDeletedMessages();
+        return new ArrayColl<IMAPEMail>();
+      }
+      if (reconcileDeletions) {
+        // После удаления сверяем UID, но не считаем старые сообщения новыми.
+        return await this.listAllUnknownMessages(false);
       }
       let newMsgs: ArrayColl<IMAPEMail>;
       if (await this.account.hasCapability("CONDSTORE") && this.lastModSeq) {
@@ -132,12 +177,24 @@ export class IMAPFolder extends Folder {
     }
   }
 
+  /** Fast refresh from the UI. Also updates counters for every IMAP folder. */
+  async fetchNewMailQuick(): Promise<Collection<IMAPEMail>> {
+    let oldCountTotal = this.countTotal;
+    await this.account.refreshFolderCounts();
+    if (this.countTotal < oldCountTotal) {
+      let newMessages = await this.listMessages(true);
+      await this.downloadMessages(newMessages);
+      return newMessages;
+    }
+    return await this.getNewMessages(true, false);
+  }
+
   /** Lists all messages in this folder that have not been fetched yet.
    * But doesn't download their contents. @see downloadMessages() */
-  protected async listAllUnknownMessages(): Promise<ArrayColl<IMAPEMail>> {
+  protected async listAllUnknownMessages(markAsArrivals = true): Promise<ArrayColl<IMAPEMail>> {
     // TODO save range of lowest and highest UID of emails that we have fetched and saved,
     // to not re-fetch the whole list over and over again.
-    let isNewMail = this.messages.hasItems;
+    let isNewMail = markAsArrivals && this.messages.hasItems;
     let allUIDs = await this.fetchUIDList({ all: true });
 
     // Delete messages that are no longer on the server @see checkDeletedMessages()
@@ -207,12 +264,22 @@ export class IMAPFolder extends Folder {
 
   /** Lists new messages, based on the UID being higher.
    * But doesn't download their contents @see getNewMessages() */
-  async listNewMessages(): Promise<ArrayColl<IMAPEMail>> {
+  async listNewMessages(refreshStatus = true): Promise<ArrayColl<IMAPEMail>> {
     await this.readFolder();
     let lock = await this.listMessagesLock.lock();
     try {
+      let oldCountTotal = this.countTotal;
+      if (refreshStatus) {
+        await this.refreshStatus();
+      }
       if (this.countTotal === 0) {
+        await this.checkDeletedMessages();
         return new ArrayColl();
+      }
+      if (this.countTotal < oldCountTotal) {
+        // Удаление могло затронуть старое письмо, поэтому сверяем весь UID-набор.
+        // Ранее не загруженные старые письма не должны вызывать уведомления.
+        return await this.listAllUnknownMessages(false);
       }
       let isNewMail = this.messages.hasItems;
       let fromUID = this.getHighestUID() ?? 1;
@@ -314,8 +381,8 @@ export class IMAPFolder extends Folder {
   }
 
   /** Lists new messages, and downloads them */
-  async getNewMessages(): Promise<Collection<IMAPEMail>> {
-    let newMsgs = await this.listNewMessages();
+  async getNewMessages(_recentOnly = false, refreshStatus = true): Promise<Collection<IMAPEMail>> {
+    let newMsgs = await this.listNewMessages(refreshStatus);
     await this.downloadMessages(newMsgs);
     await this.checkDeletedMessages(this.getRecentMsg()?.uid);
     return newMsgs;
@@ -451,18 +518,17 @@ export class IMAPFolder extends Folder {
   }
 
   startPolling() {
-    if (!this.account.pollIntervalMinutes) {
+    this.stopPolling();
+    let intervalMinutes = Number(this.account.pollIntervalMinutes);
+    if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
       return;
     }
-    this.stopPolling();
 
-    this.poller = setInterval(async () => {
-      try {
-        await this.pollRun();
-      } catch (ex) {
-        this.account.errorCallback(ex);
-      }
-    }, this.account.pollIntervalMinutes * 1000 * 60);
+    this.poller = setInterval(() => {
+      this.pollRun().catch(this.account.errorCallback);
+    }, intervalMinutes * 1000 * 60);
+    // Do not wait for the first interval after login or reconnection.
+    this.pollRun().catch(this.account.errorCallback);
   }
 
   stopPolling() {
@@ -474,7 +540,15 @@ export class IMAPFolder extends Folder {
   }
 
   protected async pollRun() {
-    await this.getNewMessages();
+    if (this.pollInFlight) {
+      return;
+    }
+    this.pollInFlight = true;
+    try {
+      await this.fetchNewMailQuick();
+    } finally {
+      this.pollInFlight = false;
+    }
   }
 
   /**
@@ -527,32 +601,10 @@ export class IMAPFolder extends Folder {
   async messageDeletedNotification(seq: number, connection: ImapFlow): Promise<void> {
     this.account.log(this, connection, "notify: message deleted", "seq", seq);
 
-    // We need to map from msg sequence number to UID
-    // Ask server to list all known messages (as UID) from 1 msg before seq to seq.
-    // (whereas `seq` is now the message after (!) the deleted msg,
-    // given that seq are order numbers and therefore get re-assigned on delete.)
-    // This should return exactly 2 messages (unless we're at the end or start).
-    // Any UIDs between those 2 UIDs are deleted messages.
-    // We should purge them from our cache.
-    // This works even if several messages are deleted in a row.
-    // Thanks to Arnt Gulbrandsen for the ingeneous tip
-
-    if (seq == 1) {
-      return; // TODO Handle seq == 1
-    }
-    // needs to happen on the same IMAP connection where we got the seq number from
-    let remainingUIDs = await this.fetchUIDList({ seq: (seq - 1) + ":" + seq }, connection);
-    if (remainingUIDs.length != 2) {
-      this.account.log(this, connection, "newest message deleted", "TODO handle this");
-      return; // TODO Handle start and end
-    }
-    let startUID = remainingUIDs.first;
-    let endUID = remainingUIDs.last;
-    let deletedMsgs = this.messages.filterOnce(msg => startUID < msg.uid && msg.uid < endUID);
-    for (let deletedMsg of deletedMsgs) {
-      this.account.log(this, connection, "Deleted msg", deletedMsg.subject);
-      await deletedMsg.deleteMessageLocally();
-    }
+    // EXPUNGE does not always provide enough sequence context (especially
+    // when the first or last message was removed). Reconcile UIDs so both
+    // the list and the server-provided unread counter are updated.
+    await this.listMessages(true);
   }
 
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<IMAPEMail>) {
@@ -611,6 +663,15 @@ export class IMAPFolder extends Folder {
     });
     await this.updatePath(newPath);
     console.log("IMAP folder renamed to", this.path);
+  }
+
+  /** Delete remotely first. If the IMAP server rejects the operation, keep the
+   * local folder so that it can be retried and remains visible. */
+  async deleteIt(): Promise<void> {
+    let disableDelete = this.disableDelete();
+    assert(!disableDelete, disableDelete || "Cannot delete");
+    await this.deleteItOnServer();
+    await this.deleteItLocally();
   }
 
   /** After a rename or move on the server, update our folder path

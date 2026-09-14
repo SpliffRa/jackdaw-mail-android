@@ -45,6 +45,9 @@ export async function onKeyOnList(event: KeyboardEvent) {
   if (event.defaultPrevented || !isMailPaneFocused()) {
     return;
   }
+  if (isEditableTarget(event.target)) {
+    return;
+  }
   if (selectAllVisibleMessages(event)) {
     return;
   }

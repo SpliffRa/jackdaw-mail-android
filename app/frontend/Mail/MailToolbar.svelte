@@ -45,7 +45,8 @@
     placement="bottom-start" boundaryElSel="body">
     <vbox class="search-filters-popup">
       <hbox class="search-filters-title font-small">{$t`Search filters`}</hbox>
-      <SearchCriteria search={globalSearch} showSearchTerm={false} />
+      <SearchCriteria search={globalSearch} showSearchTerm={false}
+        on:change={onAdvancedSearchCriteriaChanged} />
       <hbox class="search-filters-actions">
         <Button label={$t`Clear`} plain onClick={clearAdvancedSearch} />
         <hbox flex />
@@ -77,7 +78,8 @@
   import debounce from "lodash/debounce";
   import RibbonCustomizeMenu from "./3pane/RibbonCustomizeMenu.svelte";
   import { ribbonPreferences } from "./3pane/ribbonPreferences";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
+  import { currentMailSearchAccount } from "./Search/searchScope";
 
   export let selectedAccount: MailAccount;
   export let selectedFolder: Folder;
@@ -88,10 +90,18 @@
   let filterSearchMessages: ArrayColl<EMail> | null = null;
   let globalSearchResults: ArrayColl<EMail> | null = null;
   let advancedSearchMessages: ArrayColl<EMail> | null = null;
-  let globalSearch = newSearchEMail();
+
+  function newCurrentMailboxSearch() {
+    let search = newSearchEMail();
+    search.account = currentMailSearchAccount(selectedAccount, selectedFolder);
+    return search;
+  }
+
+  let globalSearch = newCurrentMailboxSearch();
   let filtersOpen = false;
   let filtersAnchor: HTMLButtonElement;
   let usingAdvancedSearch = false;
+  let searchGeneration = 0;
   const TOOLBAR_STACK_BREAKPOINT_PX = 900;
   const TOOLBAR_NARROW_BREAKPOINT_PX = 560;
   let toolbarContainer: HTMLDivElement;
@@ -100,6 +110,22 @@
   let toolbarResizeObserver: ResizeObserver | null = null;
   $: ribbonSize = $ribbonPreferences.size;
   $: ribbonPlacement = $ribbonPreferences.placement;
+
+  $: selectedAccount, selectedFolder, syncSearchScope();
+  function syncSearchScope() {
+    if (usingAdvancedSearch) {
+      return;
+    }
+    let account = currentMailSearchAccount(selectedAccount, selectedFolder);
+    if (globalSearch.account == account) {
+      return;
+    }
+    searchGeneration++;
+    globalSearch = newCurrentMailboxSearch();
+    if ($globalSearchTerm) {
+      runGlobalSearchDebounced();
+    }
+  }
 
   onMount(() => {
     function updateToolbarLayout() {
@@ -123,6 +149,7 @@
   $: $globalSearchTerm, onGlobalSearchTermChanged();
   function onGlobalSearchTermChanged() {
     usingAdvancedSearch = false;
+    searchGeneration++;
     if ($globalSearchTerm) {
       runGlobalSearchDebounced();
     } else {
@@ -131,40 +158,92 @@
   }
 
   const runGlobalSearchDebounced = debounce(() => catchErrors(runGlobalSearch), 300);
+  const refreshAdvancedSearchDebounced = debounce(() => catchErrors(refreshAdvancedSearch), 300);
+
+  function onAdvancedSearchCriteriaChanged() {
+    if (usingAdvancedSearch) {
+      searchGeneration++;
+      refreshAdvancedSearchDebounced();
+    }
+  }
 
   async function runGlobalSearch() {
     if (!$globalSearchTerm) {
       globalSearchResults = null;
       return;
     }
-    globalSearch = newSearchEMail();
+    let generation = ++searchGeneration;
+    globalSearch = newCurrentMailboxSearch();
     globalSearch.bodyText = $globalSearchTerm;
+    let activeSearch = globalSearch;
     try {
-      globalSearchResults = await globalSearch.startSearch(200);
+      let results = await activeSearch.startSearch(200);
+      if (generation != searchGeneration || globalSearch !== activeSearch) {
+        return;
+      }
+      globalSearchResults = results;
       $selectedMessageStore = globalSearchResults?.first ?? null;
     } catch (ex) {
       showError(ex);
     }
   }
 
+  async function refreshAdvancedSearch() {
+    if (!usingAdvancedSearch) {
+      return;
+    }
+    try {
+      let results = await executeAdvancedSearch();
+      if (!usingAdvancedSearch || results === undefined) {
+        return;
+      }
+      advancedSearchMessages = results;
+      $selectedMessageStore = results.first ?? null;
+    } catch (ex) {
+      showError(ex);
+    }
+  }
+
+  async function executeAdvancedSearch(): Promise<ArrayColl<EMail> | undefined> {
+    let generation = ++searchGeneration;
+    let activeSearch = globalSearch;
+    let results = await activeSearch.startSearch(200);
+    if (generation != searchGeneration || globalSearch !== activeSearch) {
+      return undefined;
+    }
+    return results;
+  }
+
   function clearAdvancedSearch() {
-    globalSearch = newSearchEMail();
+    searchGeneration++;
+    refreshAdvancedSearchDebounced.cancel();
+    globalSearch = newCurrentMailboxSearch();
     advancedSearchMessages = null;
     usingAdvancedSearch = false;
     filtersOpen = false;
   }
 
   async function applyAdvancedSearch() {
+    refreshAdvancedSearchDebounced.cancel();
     try {
-      advancedSearchMessages = await globalSearch.startSearch(200);
+      let results = await executeAdvancedSearch();
+      if (results === undefined) {
+        return;
+      }
+      advancedSearchMessages = results;
       usingAdvancedSearch = true;
       $globalSearchTerm = globalSearch.bodyText ?? null;
-      $selectedMessageStore = advancedSearchMessages?.first ?? null;
+      $selectedMessageStore = results.first ?? null;
       filtersOpen = false;
     } catch (ex) {
       showError(ex);
     }
   }
+
+  onDestroy(() => {
+    runGlobalSearchDebounced.cancel();
+    refreshAdvancedSearchDebounced.cancel();
+  });
 </script>
 
 <style>
@@ -394,6 +473,9 @@
     height: 28px;
     padding: 5px;
   }
+  .mail-toolbar.toolbar-compact .search-wrap :global(.search) {
+    height: 28px;
+  }
   .mail-toolbar.toolbar-compact :global(.mail-create-item-menu .menu.button) {
     flex-basis: 28px;
     width: 28px;
@@ -409,6 +491,9 @@
     min-height: 44px;
     height: 44px;
     padding: 8px;
+  }
+  .mail-toolbar.toolbar-large .search-wrap :global(.search) {
+    height: 44px;
   }
   .mail-toolbar.toolbar-large :global(.mail-create-item-menu .menu.button) {
     flex-basis: 44px;

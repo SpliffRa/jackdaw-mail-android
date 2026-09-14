@@ -121,12 +121,13 @@
 import { updatePaneFocusFromPointer } from "./paneFocus";
   import { startUpdateNotificationWatcher } from "./UpdateNotification";
   import { assert } from "../../logic/util/util";
-  import { getUILocale, t } from "../../l10n/l10n";
+  import { getUILocale, locale, t } from "../../l10n/l10n";
   import { rtlLocales } from "../../l10n/list";
   import { appName } from "../../logic/build";
   import { onDestroy, onMount } from "svelte";
   import debounce from "lodash/debounce";
   import { Router } from "svelte-navigator";
+  import { handleNativeMenuActionWithErrors, subscribeToNativeMenuActions, syncNativeMenuLabels } from "./NativeMenu";
   // #if [MOBILE]
   import { SplashScreen } from '@capacitor/splash-screen';
   // #endif
@@ -154,6 +155,16 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     // Повторно применяем сохранённые цвета после монтирования оболочки.
     applyColors(colorsSetting.value);
     return catchErrors(onLoad);
+  });
+
+  onMount(() => {
+    syncNativeMenuLabels();
+    const unsubscribeLocale = locale.subscribe(syncNativeMenuLabels);
+    const unsubscribeNativeMenu = subscribeToNativeMenuActions(handleNativeMenuActionWithErrors);
+    return () => {
+      unsubscribeLocale();
+      unsubscribeNativeMenu();
+    };
   });
 
   async function onLoad() {

@@ -36,37 +36,30 @@
 </IslandSwitcher>
 
 <script lang="ts">
-  import { getLocalStorage } from "../../Util/LocalStorage";
-  import { selectedMessage } from "../Selected";
+  import type { EMail } from "../../../logic/Mail/EMail";
   import { DisplayMode } from "./MessageBody.svelte";
+  import {
+    getMessageContentRenderingSetting,
+    normalizeMessageContentRendering,
+  } from "./messageViewerAppearance";
   import IslandSwitcher from "../../Shared/IslandSwitcher.svelte";
   import Button from "../../Shared/Button.svelte";
   import HTMLIcon from "lucide-svelte/icons/mail";
   import WithExternalIcon from "lucide-svelte/icons/image";
   import PlaintextIcon from "lucide-svelte/icons/type";
   import SourceIcon from "lucide-svelte/icons/code-xml";
-  import { catchErrors } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
 
+  export let message: EMail;
   export let mode: DisplayMode = DisplayMode.HTML;
 
-  let modeSetting = getLocalStorage("mail.contentRendering", "html");
-  $: mode = $modeSetting.value as DisplayMode;
-
-  // Thread view is unfinished; migrate saved preference to HTML.
-  $: if (mode == DisplayMode.Thread) {
-    switchTo(DisplayMode.HTML);
-  }
+  let modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
+  $: modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
+  $: mode = normalizeMessageContentRendering($modeSetting.value) as DisplayMode;
 
   function switchTo(newMode: DisplayMode) {
-    mode = newMode;
-    modeSetting.value = newMode;
-  }
-
-  $: $selectedMessage && catchErrors(onMessageChanged);
-  function onMessageChanged() {
-    if (mode == DisplayMode.HTMLWithExternal) {
-      switchTo(DisplayMode.HTML);
-    }
+    let normalizedMode = normalizeMessageContentRendering(newMode);
+    mode = normalizedMode as DisplayMode;
+    modeSetting.value = normalizedMode;
   }
 </script>

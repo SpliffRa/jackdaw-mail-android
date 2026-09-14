@@ -1,8 +1,26 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import {
+  nativeMenuActionChannel,
+  nativeMenuLabelsChannel,
+  type NativeMenuLabels,
+} from '../../../app/logic/util/nativeMenu'
 
 // Custom APIs for renderer
-const api = {}
+const api = {
+  onNativeMenuAction: (callback: (action: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, action: unknown): void => {
+      if (typeof action === 'string') {
+        callback(action)
+      }
+    }
+    ipcRenderer.on(nativeMenuActionChannel, listener)
+    return () => ipcRenderer.removeListener(nativeMenuActionChannel, listener)
+  },
+  setNativeMenuLabels: (labels: NativeMenuLabels): void => {
+    ipcRenderer.send(nativeMenuLabelsChannel, labels)
+  }
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise

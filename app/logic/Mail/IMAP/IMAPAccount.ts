@@ -362,6 +362,36 @@ export class IMAPAccount extends MailAccount {
     }
   }
 
+  /** Refresh message counters for all known folders without rebuilding the tree. */
+  async refreshFolderCounts(): Promise<void> {
+    let conn = await this.connection(false, ConnectionPurpose.Fetch);
+    let lock = await this.connectionLock.get(conn).lock();
+    let foldersInfo;
+    try {
+      this.log(null, conn, "refresh folder counts");
+      foldersInfo = await conn.list({
+        statusQuery: {
+          messages: true,
+          recent: true,
+          unseen: true,
+        },
+      });
+    } finally {
+      lock.release();
+    }
+
+    for (let folderInfo of foldersInfo) {
+      let folder = this.getFolderByPath(folderInfo.path);
+      if (!folder || !folderInfo.status) {
+        continue;
+      }
+      let changed = folder.applyStatus(folderInfo.status, false);
+      if (changed && folder.dbID) {
+        await this.storage.saveFolderProperties(folder);
+      }
+    }
+  }
+
   /**
    * @param parent parent folder, to which to add the subfolders. null, if root.
    * @param addTo Array to add the subfolders to. Either `parent.subFolders` or `rootFolders`.
@@ -585,11 +615,16 @@ const kIDLERenewalSeconds = 5 * 60;
 export class IMAPCommandError extends SpecificError {
   /** ImapFlow reports every `NO`/`BAD` response as "Command failed" and puts
     * the reason that the server gave into `responseText`. Show that reason. */
-  static fromServerResponse(ex: Error & { responseText?: string }): Error {
-    if (!ex?.responseText) {
+  static fromServerResponse(ex: Error & { responseText?: string; response?: unknown }): Error {
+    let responseText = typeof ex?.responseText == "string"
+      ? ex.responseText
+      : typeof ex?.response == "string"
+        ? ex.response
+        : null;
+    if (!responseText) {
       return ex;
     }
-    return new IMAPCommandError(ex, ex.responseText
+    return new IMAPCommandError(ex, responseText
       .replace("Error in IMAP command", "IMAP")
       .replace(/ \([\d\. +]* secs\)\./, ""));
   }

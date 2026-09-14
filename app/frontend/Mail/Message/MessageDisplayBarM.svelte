@@ -60,7 +60,7 @@
     <hbox class="menu button">
       <ButtonMenu bind:isMenuOpen>
         <MessageMenu bind:message {printE} onMove={onPopupToggle} />
-        <DisplayModeSwitcher />
+        <DisplayModeSwitcher {message} />
       </ButtonMenu>
     </hbox>
   </AppBarM>

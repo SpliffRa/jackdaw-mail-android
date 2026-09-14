@@ -153,6 +153,7 @@
   import { mailApp } from "../MailJackdawApp";
   import { openEMailMessage } from "../open";
   import { getLocalStorage } from "../../Util/LocalStorage";
+  import { getMessageContentRenderingSetting } from "./messageViewerAppearance";
   import type Print from "./MessagePrint.svelte";
   import MenuItem from "../../Shared/Menu/MenuItem.svelte";
   import MenuDivider from "../../Shared/Menu/MenuDivider.svelte";
@@ -365,12 +366,12 @@
   }
 
   function showSource() {
-    let setting = getLocalStorage("mail.contentRendering", "html");
+    let setting = getMessageContentRenderingSetting(message.folder?.account);
     setting.value = setting.value == "source" ? "html" : "source";
   }
   let domE: HTMLDivElement;
   function showDOMInspector() {
-    let setting = getLocalStorage("mail.contentRendering", "html");
+    let setting = getMessageContentRenderingSetting(message.folder?.account);
     setting.value = "html";
     let messageE = domE.ownerDocument.querySelector(".message-body");
     let webviewE = messageE.querySelector("webview") as HTMLIFrameElement as any;

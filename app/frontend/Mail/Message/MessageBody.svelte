@@ -32,18 +32,22 @@
 
 <script lang="ts">
   import type { EMail } from "../../../logic/Mail/EMail";
-  import { getLocalStorage } from "../../Util/LocalStorage";
   import HTMLDisplay from "./HTMLDisplay.svelte";
   import PlaintextDisplay from "./PlaintextDisplay.svelte";
   import ErrorMessage from "../../Shared/ErrorMessageInline.svelte";
   import { sleep } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
+  import {
+    getMessageContentRenderingSetting,
+    normalizeMessageContentRendering,
+  } from "./messageViewerAppearance";
 
   export let message: EMail;
   export let zoom = 100;
 
-  let modeSetting = getLocalStorage("mail.contentRendering", "html");
-  $: mode = $modeSetting.value as DisplayMode;
+  let modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
+  $: modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
+  $: mode = normalizeMessageContentRendering($modeSetting.value) as DisplayMode;
   $: message.loadExternalImages = mode == DisplayMode.HTMLWithExternal;
   $: plaintextZoom = mode == DisplayMode.Plaintext || mode == DisplayMode.Source ? zoom / 100 : undefined;
   $: plaintextZoomWidth = plaintextZoom && plaintextZoom != 1 ? `calc(100% / ${plaintextZoom})` : undefined;

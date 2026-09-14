@@ -17,6 +17,12 @@ export type NotificationSoundId =
   | "bell"
   | "alarm";
 
+export type NotificationSoundSelection = NotificationSoundId | {
+  id: "custom";
+  dataURL: string;
+  name?: string;
+};
+
 export const notificationSoundEvents: NotificationSoundEvent[] = [
   "mail-incoming",
   "mail-outgoing",
@@ -120,9 +126,9 @@ const activeAudio = new Set<HTMLAudioElement>();
 /** Plays the configured sound. Preview calls bypass the notification throttle. */
 export async function playNotificationSound(
   event: NotificationSoundEvent,
-  options: { preview?: boolean } = {},
+  options: { preview?: boolean; sound?: NotificationSoundSelection } = {},
 ): Promise<void> {
-  let sound = getNotificationSound(event);
+  let sound = options.sound ?? getNotificationSound(event);
   if (sound == "none") {
     return;
   }
@@ -131,19 +137,16 @@ export async function playNotificationSound(
     return;
   }
 
-  if (sound == "default") {
-    if (typeof Audio == "undefined") {
+  if (typeof sound != "string") {
+    if (!sound.dataURL.startsWith("data:audio/")) {
       return;
     }
-    let audio = new Audio("sound/new-message.mp3");
-    activeAudio.add(audio);
-    audio.addEventListener("ended", () => activeAudio.delete(audio), { once: true });
-    lastSoundAt = now;
-    try {
-      await audio.play();
-    } catch (_ex) {
-      activeAudio.delete(audio);
-    }
+    await playAudioSource(sound.dataURL, now);
+    return;
+  }
+
+  if (sound == "default") {
+    await playAudioSource("sound/new-message.mp3", now);
     return;
   }
 
@@ -159,6 +162,21 @@ export async function playNotificationSound(
     lastSoundAt = now;
   } catch (_ex) {
     // A locked audio context must not turn a successful mail/calendar event into an error.
+  }
+}
+
+async function playAudioSource(source: string, now: number): Promise<void> {
+  if (typeof Audio == "undefined") {
+    return;
+  }
+  let audio = new Audio(source);
+  activeAudio.add(audio);
+  audio.addEventListener("ended", () => activeAudio.delete(audio), { once: true });
+  lastSoundAt = now;
+  try {
+    await audio.play();
+  } catch (_ex) {
+    activeAudio.delete(audio);
   }
 }
 

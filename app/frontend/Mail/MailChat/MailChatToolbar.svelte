@@ -81,7 +81,7 @@
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
   import OpenIcon from "lucide-svelte/icons/maximize-2";
   import { selectedMessage } from "../Selected";
-  import { getLocalStorage } from "../../Util/LocalStorage";
+  import { getMessageContentRenderingSetting } from "../Message/messageViewerAppearance";
   import { t } from "../../../l10n/l10n";
   import { catchErrors } from "../../Util/error";
 
@@ -123,7 +123,7 @@
   }
   function openMessageAlone() {
     $selectedMessage = message;
-    let modeSetting = getLocalStorage("mail.contentRendering", "html");
+    let modeSetting = getMessageContentRenderingSetting(message.folder?.account);
     modeSetting.value = "html";
   }
 

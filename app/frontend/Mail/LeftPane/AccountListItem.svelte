@@ -25,8 +25,8 @@
   </hbox>
   {#if $account.isLoggedIn}
     <hbox class="icon">
-      {#if account.icon && typeof(account.icon) == "string"}
-        <img src={account.icon} width={iconLogoSize} height={iconLogoSize} alt="" class="logo" />
+      {#if accountIcon && failedAccountIcon != accountIcon}
+        <img src={accountIcon} width={iconLogoSize} height={iconLogoSize} alt="" class="logo" on:error={onAccountIconError} />
       {:else}
         <Icon data={MailIcon} size={iconSize} />
       {/if}
@@ -85,10 +85,15 @@
   export let showExpand = true;
 
   const dispatch = createEventDispatcher<{ select: MailAccount; toggleExpand: MailAccount }>();
+  let failedAccountIcon: string | null = null;
 
   /** Re-run when folders load, counts change, or selection moves. */
   $: _epoch = $mailUnreadEpoch;
   $: _account = $account;
+  $: accountIcon = typeof $account.icon == "string" ? $account.icon : null;
+  $: if (failedAccountIcon && failedAccountIcon != accountIcon) {
+    failedAccountIcon = null;
+  }
   $: inboxFolder = findInboxFolder(account);
   $: inboxBadge = (() => {
     let inbox = findInboxFolder(account);
@@ -125,6 +130,10 @@
   function onToggleExpand(event: MouseEvent) {
     event.stopPropagation();
     dispatch("toggleExpand", account);
+  }
+
+  function onAccountIconError() {
+    failedAccountIcon = accountIcon;
   }
 
   let contextMenu: ContextMenu;

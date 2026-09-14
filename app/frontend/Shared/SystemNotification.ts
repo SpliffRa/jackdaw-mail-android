@@ -6,6 +6,7 @@ import { backgroundError } from "../Util/error";
 import {
   playNotificationSound as playSelectedNotificationSound,
   type NotificationSoundEvent,
+  type NotificationSoundSelection,
 } from "./NotificationSound";
 
 /** Tells the user about a new mail, a meeting reminder etc.
@@ -42,6 +43,7 @@ export class SystemNotification {
   onReply: (text: string) => void;
   replyPlaceholder: string;
   readonly soundEvent: NotificationSoundEvent;
+  readonly soundOverride?: NotificationSoundSelection;
 
   constructor(
     kinds: NotificationKinds,
@@ -49,12 +51,14 @@ export class SystemNotification {
     body: string,
     id: string,
     soundEvent: NotificationSoundEvent = "other",
+    soundOverride?: NotificationSoundSelection,
   ) {
     this.kinds = kinds;
     this.title = title;
     this.body = body;
     this.id = id;
     this.soundEvent = soundEvent;
+    this.soundOverride = soundOverride;
   }
 
   /** For the popups that have no separate subtitle line. */
@@ -179,7 +183,7 @@ export class SystemNotification {
   }
 
   async playNotificationSound() {
-    await playSelectedNotificationSound(this.soundEvent);
+    await playSelectedNotificationSound(this.soundEvent, { sound: this.soundOverride });
   }
 }
 

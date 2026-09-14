@@ -242,28 +242,22 @@
       return;
     }
     setFolderFetchBusy(folder, true);
+    if ($selectedFolder === folder) {
+      folderSyncing.set(true);
+    }
     try {
       if ($selectedMessage?.folder != folder) {
         $selectedMessage = null;
       }
       if (folder.account.protocol == "owa") {
         let owaFolder = folder as OWAFolder;
-        // Показать кеш до серверной синхронизации — иначе список пуст и крутится спиннер.
-        await owaFolder.readFolder();
-        folder.notifyObservers();
-        folderSyncing.set(true);
-        try {
-          await owaFolder.syncOnFolderOpen();
-        } finally {
-          folderSyncing.set(false);
-        }
+        await owaFolder.syncOnFolderOpen();
         folder.notifyObservers();
       } else {
         let newMessages = await folder.listMessages();
         await folder.downloadMessages(newMessages);
       }
     } catch (ex) {
-      folderSyncing.set(false);
       if (ex.authFail) {
         if (!folder.account.isLoggedIn) {
           await folder.account.login(true);
@@ -275,6 +269,9 @@
         folder.account.errorCallback(ex);
       }
     } finally {
+      if ($selectedFolder === folder) {
+        folderSyncing.set(false);
+      }
       setFolderFetchBusy(folder, false);
     }
   }

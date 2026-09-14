@@ -18,7 +18,8 @@
       <Instructions bind:config bind:password />
     {:else if step == Step.Login}
       <LoginPage account={config} onContinue={onLoginSucceeded}
-        onCancel={() => step = Step.FoundConfig} />
+        onCancel={() => step = Step.FoundConfig}
+        showManualSetupHint={true} />
     {:else if step == Step.CheckConfig}
       <CheckConfig {config} {emailAddress} {password}
         on:continue={onCheckConfigSucceeded} on:fail={onCheckConfigFailed} {abort} />
@@ -140,6 +141,7 @@
     }
   }
   function onManualSetup() {
+    config?.oAuth2?.abort();
     if (!config ||
         !config.outgoing && (config.protocol == "imap" || config.protocol == "pop3")) {
       let name = config?.name;
@@ -159,6 +161,7 @@
   $: canContinue =
     step == Step.EmailAddress && !!emailAddress && !!password ||
     step == Step.FoundConfig ||
+    step == Step.Login ||
     step == Step.ManualConfig ||
     step == Step.FinalizeConfig;
 

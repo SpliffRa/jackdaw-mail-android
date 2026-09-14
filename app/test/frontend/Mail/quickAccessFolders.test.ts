@@ -183,6 +183,7 @@ describe("QuickAccessFolders", () => {
     }));
 
     expect(target.querySelector("button.quick-folder")).toBeNull();
+    expect(target.querySelector(".quick-folder.pending")).toBeNull();
 
     let folder: any = {
       id: "folder-1",

@@ -13,8 +13,6 @@
           visibleFavoriteRefs={visibleFavoriteRefs}
           accountLabel={folder.account?.name}
           on:select={onSelectFolder} />
-      {:else}
-        <span class="quick-folder pending" title={ref.folderPath}>{favoriteRefLabel(ref, accounts)}</span>
       {/if}
     {/each}
     {#each visibleQuickFolders as folder (folder.id || folder.specialFolder || folder.fullPath)}
@@ -44,7 +42,6 @@
     favoriteFoldersSetting,
     favoriteFoldersEpoch,
     findFavoriteFolder,
-    favoriteRefLabel,
     isFavoriteFolderRef,
     type FavoriteFolderRef,
   } from "./favoriteFolders";
@@ -80,8 +77,18 @@
   }
   $: {
     $hiddenFoldersEpoch;
-    visibleFavoriteEntries = favoriteEntries.filter(({ ref, folder }) =>
-      !isHiddenFolderRef(ref) && (!folder || !isHiddenFolder(folder)));
+    let seenFavoriteFolders = new Set<string>();
+    visibleFavoriteEntries = favoriteEntries.filter(({ ref, folder }) => {
+      if (!folder || isHiddenFolderRef(ref) || isHiddenFolder(folder)) {
+        return false;
+      }
+      let key = folderQuickAccessKey(folder);
+      if (seenFavoriteFolders.has(key)) {
+        return false;
+      }
+      seenFavoriteFolders.add(key);
+      return true;
+    });
   }
   $: visibleFavoriteRefs = visibleFavoriteEntries.map(({ ref }) => ref);
   $: userFavorites = visibleFavoriteEntries.map(entry => entry.folder).filter((f): f is Folder => !!f);
@@ -116,14 +123,5 @@
     gap: 1px;
     flex: 0 0 auto;
     padding: 2px 8px 8px;
-  }
-  .quick-folder.pending {
-    display: block;
-    padding: 5px 8px 5px 30px;
-    font-size: 12px;
-    color: color-mix(in srgb, var(--leftbar-fg) 55%, transparent);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 </style>

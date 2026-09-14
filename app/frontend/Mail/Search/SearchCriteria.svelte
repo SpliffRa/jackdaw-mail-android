@@ -6,6 +6,7 @@
     </hbox>
   {/if}
   <Checkbox bind:checked={search.isOutgoing} allowIndetermined={true}
+    on:change={notifyCriteriaChanged}
     label={$t`Sent by me`}>
     <OutgoingIcon size="16px" slot="icon" />
   </Checkbox>
@@ -16,6 +17,7 @@
     <CircleIcon size="16px" slot="icon" />
   </Checkbox>
   <Checkbox bind:checked={search.isStarred} allowIndetermined={true}
+    on:change={notifyCriteriaChanged}
     label={$t`Starred`}
     classes="star {search.isStarred ? "starred" : ""}">
     <StarIcon size="16px" slot="icon" />
@@ -125,6 +127,9 @@
   import PersonIcon from "lucide-svelte/icons/user-round";
   import { ArrayColl, Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
+  import { createEventDispatcher } from "svelte";
+
+  const dispatchEvent = createEventDispatcher<{ change: void }>();
 
   /** The search criteria
    * in/out */
@@ -168,6 +173,7 @@
   // Translate values from UI controls to `SearchEMail`
   function updateUnread() {
     search.isRead = isUnread === false ? true : (isUnread == true ? false : null);
+    notifyCriteriaChanged();
   }
   $: sizeMinMB, updateSizeMin();
   function updateSizeMin() {
@@ -185,25 +191,33 @@
     if (!search.account) {
       search.folder = null;
     }
+    notifyCriteriaChanged();
   }
   function updateFolder() {
     search.folder = hasFolder ? $selectedFolder : null;
+    notifyCriteriaChanged();
   }
   $: availablePersons = hasPerson && searchMessages ? personsInEMails(searchMessages) : appGlobal.personalAddressbook?.persons;
   function updatePerson() {
     if (!hasPerson) {
       search.includesPerson = null;
     }
+    notifyCriteriaChanged();
   }
   function updateTag() {
     if (!hasTag) {
       search.tags?.clear();
     }
+    notifyCriteriaChanged();
   }
   function updateAttachment() {
     if (!search.hasAttachment) {
       search.hasAttachmentMIMETypes.clear();
     }
+    notifyCriteriaChanged();
+  }
+  function notifyCriteriaChanged() {
+    dispatchEvent("change");
   }
 </script>
 

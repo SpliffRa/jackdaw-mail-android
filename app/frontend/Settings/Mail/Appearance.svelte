@@ -6,6 +6,14 @@
 
   <HeaderGroupBox>
     <hbox slot="header">{$t`Message viewer`}</hbox>
+    <hbox class="subtitle">
+      {$t`Choose the default way to display messages. You can override it for each mailbox in that account's settings.`}
+    </hbox>
+    <MessageContentRenderingOptions setting={messageContentRenderingSetting} />
+  </HeaderGroupBox>
+
+  <HeaderGroupBox>
+    <hbox slot="header">{$t`Message viewer background`}</hbox>
     <vbox class="background-options">
       <label class="radio">
         <input type="radio" value="white" bind:group={messageViewerBackgroundSetting.value} />
@@ -27,8 +35,13 @@
   import { t } from "../../../l10n/l10n";
   import ViewSwitcher from "../../Mail/LeftPane/ViewSwitcher.svelte";
   import HeaderGroupBox from "../../Shared/HeaderGroupBox.svelte";
-  import { getMessageViewerBackgroundSetting } from "../../Mail/Message/messageViewerAppearance";
+  import MessageContentRenderingOptions from "./MessageContentRenderingOptions.svelte";
+  import {
+    getMessageContentRenderingSetting,
+    getMessageViewerBackgroundSetting,
+  } from "../../Mail/Message/messageViewerAppearance";
 
+  let messageContentRenderingSetting = getMessageContentRenderingSetting();
   let messageViewerBackgroundSetting = getMessageViewerBackgroundSetting();
 </script>
 
@@ -39,6 +52,9 @@
   }
   .background-options {
     gap: 8px;
+  }
+  .subtitle {
+    margin-block-end: 16px;
   }
   .radio {
     align-items: center;

@@ -23,6 +23,7 @@ vi.mock("../../../frontend/Mail/LeftPane/SearchSwitcher.svelte", () => ({
 
 import { onKeyOnList } from "../../../frontend/Mail/Message/MessageKeyboard";
 import { selectedMessage, selectedMessages } from "../../../frontend/Mail/Selected";
+import { deleteMessagesFromUI } from "../../../frontend/Mail/mailDeleteUndo";
 import { focusMailPane } from "../../../frontend/MainWindow/paneFocus";
 
 describe("mail keyboard shortcuts", () => {
@@ -33,11 +34,13 @@ describe("mail keyboard shortcuts", () => {
     previousMessage = get(selectedMessage);
     previousMessages = get(selectedMessages);
     focusMailPane();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     selectedMessage.set(previousMessage!);
     selectedMessages.set(previousMessages);
+    document.body.replaceChildren();
   });
 
   test("оставляет Cmd+Q системному завершению работы macOS", async () => {
@@ -72,5 +75,25 @@ describe("mail keyboard shortcuts", () => {
 
     expect(markRead).toHaveBeenCalledWith(true);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  test("не удаляет письма при Backspace в поле поиска", async () => {
+    let message = { nextMessage: vi.fn(() => null) } as unknown as EMail;
+    selectedMessage.set(message);
+    selectedMessages.set(new ArrayColl([message]));
+
+    let input = document.createElement("input");
+    document.body.append(input);
+    let dispatchedEvent: KeyboardEvent | null = null;
+    input.addEventListener("keydown", event => {
+      dispatchedEvent = event;
+      void onKeyOnList(event);
+    });
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    await Promise.resolve();
+
+    expect(deleteMessagesFromUI).not.toHaveBeenCalled();
+    expect(dispatchedEvent?.defaultPrevented).toBe(false);
   });
 });

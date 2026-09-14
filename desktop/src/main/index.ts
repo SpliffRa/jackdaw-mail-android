@@ -7,6 +7,83 @@ import icon from '../../build/icon.png?asset'
 import { installSignalServiceCATrust } from './signalServiceCA'
 import { connectOAuth2Window } from './oauth2Window'
 import { getSpellcheckSuggestions } from './spellcheck'
+import {
+  nativeMenuActionChannel,
+  nativeMenuActions,
+  nativeMenuLabelsChannel,
+  type NativeMenuAction,
+  type NativeMenuLabels,
+} from '../../../app/logic/util/nativeMenu'
+
+let primaryWindow: BrowserWindow | null = null;
+const pendingNativeMenuActions = new WeakMap<BrowserWindow, NativeMenuAction>();
+let currentNativeMenuLabels: NativeMenuLabels = {
+  about: 'About Jackdaw Mail',
+  services: 'Services',
+  hide: 'Hide Jackdaw Mail',
+  hideOthers: 'Hide Others',
+  showAll: 'Show All',
+  quit: 'Quit Jackdaw Mail',
+  file: 'File',
+  new: 'New',
+  email: 'Email',
+  calendarEvent: 'Calendar event',
+  contact: 'Contact',
+  close: 'Close',
+  edit: 'Edit',
+  undo: 'Undo',
+  redo: 'Redo',
+  cut: 'Cut',
+  copy: 'Copy',
+  paste: 'Paste',
+  selectAll: 'Select All',
+  view: 'View',
+  mail: 'Mail',
+  calendar: 'Calendar',
+  contacts: 'Contacts',
+  files: 'Files',
+  chat: 'Chat',
+  reports: 'Reports',
+  search: 'Search',
+  currentApp: 'Current app',
+  toggleDevTools: 'Toggle Developer Tools',
+  resetZoom: 'Reset Zoom',
+  zoomIn: 'Zoom In',
+  zoomOut: 'Zoom Out',
+  fullscreen: 'Toggle Fullscreen',
+  message: 'Message',
+  reply: 'Reply',
+  replyAll: 'Reply all',
+  forward: 'Forward',
+  markReadUnread: 'Mark as read/unread',
+  archive: 'Archive',
+  delete: 'Delete',
+  tools: 'Tools',
+  getMail: 'Get mail',
+  settings: 'Settings',
+  window: 'Window',
+  minimize: 'Minimize',
+  zoom: 'Zoom',
+  front: 'Bring All to Front',
+};
+const nativeMenuLabelKeys = Object.keys(currentNativeMenuLabels) as (keyof NativeMenuLabels)[];
+
+ipcMain.on(nativeMenuLabelsChannel, (_event, labels: unknown) => {
+  if (!isNativeMenuLabels(labels)) {
+    return;
+  }
+  currentNativeMenuLabels = labels;
+  createMenu();
+});
+
+function isNativeMenuLabels(value: unknown): value is NativeMenuLabels {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const labels = value as Record<string, unknown>;
+  return nativeMenuLabelKeys.every(key =>
+    typeof labels[key] === 'string' && (labels[key] as string).length <= 200);
+}
 
 async function createWindow(): Promise<void> {
   try {
@@ -34,6 +111,19 @@ async function createWindow(): Promise<void> {
         backgroundThrottling: false,
       }
     })
+    primaryWindow = mainWindow;
+    mainWindow.webContents.on('did-finish-load', () => {
+      const action = pendingNativeMenuActions.get(mainWindow);
+      if (!action) {
+        return;
+      }
+      pendingNativeMenuActions.delete(mainWindow);
+      setTimeout(() => {
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(nativeMenuActionChannel, action);
+        }
+      }, 0);
+    });
     setMainWindow(mainWindow);
 
     if (process.platform == "linux" && app.commandLine.getSwitchValue("ozone-platform") == "wayland") {
@@ -50,6 +140,11 @@ async function createWindow(): Promise<void> {
     }
 
     mainWindow.on('closed', () => shutdownBackend().catch(console.error));
+    mainWindow.on('closed', () => {
+      if (primaryWindow === mainWindow) {
+        primaryWindow = null;
+      }
+    });
 
     /** Ensure that new web windows are opened in the browser, not inside our app.
      *
@@ -103,26 +198,140 @@ async function createWindow(): Promise<void> {
   }
 }
 
+function sendNativeMenuAction(action: NativeMenuAction): void {
+  const window = primaryWindow && !primaryWindow.isDestroyed()
+    ? primaryWindow
+    : BrowserWindow.getFocusedWindow();
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  if (window.webContents.isLoadingMainFrame()) {
+    pendingNativeMenuActions.set(window, action);
+    return;
+  }
+  setTimeout(() => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(nativeMenuActionChannel, action);
+    }
+  }, 0);
+}
+
+function menuItem(
+  label: string,
+  action: NativeMenuAction,
+  accelerator?: string,
+): MenuItemConstructorOptions {
+  return {
+    label,
+    accelerator,
+    click: () => sendNativeMenuAction(action),
+  };
+}
+
 function createMenu() {
-  // <copied from="https://github.com/electron/electron/blob/main/lib/browser/default-menu.ts#L48-L60">
-  const macAppMenu: MenuItemConstructorOptions = { role: 'appMenu' };
+  const labels = currentNativeMenuLabels;
+  const macAppMenu: MenuItemConstructorOptions = {
+    label: app.getName(),
+    submenu: [
+      { role: 'about', label: labels.about },
+      { type: 'separator' },
+      { role: 'services', label: labels.services, submenu: [] },
+      { type: 'separator' },
+      { role: 'hide', label: labels.hide },
+      { role: 'hideOthers', label: labels.hideOthers },
+      { role: 'unhide', label: labels.showAll },
+      { type: 'separator' },
+      { role: 'quit', label: labels.quit },
+    ],
+  };
   const menu = Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [macAppMenu] : []),
-    { role: 'fileMenu' },
-    { role: 'editMenu' },
     {
-      label: 'View',
+      label: labels.file,
       submenu: [
-        { role: 'toggleDevTools' },
+        {
+          label: labels.new,
+          submenu: [
+            menuItem(labels.email, nativeMenuActions.newEmail, 'CommandOrControl+N'),
+            menuItem(labels.calendarEvent, nativeMenuActions.newEvent, 'CommandOrControl+Alt+N'),
+            menuItem(labels.contact, nativeMenuActions.newContact),
+          ],
+        },
         { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
+        { role: 'close', label: labels.close },
+      ],
+    },
+    {
+      label: labels.edit,
+      submenu: [
+        { role: 'undo', label: labels.undo },
+        { role: 'redo', label: labels.redo },
         { type: 'separator' },
-        { role: 'togglefullscreen' }
+        { role: 'cut', label: labels.cut },
+        { role: 'copy', label: labels.copy },
+        { role: 'paste', label: labels.paste },
+        { role: 'selectAll', label: labels.selectAll },
+      ],
+    },
+    {
+      label: labels.view,
+      submenu: [
+        menuItem(labels.mail, nativeMenuActions.openMail, 'CommandOrControl+1'),
+        menuItem(labels.calendar, nativeMenuActions.openCalendar, 'CommandOrControl+2'),
+        menuItem(labels.contacts, nativeMenuActions.openContacts, 'CommandOrControl+3'),
+        menuItem(labels.files, nativeMenuActions.openFiles, 'CommandOrControl+4'),
+        menuItem(labels.chat, nativeMenuActions.openChat, 'CommandOrControl+5'),
+        menuItem(labels.reports, nativeMenuActions.openReports, 'CommandOrControl+6'),
+        { type: 'separator' },
+        {
+          label: labels.search,
+          submenu: [
+            menuItem(labels.currentApp, nativeMenuActions.focusSearch, 'CommandOrControl+K'),
+            menuItem(labels.mail, nativeMenuActions.searchMail),
+            menuItem(labels.calendar, nativeMenuActions.searchCalendar),
+            menuItem(labels.contacts, nativeMenuActions.searchContacts),
+            menuItem(labels.files, nativeMenuActions.searchFiles),
+            menuItem(labels.chat, nativeMenuActions.searchChat),
+          ],
+        },
+        { type: 'separator' },
+        { role: 'toggleDevTools', label: labels.toggleDevTools },
+        { type: 'separator' },
+        { role: 'resetZoom', label: labels.resetZoom },
+        { role: 'zoomIn', label: labels.zoomIn },
+        { role: 'zoomOut', label: labels.zoomOut },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: labels.fullscreen }
       ]
     },
-    { role: 'windowMenu' },
+    {
+      label: labels.message,
+      submenu: [
+        menuItem(labels.reply, nativeMenuActions.reply, 'CommandOrControl+R'),
+        menuItem(labels.replyAll, nativeMenuActions.replyAll, 'CommandOrControl+Shift+R'),
+        menuItem(labels.forward, nativeMenuActions.forward),
+        { type: 'separator' },
+        menuItem(labels.markReadUnread, nativeMenuActions.toggleRead),
+        menuItem(labels.archive, nativeMenuActions.archive),
+        menuItem(labels.delete, nativeMenuActions.delete),
+      ],
+    },
+    {
+      label: labels.tools,
+      submenu: [
+        menuItem(labels.getMail, nativeMenuActions.getMail, 'CommandOrControl+Shift+M'),
+        menuItem(labels.settings, nativeMenuActions.openSettings, 'CommandOrControl+,'),
+      ],
+    },
+    {
+      label: labels.window,
+      submenu: [
+        { role: 'minimize', label: labels.minimize },
+        { role: 'zoom', label: labels.zoom },
+        { type: 'separator' },
+        { role: 'front', label: labels.front },
+      ],
+    },
   ]);
   Menu.setApplicationMenu(menu);
 }

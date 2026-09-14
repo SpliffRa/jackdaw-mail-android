@@ -12,6 +12,11 @@ import { logError, showError } from "../Util/error";
 import { CollectionObserver, type ArrayColl } from "svelte-collections";
 import type { Account } from "../../logic/Abstract/Account";
 import { syncMailTaskbarBadge } from "./mailUnreadCounts";
+import {
+  getMailAccountNotificationSetting,
+  getMailNotificationSound,
+  readMailAccountNotificationSettings,
+} from "./mailNotificationSettings";
 
 export async function newMailListener() {
   appGlobal.emailAccounts.registerObserver(accountsObserver);
@@ -22,6 +27,13 @@ export async function newMailListener() {
 
 export async function showNewMail(messages: EMail[]) {
   if (!messages?.length) {
+    return;
+  }
+
+  let account = messages[0]?.folder?.account;
+  if (account && !readMailAccountNotificationSettings(
+    getMailAccountNotificationSetting(account).value,
+  ).enabled) {
     return;
   }
 
@@ -58,7 +70,14 @@ export async function showNewMail(messages: EMail[]) {
   let body = singleMsg?.text ??
     messages.map(msg => msg.text?.substring(0, 30)).join(", ").substring(0, 160);
 
-  let notification = new SystemNotification(kinds, title, body, "New Mail", "mail-incoming");
+  let notification = new SystemNotification(
+    kinds,
+    title,
+    body,
+    "New Mail",
+    "mail-incoming",
+    account ? getMailNotificationSound(account) : undefined,
+  );
   // Which mailbox received this. With several accounts, or a shared mailbox,
   // the subject alone does not say where the mail landed.
   notification.subtitle = [senderLabel(singleMsg), mailboxLabel(firstMsg)]
