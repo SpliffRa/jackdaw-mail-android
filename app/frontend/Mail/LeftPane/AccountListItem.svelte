@@ -142,7 +142,7 @@
 <style>
   .account-row {
     display: grid;
-    grid-template-columns: 22px 20px minmax(0, 1fr) 3.5rem;
+    grid-template-columns: 22px 20px minmax(0, 1fr) minmax(3.5rem, max-content);
     align-items: center;
     padding-inline-end: 8px;
     padding-block: 4px;
@@ -202,6 +202,7 @@
   }
   .trailing {
     grid-column: 4;
+    min-width: 0;
     align-items: center;
     justify-content: flex-end;
     gap: 2px;

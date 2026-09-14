@@ -313,7 +313,7 @@
 <style>
   .folder {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) 3.5rem;
+    grid-template-columns: auto minmax(0, 1fr) minmax(3.5rem, max-content);
     align-items: center;
     padding-block: 4px;
     padding-inline: 8px 6px;
@@ -376,6 +376,7 @@
   }
   .trailing {
     grid-column: 3;
+    min-width: 0;
     align-items: center;
     justify-content: flex-end;
     gap: 2px;
