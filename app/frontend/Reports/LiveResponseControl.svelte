@@ -346,7 +346,7 @@
       <p class="live-control-kicker">{$t`LIVE SLA`}</p>
       <h2 id="live-control-title">{$t`Live response control`}</h2>
       <p>
-        {$t`Unclaimed messages wait for the working schedule. Reading a message or assigning an employee category takes it into work and starts the SLA immediately, even outside the schedule. Tracking rules below decide which messages belong in this queue.`}
+        {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes from the schedule above.`}
       </p>
     </div>
     <button

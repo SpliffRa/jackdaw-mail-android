@@ -1,7 +1,7 @@
 {
   "hjokuT": "---",
   "3kkSuP": ". Line {0}: {1}",
-  "UZs8kN": "“{0}” was taken into work. The SLA timer is running.",
+  "UZs8kN": "“{0}” was taken into work. The SLA deadline remains based on its received time.",
   "jZ12AE": "(no subject)",
   "QpgBEp": "{0, plural, one { # day} other { # days }}",
   "o7dGee": "{0, plural, one { # mail } other { # mails }}",
@@ -1754,7 +1754,7 @@
   "dDjNC1": "Unanswered requests",
   "EbMPZJ": "Unassigned",
   "u02nY/": "Uncheck all",
-  "e0ARf7": "Unclaimed messages wait for the working schedule. Reading a message or assigning an employee category takes it into work and starts the SLA immediately, even outside the schedule. Tracking rules below decide which messages belong in this queue.",
+  "e0ARf7": "The timer starts when the incoming message is received and counts only working minutes according to the selected mailbox schedule. Reading a message or assigning an employee category only shows who took it into work; it does not reset the SLA.",
   "YyXtnN": "Underline",
   "9uI/rE": "Undo",
   "swA+ZC": "Undo the last change",

@@ -5,7 +5,7 @@
   class:large={ribbonSize == "large"}>
   {#if showNew}
     <vbox class="group new-group" class:hidden={ribbonHidden.new} style:order={ribbonOrders.new}>
-      <button type="button" class="ribbon-btn primary" disabled={!account}
+      <button type="button" class="ribbon-btn primary new-action" disabled={!account}
         title={$t`Write new email`}
         on:click={() => catchErrors(newMail)}>
         <MailPlusIcon size="22px" />
@@ -25,7 +25,7 @@
         <span>{$t`Restore`}</span>
       </button>
     {/if}
-    <button type="button" class="ribbon-btn danger" disabled={!hasSelection}
+    <button type="button" class="ribbon-btn danger delete-action" disabled={!hasSelection}
       title={$t`Delete`}
       on:click={() => catchErrors(deleteSelected)}>
       <TrashIcon size="20px" />
@@ -36,19 +36,19 @@
   <hbox class="divider" aria-hidden="true" />
 
   <vbox class="group row separated" class:hidden={ribbonHidden.reply} style:order={ribbonOrders.reply}>
-    <button type="button" class="ribbon-btn" disabled={!message}
+    <button type="button" class="ribbon-btn reply-action" disabled={!message}
       title={$t`Reply to author`}
       on:click={() => catchErrors(reply)}>
       <ReplyIcon size="20px" />
       <span>{$t`Reply`}</span>
     </button>
-    <button type="button" class="ribbon-btn" disabled={!canReplyAll}
+    <button type="button" class="ribbon-btn reply-all-action" disabled={!canReplyAll}
       title={$t`Reply to all`}
       on:click={() => catchErrors(replyAll)}>
       <ReplyAllIcon size="20px" />
       <span>{$t`Reply all`}</span>
     </button>
-    <button type="button" class="ribbon-btn" disabled={!message}
+    <button type="button" class="ribbon-btn forward-action" disabled={!message}
       title={$t`Forward`}
       on:click={() => catchErrors(forward)}>
       <ForwardIcon size="20px" />
@@ -59,20 +59,25 @@
   <hbox class="divider" aria-hidden="true" />
 
   <vbox class="group row separated" class:hidden={ribbonHidden.organize} style:order={ribbonOrders.organize}>
-    <button type="button" class="ribbon-btn" disabled={!hasSelection}
+    <button type="button" class="ribbon-btn move-action" disabled={!hasSelection}
       bind:this={moveAnchor}
       title={$t`Move`}
       on:click|stopPropagation={() => catchErrors(toggleMove)}>
-      <FolderInputIcon size="20px" />
+      <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
+        <FolderInputIcon size="20px" />
+      </span>
+      <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+        <FolderOpenIcon size="20px" />
+      </span>
       <span>{$t`Move`}</span>
     </button>
-    <button type="button" class="ribbon-btn" disabled={!hasSelection}
+    <button type="button" class="ribbon-btn archive-action" disabled={!hasSelection}
       title={$t`Archive`}
       on:click={() => catchErrors(archiveSelected)}>
       <ArchiveIcon size="20px" />
       <span>{$t`Archive`}</span>
     </button>
-    <button type="button" class="ribbon-btn" disabled={!hasSelection}
+    <button type="button" class="ribbon-btn spam-action" disabled={!hasSelection}
       title={messageSpam ? $t`Mark as not spam` : $t`Mark as spam`}
       on:click={() => catchErrors(toggleSpam)}>
       <svelte:component this={messageSpam ? NotSpamIcon : SpamIcon} size="20px" />
@@ -86,23 +91,28 @@
     <button type="button" class="ribbon-btn" disabled={!hasSelection}
       title={messageRead ? $t`Mark as unread` : $t`Mark as read`}
       on:click={() => catchErrors(toggleRead)}>
-      <MailIcon size="20px" />
+      <span class="ribbon-icon ribbon-icon-default" aria-hidden="true">
+        <MailIcon size="20px" />
+      </span>
+      <span class="ribbon-icon ribbon-icon-hover" aria-hidden="true">
+        <MailOpenIcon size="20px" />
+      </span>
       <span>{messageRead ? $t`Unread` : $t`Mark as read`}</span>
     </button>
-    <button type="button" class="ribbon-btn" class:on={messageStarred} disabled={!hasSelection}
+    <button type="button" class="ribbon-btn flag-action" class:on={messageStarred} disabled={!hasSelection}
       title={$t`Flagged`}
       on:click={() => catchErrors(toggleStar)}>
       <FlagIcon size="20px" />
       <span>{$t`Flag`}</span>
     </button>
-    <button type="button" class="ribbon-btn" class:on={messageImportant} disabled={!hasSelection}
+    <button type="button" class="ribbon-btn important-action" class:on={messageImportant} disabled={!hasSelection}
       title={$t`Important`}
       on:click={() => catchErrors(toggleImportant)}>
       <ImportantIcon size="20px" />
       <span>{$t`Important`}</span>
     </button>
     {#if $availableTags.hasItems}
-      <button type="button" class="ribbon-btn" disabled={!hasSelection}
+      <button type="button" class="ribbon-btn categories-action" disabled={!hasSelection}
         bind:this={catAnchor}
         title={$t`Set categories`}
         on:click|stopPropagation={onCategoriesClick}>
@@ -204,10 +214,12 @@
   import ReplyAllIcon from "lucide-svelte/icons/reply-all";
   import ForwardIcon from "lucide-svelte/icons/forward";
   import FolderInputIcon from "lucide-svelte/icons/folder-input";
+  import FolderOpenIcon from "lucide-svelte/icons/folder-open";
   import ArchiveIcon from "lucide-svelte/icons/archive";
   import SpamIcon from "lucide-svelte/icons/shield-x";
   import NotSpamIcon from "lucide-svelte/icons/shield-off";
   import MailIcon from "lucide-svelte/icons/mail";
+  import MailOpenIcon from "lucide-svelte/icons/mail-open";
   import FlagIcon from "lucide-svelte/icons/flag";
   import ImportantIcon from "lucide-svelte/icons/circle-alert";
   import TagsIcon from "lucide-svelte/icons/tags";
@@ -467,6 +479,9 @@
     display: none;
   }
   .ribbon-btn {
+    --ribbon-hover-color: var(--hover-fg);
+    --ribbon-icon-hover-filter: none;
+    --ribbon-icon-hover-transform: none;
     display: inline-flex;
     flex-direction: column;
     align-items: center;
@@ -485,19 +500,59 @@
     line-height: 0;
     cursor: default;
     flex-shrink: 0;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      outline-color 160ms ease;
   }
   .ribbon-btn :global(svg) {
     display: block;
     width: 18px;
     height: 18px;
     flex-shrink: 0;
+    transform-origin: center;
+    transition:
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 160ms ease,
+      fill 160ms ease,
+      filter 160ms ease;
   }
-  .ribbon-btn span {
+  .ribbon-btn > span:not(.ribbon-icon) {
     display: none;
   }
-  .ribbon-btn:hover:not(:disabled) {
+  .ribbon-btn .ribbon-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  .ribbon-btn .ribbon-icon-hover {
+    display: none;
+  }
+  .ribbon-btn:hover:not(:disabled),
+  .ribbon-btn:focus-visible:not(:disabled) {
     background-color: var(--hover-bg);
-    color: var(--hover-fg);
+    color: var(--ribbon-hover-color);
+  }
+  .ribbon-btn:focus-visible:not(:disabled) {
+    outline: 2px solid color-mix(in srgb, var(--icon-primary) 72%, transparent);
+    outline-offset: 2px;
+  }
+  .ribbon-btn:hover:not(:disabled) :global(svg),
+  .ribbon-btn:focus-visible:not(:disabled) :global(svg) {
+    color: inherit;
+    filter: var(--ribbon-icon-hover-filter);
+    transform: var(--ribbon-icon-hover-transform);
+  }
+  .ribbon-btn:hover:not(:disabled) .ribbon-icon-default,
+  .ribbon-btn:focus-visible:not(:disabled) .ribbon-icon-default {
+    display: none;
+  }
+  .ribbon-btn:hover:not(:disabled) .ribbon-icon-hover,
+  .ribbon-btn:focus-visible:not(:disabled) .ribbon-icon-hover {
+    display: inline-flex;
   }
   .ribbon-btn:disabled {
     opacity: 0.35;
@@ -511,6 +566,64 @@
   .ribbon-btn.on :global(svg) {
     fill: var(--icon-primary);
     color: var(--icon-primary);
+  }
+  .ribbon-btn.new-action {
+    --ribbon-icon-hover-transform: translateY(-1px) scale(1.04);
+  }
+  .ribbon-btn.reply-action {
+    --ribbon-icon-hover-transform: translateX(-2px);
+  }
+  .ribbon-btn.reply-all-action {
+    --ribbon-icon-hover-transform: translateX(-2px) scale(1.04);
+  }
+  .ribbon-btn.forward-action {
+    --ribbon-icon-hover-transform: translateX(2px);
+  }
+  .ribbon-btn.move-action,
+  .ribbon-btn.archive-action {
+    --ribbon-icon-hover-transform: translateY(-1px) scale(1.04);
+  }
+  .ribbon-btn.spam-action {
+    --ribbon-icon-hover-transform: rotate(-4deg) scale(1.04);
+  }
+  .ribbon-btn.flag-action {
+    --ribbon-hover-color: var(--danger-fg);
+    --ribbon-icon-hover-transform: rotate(-5deg) scale(1.04);
+  }
+  .ribbon-btn.flag-action:hover:not(:disabled) :global(svg),
+  .ribbon-btn.flag-action:focus-visible:not(:disabled) :global(svg) {
+    fill: color-mix(in srgb, var(--danger-fg) 22%, transparent);
+  }
+  .ribbon-btn.important-action {
+    --ribbon-hover-color: color-mix(in srgb, var(--danger-fg) 76%, var(--icon-primary));
+    --ribbon-icon-hover-filter: drop-shadow(0 0 3px currentColor);
+    --ribbon-icon-hover-transform: scale(1.08);
+  }
+  .ribbon-btn.categories-action {
+    --ribbon-hover-color: color-mix(in srgb, #3f8f58 88%, var(--main-fg));
+    --ribbon-icon-hover-transform: rotate(-4deg) scale(1.04);
+  }
+  .ribbon-btn.delete-action {
+    --ribbon-hover-color: var(--danger-fg);
+  }
+  .ribbon-btn.delete-action :global(svg path:nth-of-type(4)),
+  .ribbon-btn.delete-action :global(svg path:nth-of-type(5)) {
+    transform-box: view-box;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .ribbon-btn.delete-action :global(svg path:nth-of-type(4)) {
+    transform-origin: 21px 6px;
+  }
+  .ribbon-btn.delete-action :global(svg path:nth-of-type(5)) {
+    transform-origin: 16px 4px;
+  }
+  .ribbon-btn.delete-action:hover:not(:disabled) :global(svg path:nth-of-type(4)),
+  .ribbon-btn.delete-action:focus-visible:not(:disabled) :global(svg path:nth-of-type(4)) {
+    transform: translateY(-2px) rotate(8deg);
+  }
+  .ribbon-btn.delete-action:hover:not(:disabled) :global(svg path:nth-of-type(5)),
+  .ribbon-btn.delete-action:focus-visible:not(:disabled) :global(svg path:nth-of-type(5)) {
+    transform: translateY(-2px) rotate(8deg);
   }
   .tag-dot {
     width: 10px;
@@ -552,7 +665,7 @@
     width: 22px;
     height: 22px;
   }
-  .classic-ribbon.large .ribbon-btn span {
+  .classic-ribbon.large .ribbon-btn > span:not(.ribbon-icon) {
     display: block;
     max-width: 100%;
     overflow: hidden;
@@ -560,9 +673,27 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .classic-ribbon.large .ribbon-btn .ribbon-icon {
+    width: 22px;
+    height: 22px;
+  }
   .classic-ribbon.compact .ribbon-btn {
     width: 28px;
     min-width: 28px;
     height: 28px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ribbon-btn {
+      transition: none;
+    }
+    .ribbon-btn :global(svg),
+    .ribbon-btn.delete-action :global(svg path) {
+      transition: none;
+      transform: none !important;
+    }
+    .ribbon-btn.important-action:hover:not(:disabled) :global(svg),
+    .ribbon-btn.important-action:focus-visible:not(:disabled) :global(svg) {
+      filter: none;
+    }
   }
 </style>

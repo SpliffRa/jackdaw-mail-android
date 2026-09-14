@@ -74,7 +74,7 @@ Desktop на **Electron**, mobile на **Capacitor**, UI — **Svelte + TypeScri
 - **Рабочий календарь:** отдельные часы начала и конца для каждого дня недели; выходные и время вне графика не увеличивают SLA.
 - **Корректный расчёт:** время ответа считается до первого подтверждённого ответа, найденного на сервере или в связанном отправленном письме. Ответы без рабочего интервала помечаются как «вне рабочего времени» и не искажают средние показатели.
 - **Живая очередь:** новые неотвеченные письма появляются в правой боковой панели рядом с почтой. Для каждого письма видны статус, прошедшее время, дедлайн и оставшееся время.
-- **Старт SLA:** письмо, пришедшее в рабочие часы, начинает отсчёт сразу. Нерабочее письмо ждёт рабочего графика, пока его не прочитают или не назначат ему категорию — после этого заданный норматив начинает идти немедленно.
+- **Старт SLA:** норматив всегда считается от момента получения письма и расходует только рабочие минуты по календарю. Прочтение или назначение категории показывает, кто взял письмо в работу, но не сбрасывает SLA.
 - **Напоминания:** интервалы задаются в рабочих минутах (например, 10, 20 и 25), каждое уведомление приходит один раз до появления ответа и открывает нужное письмо.
 - **Правила очереди:** можно исключить категории вроде «Переписка (мы в копии)», отдельно включить или не включать письма без категории, сортировать очередь и убрать неактуальное письмо в архив контроля с возможностью восстановления.
 
@@ -178,7 +178,7 @@ Reports are generated and reviewed inside the app first. HTML is an optional sav
 - **Working calendar:** set a different start and end time for every weekday; weekends and time outside the schedule do not add SLA time.
 - **Reliable timing:** response time ends at the first confirmed reply found by the server or in a linked sent message. Replies with no working interval are marked outside working hours and kept out of averages.
 - **Live queue:** unanswered mail appears in the right sidebar next to the open message. Each item shows status, elapsed time, deadline, and remaining time.
-- **SLA start:** mail received during working hours starts immediately. Mail received outside the schedule waits until the workday unless it is read or assigned an employee category; then the target starts at once.
+- **SLA start:** the target is anchored to the message's received time and counts only working minutes. Reading the message or assigning an employee category identifies who took it into work but never resets the target.
 - **Reminders:** configure working-minute checkpoints such as 10, 20 and 25; each reminder is shown once until the request receives a reply and opens the relevant message.
 - **Queue rules:** exclude categories such as “Переписка (мы в копии)”, choose whether uncategorized messages are included, sort the queue, and archive stale requests with restore support.
 
