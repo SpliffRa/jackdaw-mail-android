@@ -136,7 +136,6 @@ export async function playNotificationSound(
       return;
     }
     let audio = new Audio("sound/new-message.mp3");
-    audio.volume = 0.65;
     activeAudio.add(audio);
     audio.addEventListener("ended", () => activeAudio.delete(audio), { once: true });
     lastSoundAt = now;

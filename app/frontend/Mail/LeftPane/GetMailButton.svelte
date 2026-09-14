@@ -2,7 +2,7 @@
   <RoundButton
     label={folder?.account?.fatalError?.message ?? $t`Get mail`}
     icon={
-      status == Status.Fetching ? FetchingIcon :
+      status == Status.Fetching || externalSync ? DownloadIcon :
       status == Status.New ? NewIcon :
       status == Status.Error ? ErrorIcon :
       status == Status.Done ? DoneIcon :
@@ -22,7 +22,6 @@
   import { appGlobal } from "../../../logic/app";
   import RoundButton from "../../Shared/RoundButton.svelte";
   import DownloadIcon from "lucide-svelte/icons/refresh-cw";
-  import FetchingIcon from "lucide-svelte/icons/arrow-big-down-dash";
   import DoneIcon from "lucide-svelte/icons/check";
   import NewIcon from "lucide-svelte/icons/sparkle";
   import LoginIcon from "lucide-svelte/icons/key-round";
@@ -30,9 +29,7 @@
   import { showError } from "../../Util/error";
   import { sleep } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
-  import { folderSyncing, selectedFolder, setFolderFetchBusy } from "../Selected";
-  import { getContext, onDestroy } from "svelte";
-  import type { Writable } from "svelte/store";
+  import { folderFetchBusy, folderSyncing, selectedFolder } from "../Selected";
 
   export let folder: Folder | null = null; /* in */
   export let iconSize = appGlobal.isMobile ? "24px" : "12px";
@@ -47,19 +44,9 @@
   };
   let status = Status.Waiting;
 
-  $: externalSync = !!folder && $selectedFolder === folder && $folderSyncing;
-  $: busy = !!folder?.id &&
-    (status === Status.Fetching || status === Status.Login || externalSync);
-
-  const rowBusy = getContext<Writable<boolean> | undefined>("folderRowBusy");
-
-  $: rowBusy?.set(busy);
-  $: setFolderFetchBusy(folder, busy);
-
-  onDestroy(() => {
-    rowBusy?.set(false);
-    setFolderFetchBusy(folder, false);
-  });
+  $: externalSync =
+    (!!folder && $selectedFolder === folder && $folderSyncing) ||
+    (!!folder?.id && $folderFetchBusy.has(folder.id));
 
   async function getMail() {
     try {
@@ -97,17 +84,16 @@
   }
   .get-mail.fetching :global(svg) {
     stroke-width: 2px;
-    animation: down 1.5s ease 0s infinite normal ;
+    animation: get-mail-spin 1s linear infinite;
   }
-  @keyframes down {
-    0% {
-      transform: translateY(-3px);
+  @keyframes get-mail-spin {
+    to {
+      transform: rotate(360deg);
     }
-    80% {
-      transform: translateY(3px);
-    }
-    100% {
-      transform: translateY(-3px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .get-mail.fetching :global(svg) {
+      animation: none;
     }
   }
   .get-mail :global(.loader) {

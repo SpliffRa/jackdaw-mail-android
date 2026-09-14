@@ -6,7 +6,7 @@ import type { Collection } from "svelte-collections";
 import { CollectionObserver, type ArrayColl } from "svelte-collections";
 import { writable } from "svelte/store";
 import { appGlobal } from "../../../logic/app";
-import { folderQuickAccessKey } from "./quickAccessUtils";
+import { folderQuickAccessKey, restoreQuickAccessFolder } from "./quickAccessUtils";
 
 export interface FavoriteFolderRef {
   accountId: string;
@@ -112,6 +112,7 @@ export function addFavoriteFolder(folder: Folder): void {
   if (!folder.id || !folder.account?.id || folder.account.protocol == "all") {
     return;
   }
+  restoreQuickAccessFolder(folder);
   if (isFavoriteFolder(folder)) {
     return;
   }

@@ -9,6 +9,7 @@
           selected={selectedFolder === folder}
           showAccountLabel={true}
           removableFromFavorites={true}
+          isDefaultQuickAccess={isDefaultQuickAccessFolder(folder)}
           visibleFavoriteRefs={visibleFavoriteRefs}
           accountLabel={folder.account?.name}
           on:select={onSelectFolder} />
@@ -24,6 +25,7 @@
           selected={selectedFolder === folder}
           showAccountLabel={false}
           removableFromFavorites={false}
+          isDefaultQuickAccess={true}
           accountLabel={folder.account?.name}
           on:select={onSelectFolder} />
       {/if}
@@ -46,7 +48,12 @@
     isFavoriteFolderRef,
     type FavoriteFolderRef,
   } from "./favoriteFolders";
-  import { getDefaultQuickAccessFolders } from "./quickAccessUtils";
+  import {
+    getDefaultQuickAccessFolders,
+    folderQuickAccessKey,
+    isQuickAccessExcluded,
+    quickAccessEpoch,
+  } from "./quickAccessUtils";
   import {
     hiddenFoldersEpoch,
     isHiddenFolder,
@@ -81,12 +88,19 @@
   $: defaultQuickFolders = getDefaultQuickAccessFolders(account);
   $: {
     $hiddenFoldersEpoch;
-    visibleQuickFolders = defaultQuickFolders.filter(folder => !isHiddenFolder(folder));
+    $quickAccessEpoch;
+    visibleQuickFolders = defaultQuickFolders.filter(folder =>
+      !isHiddenFolder(folder) && !isQuickAccessExcluded(folder));
   }
   $: quickFolders = [...userFavorites, ...visibleQuickFolders.filter(f => !isUserFavorite(f, favoriteRefs))];
 
   function isUserFavorite(folder: Folder, refs: FavoriteFolderRef[]): boolean {
     return isFavoriteFolderRef(folder, refs);
+  }
+
+  function isDefaultQuickAccessFolder(folder: Folder): boolean {
+    let key = folderQuickAccessKey(folder);
+    return defaultQuickFolders.some(defaultFolder => folderQuickAccessKey(defaultFolder) == key);
   }
 
   function onSelectFolder(event: CustomEvent<Folder>) {

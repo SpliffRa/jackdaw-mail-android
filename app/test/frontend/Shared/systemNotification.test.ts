@@ -6,6 +6,7 @@ import { getLocalStorage } from "../../../frontend/Util/LocalStorage";
 import { syncMailTaskbarBadge } from "../../../frontend/Mail/mailUnreadCounts";
 import { totalUnreadFromAccounts } from "../../../logic/Mail/MailUnreadBadge";
 import { NotificationKinds, SystemNotification } from "../../../frontend/Shared/SystemNotification";
+import { playNotificationSound } from "../../../frontend/Shared/NotificationSound";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -19,6 +20,31 @@ test("recognizes appbar and taskbar notification kinds", () => {
   expect(kinds.appbar).toBe(true);
   expect(kinds.taskbar).toBe(true);
   expect(kinds.sound).toBe(false);
+});
+
+test("keeps the classic notification sound at the browser default volume", async () => {
+  let storage = new Map<string, string>([
+    ["notifications.sounds", JSON.stringify({ "mail-incoming": "default" })],
+  ]);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
+  });
+  let audio = {
+    play: vi.fn(async () => {}),
+    addEventListener: vi.fn(),
+  };
+  let AudioMock = vi.fn(function() {
+    return audio;
+  });
+  vi.stubGlobal("Audio", AudioMock);
+
+  await playNotificationSound("mail-incoming", { preview: true });
+
+  expect(AudioMock).toHaveBeenCalledWith("sound/new-message.mp3");
+  expect(audio.volume).toBeUndefined();
+  expect(audio.play).toHaveBeenCalledOnce();
 });
 
 test("updates the native badge for taskbar notifications", async () => {

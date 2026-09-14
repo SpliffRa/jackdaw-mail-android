@@ -29,11 +29,6 @@
     {/if}
   </hbox>
   <hbox class="trailing">
-    {#if syncing}
-      <hbox class="folder-sync-status" aria-label={$t`Syncing folder…`} title={$t`Syncing folder…`}>
-        <RefreshCwIcon size="14px" />
-      </hbox>
-    {/if}
     <hbox class="buttons">
       <slot name="buttons" {folder} />
     </hbox>
@@ -89,8 +84,7 @@
   import { type Folder, SpecialFolder, specialFolderNames } from '../../../logic/Mail/Folder';
   import { onDropMail, onDragOverMail } from '../Message/drag';
   import FolderIcon from './FolderIcon.svelte';
-  import RefreshCwIcon from 'lucide-svelte/icons/refresh-cw';
-  import { folderFetchBusy, selectedFolder } from '../Selected';
+  import { selectedFolder } from '../Selected';
   import FolderMenu from './FolderMenu.svelte';
   import FolderNameDialog from './FolderNameDialog.svelte';
   import ConfirmDialog from '../../Shared/ConfirmDialog.svelte';
@@ -99,8 +93,7 @@
   import { catchErrors } from '../../Util/error';
   import { t, gt } from '../../../l10n/l10n';
   import { appGlobal } from '../../../logic/app';
-  import { getContext, setContext } from 'svelte';
-  import { writable } from 'svelte/store';
+  import { getContext } from 'svelte';
   import {
     clearFolderDrag, getDraggedFolder, kFolderDragMIME, startFolderDrag
   } from './folderDrag';
@@ -109,9 +102,6 @@
   export let selected = false;
 
   $: tooltip = gt`${folder.name}\n\n${$folder.countNewArrived} new, ${folder.countUnread} unread, ${folder.countTotal} total`;
-  const rowBusy = writable(false);
-  setContext("folderRowBusy", rowBusy);
-  $: syncing = $rowBusy || !!(folder.id && $folderFetchBusy.has(folder.id));
   $: canDragFolder = !!folder.id && folder.specialFolder == SpecialFolder.Normal &&
     folder.account.isLoggedIn && folder.account.protocol != "all";
 
@@ -387,26 +377,6 @@
   }
   .folder:not(:hover) .buttons {
     display: none;
-  }
-  .folder-sync-status {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: color-mix(in srgb, var(--leftbar-fg) 72%, transparent);
-  }
-  .folder-sync-status :global(svg) {
-    animation: folder-sync-spin 1s linear infinite;
-  }
-  @keyframes folder-sync-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .folder-sync-status :global(svg) {
-      animation: none;
-    }
   }
   .buttons :global(button:hover) {
     background: inherit !important;

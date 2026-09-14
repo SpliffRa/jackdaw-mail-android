@@ -8,6 +8,7 @@ let favoriteFoldersEpoch: any;
 let watchMailFolderTrees: any;
 let enumerateMailAccounts: any;
 let moveFavoriteFolder: any;
+let quickAccessEpoch: any;
 let mounted: ReturnType<typeof mount>[] = [];
 let localStorageValues = new Map<string, string>();
 
@@ -29,6 +30,7 @@ beforeAll(async () => {
   watchMailFolderTrees = (await import("../../../frontend/Mail/LeftPane/favoriteFolders")).watchMailFolderTrees;
   enumerateMailAccounts = (await import("../../../frontend/Mail/LeftPane/favoriteFolders")).enumerateMailAccounts;
   moveFavoriteFolder = (await import("../../../frontend/Mail/LeftPane/favoriteFolders")).moveFavoriteFolder;
+  quickAccessEpoch = (await import("../../../frontend/Mail/LeftPane/quickAccessUtils")).quickAccessEpoch;
 });
 
 afterEach(() => {
@@ -37,11 +39,124 @@ afterEach(() => {
   }
   mounted = [];
   favoriteFoldersEpoch.set(0);
+  quickAccessEpoch.set(0);
   localStorageValues.clear();
   document.body.replaceChildren();
 });
 
 describe("QuickAccessFolders", () => {
+  test("treats a default quick-access folder as visible in favorites", async () => {
+    let folders = new ArrayColl<any>();
+    let account: any = {
+      id: "account-default",
+      name: "Test account",
+      protocol: "owa",
+      dependentAccounts: () => new ArrayColl(),
+      findSpecialFolder: () => null,
+      getAllFolders: () => folders,
+    };
+    let folder: any = {
+      id: "folder-trash",
+      name: "Trash",
+      fullPath: "Trash",
+      account,
+      countUnread: 0,
+      countNewArrived: 0,
+      subscribe(observer: (folder: any, property: string | null, oldValue: any) => void) {
+        observer(this, null, null);
+        return () => {};
+      },
+    };
+    folders.add(folder);
+
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted.push(mount(QuickAccessFolders, {
+      target,
+      props: { accounts: new ArrayColl([account]), account, selectedFolder: null },
+    }));
+    await tick();
+
+    let quickFolder = target.querySelector("button.quick-folder");
+    expect(quickFolder).not.toBeNull();
+    quickFolder!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      clientX: 20,
+      clientY: 20,
+    }));
+    await tick();
+
+    let labels = [...document.querySelectorAll("button.menuitem .label")]
+      .map(element => element.textContent?.trim());
+    expect(labels).toContain("Remove from favorites");
+    expect(labels).not.toContain("Show in favorites");
+
+    let removeButton = [...document.querySelectorAll("button.menuitem")]
+      .find(button => button.textContent?.includes("Remove from favorites"));
+    expect(removeButton).toBeDefined();
+    removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(target.querySelector("button.quick-folder")).toBeNull();
+    expect(localStorageValues.get("mail.folders.hidden")).toBeUndefined();
+  });
+
+  test("keeps a default folder removed when favorite and quick-access objects differ", async () => {
+    let folders = new ArrayColl<any>();
+    let account: any = {
+      id: "account-default-clone",
+      name: "Test account",
+      protocol: "owa",
+      dependentAccounts: () => new ArrayColl(),
+      findSpecialFolder: () => defaultFolder,
+      getAllFolders: () => folders,
+    };
+    let favoriteFolder: any = {
+      id: "folder-trash-clone",
+      name: "Trash",
+      fullPath: "Trash",
+      account,
+      countUnread: 0,
+      countNewArrived: 0,
+      subscribe(observer: (folder: any, property: string | null, oldValue: any) => void) {
+        observer(this, null, null);
+        return () => {};
+      },
+    };
+    let defaultFolder: any = { ...favoriteFolder };
+    folders.add(favoriteFolder);
+    localStorageValues.set("mail.folders.favorites", JSON.stringify([{
+      accountId: account.id,
+      folderId: favoriteFolder.id,
+      folderPath: favoriteFolder.fullPath,
+    }]));
+
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted.push(mount(QuickAccessFolders, {
+      target,
+      props: { accounts: new ArrayColl([account]), account, selectedFolder: null },
+    }));
+    await tick();
+
+    let quickFolder = target.querySelector("button.quick-folder");
+    expect(quickFolder).not.toBeNull();
+    quickFolder!.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      clientX: 20,
+      clientY: 20,
+    }));
+    await tick();
+
+    let removeButton = [...document.querySelectorAll("button.menuitem")]
+      .find(button => button.textContent?.includes("Remove from favorites"));
+    expect(removeButton).toBeDefined();
+    removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await tick();
+
+    expect(target.querySelector("button.quick-folder")).toBeNull();
+  });
+
   test("refreshes a favorite after its folder appears", async () => {
     let folders = new ArrayColl<any>();
     let account: any = {

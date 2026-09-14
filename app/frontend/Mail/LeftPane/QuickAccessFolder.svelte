@@ -24,8 +24,10 @@
       icon={MoveDownIcon}
       disabled={favoriteIndex < 0 || favoriteIndex >= favoriteCount - 1} />
     <MenuDivider />
+  {/if}
+  {#if removableFromFavorites || isDefaultQuickAccess}
     <MenuItem
-      onClick={() => removeFavoriteFolder(folder)}
+      onClick={removeFromFavorites}
       label={$t`Remove from favorites`}
       icon={StarIcon} />
   {:else}
@@ -35,11 +37,6 @@
       icon={StarIcon} />
   {/if}
   <MenuDivider />
-  <MenuItem
-    onClick={hideCurrentFolder}
-    label={$t`Hide folder`}
-    icon={EyeOffIcon}
-    disabled={!folder?.id || folder?.account?.protocol == "all"} />
   <MenuItem
     onClick={openFolderSettings}
     label={$t`Folder properties`}
@@ -56,7 +53,6 @@
   import StarIcon from "lucide-svelte/icons/star";
   import MoveUpIcon from "lucide-svelte/icons/arrow-up";
   import MoveDownIcon from "lucide-svelte/icons/arrow-down";
-  import EyeOffIcon from "lucide-svelte/icons/eye-off";
   import FolderSettingsIcon from "lucide-svelte/icons/folder-cog";
   import { createEventDispatcher } from "svelte";
   import { t } from "../../../l10n/l10n";
@@ -66,7 +62,7 @@
     toggleFavoriteFolder,
     type FavoriteFolderRef,
   } from "./favoriteFolders";
-  import { hideFolder } from "./hiddenFolders";
+  import { excludeQuickAccessFolder } from "./quickAccessUtils";
   import { selectedFolder } from "../Selected";
   import { openFolderProperties } from "../FolderPropertiesPage.svelte";
 
@@ -78,6 +74,7 @@
   export let favoriteIndex = -1;
   export let favoriteCount = 0;
   export let visibleFavoriteRefs: FavoriteFolderRef[] | undefined = undefined;
+  export let isDefaultQuickAccess = false;
 
   const dispatch = createEventDispatcher<{ select: Folder }>();
   let contextMenu: ContextMenu;
@@ -91,13 +88,12 @@
     : folderLabel;
   $: count = folder.countUnread || folder.countNewArrived;
 
-  function hideCurrentFolder(): void {
-    if (!folder?.id || !folder.account || folder.account.protocol == "all") {
-      return;
+  function removeFromFavorites(): void {
+    if (removableFromFavorites) {
+      removeFavoriteFolder(folder);
     }
-    hideFolder(folder);
-    if ($selectedFolder == folder) {
-      $selectedFolder = folder.parent ?? folder.account.inbox ?? null;
+    if (isDefaultQuickAccess) {
+      excludeQuickAccessFolder(folder);
     }
   }
 
