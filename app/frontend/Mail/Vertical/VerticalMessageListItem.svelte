@@ -70,7 +70,7 @@
   </hbox>
 </vbox>
 <ContextMenu bind:this={contextMenu}>
-  <MessageMenu {message} />
+  <MessageMenu {message} onMove={onPopupToggle} />
 </ContextMenu>
 <Popup bind:popupOpen {popupAnchor} placement="bottom-end" boundaryElSel=".message-list-pane">
   {#if $selectedMessages?.length > 1 && $selectedMessages?.contains(message)}
@@ -144,7 +144,7 @@
   // Popup
   let popupAnchor: HTMLElement;
   let popupOpen = false;
-  function onPopupToggle(event) {
+  function onPopupToggle() {
     popupOpen = !popupOpen;
   }
   function onPopupClose() {
@@ -214,13 +214,13 @@
   }
   .date {
     min-width: 0;
-    max-width: 5.25rem;
     flex-shrink: 0;
     justify-content: end;
     font-family: inherit;
     padding-top: 2px;
     font-size: var(--msg-list-fs-sm, 12px);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .subject {
     line-height: 1.3;

@@ -10,6 +10,8 @@ import { Lock } from "../util/flow/Lock";
 import { assert, AbstractFunction } from "../util/util";
 import { gt } from "../../l10n/l10n";
 
+export type MailTransferProgressCallback = (completed: number) => void;
+
 function compareFolderOrder(a: Folder, b: Folder): number {
   if (a.orderPos < b.orderPos) {
     return -1;
@@ -199,8 +201,12 @@ export class Folder extends Observable implements TreeItem<Folder> {
    * instantly, which changes the current selection, so the wrong emails get deleted.
    * (Alternatively, all implementations here would need to make a copy of the array at start.)
    */
-  async moveMessagesHere(messages: Collection<EMail>) {
-    await this.moveOrCopyMessagesHere("move", messages);
+  async moveMessagesHere(messages: Collection<EMail>, onProgress?: MailTransferProgressCallback) {
+    await this.moveOrCopyMessagesHere("move", messages, undefined, onProgress);
+  }
+
+  async moveMessagesToArchiveMailbox(_messages: Collection<EMail>): Promise<void> {
+    throw new AbstractFunction();
   }
 
   /**
@@ -209,8 +215,8 @@ export class Folder extends Observable implements TreeItem<Folder> {
    *
    * All messages must be from the same source folder.
    */
-  async copyMessagesHere(messages: Collection<EMail>) {
-    await this.moveOrCopyMessagesHere("copy", messages);
+  async copyMessagesHere(messages: Collection<EMail>, onProgress?: MailTransferProgressCallback) {
+    await this.moveOrCopyMessagesHere("copy", messages, undefined, onProgress);
   }
 
   /**
@@ -223,7 +229,12 @@ export class Folder extends Observable implements TreeItem<Folder> {
    *   default: true, if target and source folder are the same account, otherwise false
    *   You may want to override that to true for delegate accounts or dependent accounts.
    */
-  protected async moveOrCopyMessagesHere(action: "move" | "copy", messages: Collection<EMail>, sameServer?: boolean) {
+  protected async moveOrCopyMessagesHere(
+    action: "move" | "copy",
+    messages: Collection<EMail>,
+    sameServer?: boolean,
+    onProgress?: MailTransferProgressCallback,
+  ) {
     let sourceFolder = messages.first.folder;
     sameServer ??= this.account == sourceFolder.account;
     assert(sourceFolder, "Need source folder");
@@ -244,12 +255,14 @@ export class Folder extends Observable implements TreeItem<Folder> {
         removedLocally = true;
       }
       if (!sameServer) {
+        let completed = 0;
         for (let message of messages) {
           await message.loadMIME();
           await this.addMessage(message);
           if (action == "move") {
             await message.deleteMessage();
           }
+          onProgress?.(++completed);
         }
         return;
       }
@@ -266,6 +279,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
         }
         removedLocally = false; // already purged from DB; do not restore
       }
+      onProgress?.(messages.length);
     } catch (ex) {
       if (bumpedTargetCount) {
         this.countTotal -= messages.length;

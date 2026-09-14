@@ -32,39 +32,9 @@
       onClick={onClose}
       iconOnly
       icon={CloseIcon}
+      classes="close-button"
       />
   </hbox>
-  {#if !showAccounts}
-    <vbox class="tags">
-      <hbox class="header font-smallest">{$t`Categories`}</hbox>
-      {#if usableTagCombinations($tagCombinations.contents).length}
-        <hbox class="combination-list">
-          {#each usableTagCombinations($tagCombinations.contents) as combination (combination.id)}
-            <button
-              type="button"
-              class="combination-btn"
-              title={$t`Apply category combination`}
-              on:click={() => catchErrors(() => applyCombinationAll(combination))}
-              >
-              <span class="combination-name">{combination.name}</span>
-              <hbox class="combo-dots">
-                {#each resolveCombinationTags(combination) as tag (tag.name)}
-                  <span class="tag-dot" style="--tag-color: {tag.color}" />
-                {/each}
-              </hbox>
-            </button>
-          {/each}
-        </hbox>
-      {/if}
-      <hbox class="tag-list">
-        {#each sortedTagList($availableTags.contents) as tag (tag.name)}
-          <TagBubble {tag}
-            selected={checkedTags.has(tag.name)}
-            on:click={() => catchErrors(() => toggleTagAll(tag))} />
-        {/each}
-      </hbox>
-    </vbox>
-  {/if}
   {#if showAccounts}
     <vbox class="accounts">
       <AccountList accounts={appGlobal.emailAccounts} bind:selectedAccount />
@@ -104,25 +74,49 @@
         </hbox>
       </svelte:fragment>
     </FolderList>
+    {#if archiveMailboxRoot}
+      <vbox class="archive-folders">
+        <hbox class="archive-mailbox-label" title={archiveMailboxRoot.name}>
+          <ArchiveIcon size="14px" />
+          <span>Сетевой архив</span>
+        </hbox>
+        <FolderList
+          folders={archiveMailboxRoot.subFolders}
+          embedded
+          selectedFolder={selectedFolder}
+          on:selectFolder={onSelectFolder}
+          >
+          <svelte:fragment slot="buttons" let:folder>
+            {#if folder != sourceFolder}
+              <Button plain
+                label={$t`Copy`}
+                tooltip={$t`Copy this email to folder ${folder.name}`}
+                onClick={() => onCopyTo(folder)}
+                icon={CopyIcon}
+                iconOnly
+                />
+              <Button plain
+                label={$t`Move`}
+                tooltip={$t`Move this email to folder ${folder.name}`}
+                onClick={() => onMoveTo(folder)}
+                icon={MoveIcon}
+                />
+            {/if}
+          </svelte:fragment>
+        </FolderList>
+      </vbox>
+    {/if}
   </vbox>
 </vbox>
 
 <script lang="ts">
+  import type { MailAccount } from "../../../logic/Mail/MailAccount";
   import type { EMail } from "../../../logic/Mail/EMail";
   import { SpecialFolder, type Folder } from "../../../logic/Mail/Folder";
+  import { ExchangeMailAccount } from "../../../logic/Mail/EWS/ExchangeMailAccount";
   import { selectedMessage, selectedMessages } from "../Selected";
   import { openEMailMessage } from "../open";
-  import { availableTags, sortedTagList, type Tag } from "../../../logic/Abstract/Tag";
-  import {
-    applyTagCombinationToEmails,
-    resolveCombinationTags,
-    sortedTagCombinations,
-    tagCombinations,
-    usableTagCombinations,
-    type TagCombination,
-  } from "../../../logic/Abstract/TagCombination";
   import { appGlobal } from "../../../logic/app";
-  import TagBubble from "../../Shared/Tag/TagBubble.svelte";
   import AccountList from "../LeftPane/AccountList.svelte";
   import FolderList from "../LeftPane/FolderList.svelte";
   import Button from "../../Shared/Button.svelte";
@@ -136,9 +130,9 @@
   import AccountsIcon from "lucide-svelte/icons/share";
   import CloseIcon from "lucide-svelte/icons/x";
   import { ArrayColl, Collection } from "svelte-collections";
-  import { catchErrors } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
-  import { createEventDispatcher } from 'svelte';
+  import { withMailTransferProgress } from "../mailTransferProgress";
+  import { createEventDispatcher, onDestroy } from 'svelte';
   const dispatch = createEventDispatcher<{ close: void }>();
 
   /** Attention
@@ -151,48 +145,31 @@
   let selectedFolder = sourceFolder;
   let selectedFolders = new ArrayColl<Folder>();
   let selectedAccount = sourceFolder.account;
+  let archiveMailboxRoot: Folder | null = null;
+  let observedSelectedAccount: MailAccount | null = null;
+  let selectedAccountUnsubscribe: (() => void) | undefined;
+  let selectedAccountEpoch = 0;
   let selectedMessageIndex = sourceFolder.messages.getKeyForValue(messages.first);
   let wasSelected = $selectedMessage == messages.first; // just safety measure
   let showAccounts = false;
-  let tagsEpoch = 0;
+
+  /** Обновлять список архивных папок после асинхронной загрузки аккаунта. */
+  $: if (selectedAccount !== observedSelectedAccount) {
+    selectedAccountUnsubscribe?.();
+    observedSelectedAccount = selectedAccount;
+    selectedAccountUnsubscribe = selectedAccount.subscribe(() => selectedAccountEpoch++);
+  }
+  $: {
+    selectedAccountEpoch;
+    archiveMailboxRoot = selectedAccount instanceof ExchangeMailAccount
+      ? selectedAccount.archiveMailboxRoot
+      : null;
+  }
+
+  onDestroy(() => selectedAccountUnsubscribe?.());
 
   function onClose() {
     dispatch("close");
-  }
-
-  /* A bare `tagsEpoch;` inside a function body is not a template dependency -
-   * the compiler has to see it in a `$:` statement. */
-  $: checkedTags = collectCheckedTags(tagsEpoch, $availableTags);
-
-  function collectCheckedTags(_epoch: number, tags: Collection<Tag>): Set<string> {
-    return new Set(tags.contents.filter(tag => majorityHasTag(tag)).map(tag => tag.name));
-  }
-
-  function majorityHasTag(tag: Tag): boolean {
-    let list = messages.contents;
-    if (!list.length) {
-      return false;
-    }
-    return list.filter(m => m.tags.contains(tag)).length / list.length > 0.5;
-  }
-
-  async function applyCombinationAll(combination: TagCombination) {
-    await applyTagCombinationToEmails(messages.contents, combination);
-    tagsEpoch++;
-  }
-
-  async function toggleTagAll(tag: Tag) {
-    let remove = majorityHasTag(tag);
-    for (let message of messages) {
-      if (remove) {
-        if (message.tags.contains(tag)) {
-          await message.removeTag(tag);
-        }
-      } else if (!message.tags.contains(tag)) {
-        await message.addTag(tag);
-      }
-    }
-    tagsEpoch++;
   }
 
   async function onDelete() {
@@ -224,19 +201,29 @@
 
   async function onArchive() {
     onClose();
-    for (let message of messages) {
-      await message.moveToArchive();
-    }
+    await withMailTransferProgress(sourceFolder, "move", messages.length, $t`Archive`, async update => {
+      let completed = 0;
+      for (let message of messages) {
+        await message.moveToArchive();
+        update(++completed);
+      }
+    });
     goToNextMessage();
   }
   async function onMoveTo(folder: Folder) {
     onClose();
-    await folder.moveMessagesHere(messages);
+    await withMailTransferProgress(sourceFolder, "move", messages.length, folder.name,
+      update => folder.moveMessagesHere(messages, update));
     goToNextMessage();
   }
   async function onCopyTo(folder: Folder) {
     onClose();
-    await folder.copyMessagesHere(messages);
+    await withMailTransferProgress(sourceFolder, "copy", messages.length, folder.name,
+      update => folder.copyMessagesHere(messages, update));
+  }
+
+  function onSelectFolder(event: CustomEvent<Folder>) {
+    selectedFolder = event.detail;
   }
 
   function goToNextMessage() {
@@ -256,84 +243,88 @@
   .message-popup {
     background-color: var(--leftbar-bg);
     color: var(--leftbar-fg);
+    width: min(32rem, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    min-width: 0;
+    box-sizing: border-box;
+    max-height: var(--popup-max-height, calc(100dvh - 16px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .message-popup :global(.header) {
     display: flex !important;
     height: unset !important;
   }
-  .header {
-    color: grey;
-  }
-  .header,
   .message-popup :global(grid > .header) {
     margin-block-start: 0px;
     margin-block-end: 4px;
   }
-  .tags {
-    margin: 10px;
-    max-width: 300px;
-  }
-  .tag-list {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .combination-list {
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-block-end: 8px;
-  }
-  .combination-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--main-bg);
-    color: var(--main-fg);
-    cursor: pointer;
-  }
-  .combination-btn:hover,
-  .combination-btn:focus-visible {
-    background: color-mix(in srgb, var(--fg) 8%, transparent);
-    outline: none;
-  }
-  .combination-name {
-    font-size: 0.85em;
-    max-width: 10em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .combo-dots {
-    gap: 3px;
-    align-items: center;
-  }
-  .tag-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 1000px;
-    background-color: var(--tag-color);
-    flex-shrink: 0;
-  }
   .accounts {
-    height: 10em;
+    height: min(10em, 25dvh);
+    min-height: 0;
+    min-width: 0;
   }
   .accounts :global(.account-list) {
     flex: 1;
+    min-width: 0;
   }
   .folders {
-    height: 22em;
+    width: 100%;
+    height: min(22em, 50dvh);
+    min-height: 0;
+    min-width: 0;
+  }
+  .folders > :global(.folder-list) {
+    min-height: 0;
+    min-width: 0;
+  }
+  .archive-folders {
+    flex: 1 1 0;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+  }
+  .archive-mailbox-label {
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px 4px;
+    border-block-start: 1px solid var(--border);
+    color: var(--leftbar-fg);
+    font-size: 0.9em;
+    font-weight: 500;
+  }
+  .archive-mailbox-label :global(svg) {
+    flex: 0 0 auto;
   }
   .buttons {
+    align-self: stretch;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     border-top: 1px solid var(--border);
   }
   .buttons > :global(button:not(:first-child)) {
     border-left: 1px solid var(--border);
   }
   .buttons > :global(button) {
-    padding: 8px 16px;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 8px 12px;
     border-radius: 0px;
+  }
+  .buttons > :global(button.close-button) {
+    flex: 0 0 48px;
+  }
+  .buttons :global(.icon) {
+    flex: 0 0 auto;
+  }
+  .buttons :global(.label) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* TODO fix colors on hover
   .buttons > :global(.selected button:hover:not(.disabled)) {

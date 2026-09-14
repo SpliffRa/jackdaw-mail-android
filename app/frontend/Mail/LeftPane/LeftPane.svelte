@@ -7,7 +7,7 @@
     {/if}
     <hbox flex />
     {#if activeTab == SearchView.Folder}
-      <GetMailButton folder={selectedFolder ?? selectedAccount?.inbox} iconSize="16px" />
+      <GetMailButton folder={selectedFolder ?? selectedAccount?.inbox} iconSize="16px" showProgress />
     {/if}
   </hbox>
 

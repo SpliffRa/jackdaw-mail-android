@@ -1,6 +1,6 @@
 import { ExchangeFolder } from "./ExchangeFolder";
 import { MessageFlagsPidTag, IconIndexPidTag } from "./ExchangeEMail";
-import { SpecialFolder } from "../Folder";
+import { SpecialFolder, type MailTransferProgressCallback } from "../Folder";
 import type { EMail } from "../EMail";
 import { getSharedPersons, ExchangePermission } from "./ExchangePermission";
 import { EWSEMail } from "./EWSEMail";
@@ -11,7 +11,7 @@ import type { EMailCollection } from "../Store/EMailCollection";
 import { CreateMIME } from "../SMTP/CreateMIME";
 import type { PersonUID } from "../../Abstract/PersonUID";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
-import { base64ToUint8Array, blobToBase64, ensureArray } from "../../util/util";
+import { assert, base64ToUint8Array, blobToBase64, ensureArray } from "../../util/util";
 import { ArrayColl, type Collection } from "svelte-collections";
 
 export const kMaxCount = 50;
@@ -26,11 +26,14 @@ export class EWSFolder extends ExchangeFolder {
     return new EWSEMail(this);
   }
 
-  fromXML(xmljs: any) {
+  fromXML(xmljs: any, archiveMailbox = false) {
     this.id = sanitize.nonemptystring(xmljs.FolderId.Id);
     this.name = sanitize.nonemptylabel(xmljs.DisplayName);
     this.countTotal = sanitize.integer(xmljs.TotalCount);
     this.countUnread = sanitize.integer(xmljs.UnreadCount);
+    this.isArchiveMailbox = archiveMailbox;
+    this.isArchiveMailboxRoot = false;
+    this.specialFolder = SpecialFolder.Normal;
     switch (xmljs.DistinguishedFolderId) { // allowed to be null
     case "inbox":
       this.specialFolder = SpecialFolder.Inbox;
@@ -46,6 +49,13 @@ export class EWSFolder extends ExchangeFolder {
       break;
     case "deleteditems":
       this.specialFolder = SpecialFolder.Trash;
+      break;
+    case "archive":
+    case "archivemsgfolderroot":
+    case "archiveinbox":
+      if (!archiveMailbox) {
+        this.specialFolder = SpecialFolder.Archive;
+      }
       break;
     //case "outbox":
     }
@@ -398,11 +408,47 @@ export class EWSFolder extends ExchangeFolder {
     return this.messages.find((m: EWSEMail) => m.itemID == id) as EWSEMail | undefined;
   }
 
-  protected async moveOrCopyMessagesHere(action: "move" | "copy", messages: Collection<EMail>) {
+  async moveMessagesToArchiveMailbox(messages: Collection<EMail>): Promise<void> {
+    assert(this.account.archiveMailboxRoot, "Archive mailbox is not available");
+    assert(!this.isArchiveMailbox, "Message is already in the archive mailbox");
+    let sourceMessages = messages.contents as EWSEMail[];
+    assert(sourceMessages.length > 0, "Need messages");
+    assert(sourceMessages.every(message => message.folder === this), "All messages must be from the same folder");
+    assert(sourceMessages.every(message => message.itemID), "Message has no server ID");
+
+    let request = {
+      m$ArchiveItem: {
+        m$ArchiveSourceFolderId: {
+          t$FolderId: {
+            Id: this.id,
+          },
+        },
+        m$ItemIds: {
+          t$ItemId: sourceMessages.map(message => ({
+            Id: message.itemID,
+          })),
+        },
+      },
+    };
+    let results = ensureArray(await this.account.callEWS(request));
+    for (let result of results) {
+      if (result.ResponseClass == "Error") {
+        throw new EWSItemError(result, request);
+      }
+    }
+    await this.removeMessagesAfterServerMove(messages);
+  }
+
+  protected async moveOrCopyMessagesHere(
+    action: "move" | "copy",
+    messages: Collection<EMail>,
+    _sameServer?: boolean,
+    onProgress?: MailTransferProgressCallback,
+  ) {
     // We can copy messages to and from shared folders for the main account.
     let mainAccount = this.account.mainAccount ?? this.account;
     let sameServer = messages.contents.every(msg => msg.folder.account == mainAccount || msg.folder.account.mainAccount == mainAccount);
-    await super.moveOrCopyMessagesHere(action, messages, sameServer);
+    await super.moveOrCopyMessagesHere(action, messages, sameServer, onProgress);
   }
 
   protected async moveOrCopyMessagesOnServer(action: "move" | "copy", messages: Collection<EWSEMail>) {

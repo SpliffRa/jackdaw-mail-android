@@ -59,7 +59,7 @@
     <!-- right -->
     <hbox class="menu button">
       <ButtonMenu bind:isMenuOpen>
-        <MessageMenu bind:message {printE} />
+        <MessageMenu bind:message {printE} onMove={onPopupToggle} />
         <DisplayModeSwitcher />
       </ButtonMenu>
     </hbox>
@@ -136,7 +136,7 @@
   // Folder Popup
   let popupAnchorE: HTMLElement;
   let popupOpen = false;
-  function onPopupToggle(event) {
+  function onPopupToggle() {
     popupOpen = !popupOpen;
   }
   function onPopupClose() {

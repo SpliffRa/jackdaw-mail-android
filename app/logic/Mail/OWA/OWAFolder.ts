@@ -1,6 +1,6 @@
 import { ExchangeFolder } from "../EWS/ExchangeFolder";
 import { MessageFlagsPidTag } from "../EWS/ExchangeEMail";
-import { SpecialFolder } from "../Folder";
+import { SpecialFolder, type MailTransferProgressCallback } from "../Folder";
 import { computeEMailContact, type EMail } from "../EMail";
 import { getSharedPersons, ExchangePermission } from "../EWS/ExchangePermission";
 import { OWAEMail, owaCategoriesConfirmedAbsent, owaCategoriesPresent } from "./OWAEMail";
@@ -14,7 +14,7 @@ import {
   owaSyncFolderItemsRequest,
   owaFolderCountsRequest, owaFolderMarkAllMsgsReadRequest,
   owaGetNewMsgHeadersRequest, owaGetMessageActionFlagsRequest, owaMoveEntireFolderRequest,
-  owaMoveOrCopyMsgsIntoFolderRequest, owaRenameFolderRequest,
+  owaMoveOrCopyMsgsIntoFolderRequest, owaArchiveMessagesRequest, owaRenameFolderRequest,
   owaSetFolderPermissionsRequest, owaGetPermissionsRequest
 } from "./Request/OWAFolderRequests";
 import type { EMailCollection } from "../Store/EMailCollection";
@@ -96,7 +96,7 @@ export class OWAFolder extends ExchangeFolder {
     this.countUnread = countUnread;
   }
 
-  fromJSON(json: any) {
+  fromJSON(json: any, archiveMailbox = false) {
     // Fall back rather than throw: `sanitize.integer()` and
     // `sanitize.nonemptylabel()` throw when the field is absent, and this runs
     // inside the hierarchy listing, where one odd folder would otherwise leave
@@ -104,6 +104,9 @@ export class OWAFolder extends ExchangeFolder {
     let countTotal = sanitize.integer(json.TotalCount, this.countTotal);
     let countUnread = sanitize.integer(json.UnreadCount, this.countUnread);
     this.applyServerCounts(countTotal, countUnread);
+    this.isArchiveMailbox = archiveMailbox;
+    this.isArchiveMailboxRoot = false;
+    this.specialFolder = SpecialFolder.Normal;
     this.id = sanitize.nonemptystring(json.FolderId?.Id ?? json.FolderId?.id ?? json.FolderId, "");
     this.name = sanitize.nonemptylabel(json.DisplayName, this.name ?? this.id);
     let distinguishedFolderID = typeof json.DistinguishedFolderId == "string"
@@ -128,7 +131,9 @@ export class OWAFolder extends ExchangeFolder {
     case "archive":
     case "archivemsgfolderroot":
     case "archiveinbox":
-      this.specialFolder = SpecialFolder.Archive;
+      if (!archiveMailbox) {
+        this.specialFolder = SpecialFolder.Archive;
+      }
       break;
     //case "outbox":
     }
@@ -270,6 +275,41 @@ export class OWAFolder extends ExchangeFolder {
       if (completed) {
         this.completeInitialSync();
         this.backfillMessageActionFlags();
+      }
+    }
+  }
+
+  async moveMessagesToArchiveMailbox(messages: Collection<EMail>): Promise<void> {
+    assert(this.account.archiveMailboxRoot, "Archive mailbox is not available");
+    assert(!this.isArchiveMailbox, "Message is already in the archive mailbox");
+    let sourceMessages = messages.contents as OWAEMail[];
+    assert(sourceMessages.length > 0, "Need messages");
+    assert(sourceMessages.every(message => message.folder === this), "All messages must be from the same folder");
+    assert(sourceMessages.every(message => message.itemID), "Message has no server ID");
+
+    let itemIDs = sourceMessages.map(message => message.itemID as string);
+    for (let itemID of itemIDs) {
+      this.deletions.add(itemID);
+    }
+    let serverMoved = false;
+    try {
+      let result = await this.account.callOWA(owaArchiveMessagesRequest(this.id, sourceMessages));
+      let responseItems = result?.ResponseMessages?.Items
+        ?? (result?.ResponseClass || result?.ResponseCode ? [result] : []);
+      for (let responseItem of ensureArray(responseItems)) {
+        if (responseItem.ResponseClass == "Error") {
+          throw new OWAError({ json: responseItem });
+        }
+      }
+      serverMoved = true;
+      await this.removeMessagesAfterServerMove(messages);
+    } finally {
+      for (let itemID of itemIDs) {
+        if (serverMoved) {
+          this.releaseDeletionAfterGracePeriod(itemID);
+        } else {
+          this.deletions.delete(itemID);
+        }
       }
     }
   }
@@ -1237,14 +1277,19 @@ export class OWAFolder extends ExchangeFolder {
     }
   }
 
-  protected async moveOrCopyMessagesHere(action: "move" | "copy", messages: Collection<EMail>) {
+  protected async moveOrCopyMessagesHere(
+    action: "move" | "copy",
+    messages: Collection<EMail>,
+    _sameServer?: boolean,
+    onProgress?: MailTransferProgressCallback,
+  ) {
     // We can copy messages to and from shared folders for the main account,
     // but the messages all have to be from the same account.
     let sourceAccount = messages.first.folder.account;
     let sameServer = (sourceAccount.mainAccount ?? sourceAccount) == (this.account.mainAccount ?? this.account) &&
       messages.contents.every(msg => msg.folder.account == sourceAccount);
     if (!sameServer) {
-      await super.moveOrCopyMessagesHere(action, messages, false);
+      await super.moveOrCopyMessagesHere(action, messages, false, onProgress);
       return;
     }
 
@@ -1254,6 +1299,7 @@ export class OWAFolder extends ExchangeFolder {
 
     let hardError: Error | null = null;
     let needItemIdFix: OWAEMail[] = [];
+    let completed = 0;
     for (let msg of messages) {
       let owaMsg = msg as OWAEMail;
       let oldItemID = owaMsg.itemID;
@@ -1282,6 +1328,12 @@ export class OWAFolder extends ExchangeFolder {
           // Keep through the next FindItem reconciles so sync cannot wipe a
           // just-restored message before Exchange returns it in the listing.
           this.markPreservedMoved(owaMsg);
+          // A locally deleted header can retain the old completion flag even
+          // though its row and MIME body are gone. Persist it as a header-only
+          // message; its body will be downloaded when it is opened.
+          if (owaMsg.downloadComplete && !owaMsg.dbID && !owaMsg.rawText && !owaMsg.rawHTMLDangerous) {
+            owaMsg.downloadComplete = false;
+          }
           await owaMsg.saveMetadataLocally();
           this.addMessagesIfAbsent([owaMsg]);
           this.notifyObservers();
@@ -1295,10 +1347,12 @@ export class OWAFolder extends ExchangeFolder {
             this.countUnread++;
           }
         }
+        onProgress?.(++completed);
       } catch (ex) {
         if (ex instanceof OWAError && ex.type == "ErrorItemNotFound" && action == "move") {
           sourceFolder.messages.remove(msg);
           await msg.deleteMessageLocally().catch(() => null);
+          onProgress?.(++completed);
         } else {
           hardError ??= ex instanceof Error ? ex : new Error(String(ex));
         }

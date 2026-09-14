@@ -284,7 +284,30 @@ export function owaMoveOrCopyMsgsIntoFolderRequest(
   });
 }
 
-export function owaFindFoldersRequest(deep: boolean, sharedFolderRoot?: string | null, username?: string): OWARequest {
+/** Переместить сообщения из основной папки в соответствующую папку сетевого архива. */
+export function owaArchiveMessagesRequest(sourceFolderID: string, messages: OWAEMail[]): OWARequest {
+  return new OWARequest("ArchiveItem", {
+    __type: "ArchiveItemRequest:#Exchange",
+    ArchiveSourceFolderId: {
+      __type: "TargetFolderId:#Exchange",
+      BaseFolderId: {
+        __type: "FolderId:#Exchange",
+        Id: sourceFolderID,
+      },
+    },
+    ItemIds: messages.map(message => ({
+      __type: "ItemId:#Exchange",
+      Id: message.itemID,
+    })),
+  });
+}
+
+export function owaFindFoldersRequest(
+  deep: boolean,
+  sharedFolderRoot?: string | null,
+  username?: string,
+  rootFolderID = "msgfolderroot",
+): OWARequest {
   return new OWARequest("FindFolder", {
     __type: "FindFolderRequest:#Exchange",
     FolderShape: {
@@ -317,7 +340,7 @@ export function owaFindFoldersRequest(deep: boolean, sharedFolderRoot?: string |
     }
     : {
       __type: "DistinguishedFolderId:#Exchange",
-      Id: "msgfolderroot",
+      Id: rootFolderID,
     }],
     ReturnParentFolder: true,
     Traversal: deep ? "Deep" : "Shallow",

@@ -298,6 +298,10 @@ export class EMail extends Message {
     await archive.moveMessageHere(this);
   }
 
+  async moveToArchiveMailbox() {
+    await this.folder.moveMessagesToArchiveMailbox(new ArrayColl([this]));
+  }
+
   /** Move out of Trash/Spam back to Inbox (restore). */
   async restoreFromTrash() {
     let account = this.folder.account;
@@ -316,6 +320,7 @@ export class EMail extends Message {
 
   async deleteMessageLocally() {
     this.isDeleted = true;
+    this.downloadComplete = false;
     this.folder.messages.remove(this);
     await this.storage.deleteMessage(this);
     let contentDeletes = new PromiseAllDone();

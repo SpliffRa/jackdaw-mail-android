@@ -18,7 +18,7 @@
 
 <script lang="ts">
   import { createPopperActions } from 'svelte-popperjs';
-  import type { Placement } from '@popperjs/core';
+  import type { Modifier, Placement } from '@popperjs/core';
   import { onDestroy } from 'svelte';
 
   /** in/out */
@@ -48,10 +48,62 @@
   export let dismissOnPointerLeave = false;
   export let dismissDelayMs = 350;
 
+  const popupBoundaryPadding = 8;
+  const popupBoundary = resolvePopupBoundary(popupAnchor, boundaryElSel);
   const [popupRef, popupContent, getInstance] = createPopperActions({
     placement: placement,
     strategy: 'fixed',
   });
+  let fitPopupMaxHeight: number | null = null;
+  let fitPopupUpdatePending = false;
+  const fitPopupToBoundary: Modifier<"fitPopupToBoundary", { padding: number }> = {
+    name: "fitPopupToBoundary",
+    enabled: true,
+    phase: "beforeMain",
+    options: { padding: popupBoundaryPadding },
+    fn({ state, options }) {
+      const basePlacement = state.placement.split("-")[0];
+      if (basePlacement != "top" && basePlacement != "bottom") {
+        if (fitPopupMaxHeight != null) {
+          fitPopupMaxHeight = null;
+          state.elements.popper.style.removeProperty("--popup-max-height");
+        }
+        return;
+      }
+
+      const boundaryRect = popupBoundary && popupBoundary != document.body && popupBoundary != document.documentElement
+        ? popupBoundary.getBoundingClientRect()
+        : { top: 0, bottom: window.innerHeight };
+      const referenceRect = state.elements.reference.getBoundingClientRect();
+      // Передаём flip максимум свободного места с обеих сторон, чтобы он
+      // выбрал сторону с большим пространством до расчёта скролл-контейнера.
+      const availableHeight = Math.max(
+        referenceRect.top - boundaryRect.top - options.padding,
+        boundaryRect.bottom - referenceRect.bottom - options.padding,
+      );
+      const nextMaxHeight = Math.max(1, Math.floor(availableHeight));
+      const nextMaxHeightValue = `${nextMaxHeight}px`;
+      if (
+        fitPopupMaxHeight == nextMaxHeight &&
+        state.elements.popper.style.getPropertyValue("--popup-max-height") ==
+          nextMaxHeightValue
+      ) {
+        return;
+      }
+      fitPopupMaxHeight = nextMaxHeight;
+      state.elements.popper.style.setProperty(
+        "--popup-max-height",
+        nextMaxHeightValue,
+      );
+      if (!fitPopupUpdatePending) {
+        fitPopupUpdatePending = true;
+        queueMicrotask(() => {
+          fitPopupUpdatePending = false;
+          void getInstance()?.update();
+        });
+      }
+    },
+  };
   const popupOptions = {
     modifiers: [
       {
@@ -61,12 +113,23 @@
         allow: true,
       },
       {
-        name: 'preventOverflow',
+        name: 'flip',
         options: {
-          padding: 8,
-          boundary: document.querySelector(boundaryElSel),
+          padding: popupBoundaryPadding,
+          boundary: popupBoundary,
+          fallbackPlacements: fallbackPopupPlacements(placement),
+          fallbackStrategy: "bestFit",
         },
       },
+      {
+        name: 'preventOverflow',
+        options: {
+          padding: popupBoundaryPadding,
+          boundary: popupBoundary,
+          altAxis: true,
+        },
+      },
+      fitPopupToBoundary,
       disableReferenceHide ? { name: 'hide', enabled: false } : { name: 'hide' },
     ],
   };
@@ -74,6 +137,33 @@
   let leaveTimer: ReturnType<typeof setTimeout> | null = null;
   let anchorLeaveHook: { destroy?(): void } | null = null;
   let anchorElement: HTMLElement | null = null;
+
+  function resolvePopupBoundary(
+    anchor: HTMLElement | { getBoundingClientRect(): DOMRect },
+    selector: string,
+  ): Element | null {
+    if (selector == "body") {
+      return document.body;
+    }
+    if (anchor instanceof HTMLElement) {
+      const closestBoundary = anchor.closest(selector);
+      if (closestBoundary) {
+        return closestBoundary;
+      }
+    }
+    return document.querySelector(selector);
+  }
+
+  function fallbackPopupPlacements(value: Placement): Placement[] {
+    const [basePlacement, variation] = value.split("-");
+    if (basePlacement != "top" && basePlacement != "bottom") {
+      return [];
+    }
+    const opposite = basePlacement == "top" ? "bottom" : "top";
+    return [
+      (variation ? `${opposite}-${variation}` : opposite) as Placement,
+    ];
+  }
 
   function clearLeaveTimer() {
     if (leaveTimer) {

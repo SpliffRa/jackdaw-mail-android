@@ -32,7 +32,10 @@ import { isNetworkError } from "../../util/netUtil";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
 import { assert, ensureArray, NotReached, NotSupported, type Json } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
-import { ArrayColl } from "svelte-collections";
+import { ArrayColl, type Collection } from "svelte-collections";
+
+/** Distinguished root of the optional Exchange Online Archive mailbox. */
+const kArchiveMailboxRoot = "archivemsgfolderroot";
 
 export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
   readonly protocol: string = "ews";
@@ -54,6 +57,8 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
    * msgfolderroot: if this is an account shared with us
    * inbox: if this is an inbox shared with us */
   protected sharedFolderRoot: "msgfolderroot" | "inbox" | null;
+  /** ID of the primary mailbox root returned by the last hierarchy request. */
+  protected msgFolderRootID: string | undefined;
   /** AbortController for streaming notifications */
   protected notificationAbort: Record<string, AbortController> = {};
   /** SubscriptionId for unsubscribing on disconnect */
@@ -787,39 +792,10 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
 
   async listFolders(): Promise<void> {
     await this.storage.readFolderHierarchy(this);
+    this.adoptCachedArchiveMailboxRoot();
 
-    let query = {
-      m$FindFolder: {
-        Traversal: "Deep",
-        m$FolderShape: {
-          t$BaseShape: "Default",
-          t$AdditionalProperties: {
-            t$FieldURI: [{
-              FieldURI: "folder:FolderClass",
-            }, {
-              FieldURI: "folder:ParentFolderId",
-            }, {
-              FieldURI: "folder:DistinguishedFolderId",
-            }],
-          },
-        },
-        m$ParentFolderIds: {
-          t$DistinguishedFolderId: this.sharedFolderRoot
-          ? {
-            Id: this.sharedFolderRoot,
-            t$Mailbox: {
-              t$EmailAddress: this.username,
-            },
-          }
-          : {
-            Id: "msgfolderroot",
-          },
-        },
-      },
-    };
+    let query = this.folderHierarchyRequest(this.sharedFolderRoot ?? "msgfolderroot");
     let result = await this.callEWS(query);
-    let folders = ensureArray(result.RootFolder.Folders.Folder);
-    this.folderMap.clear();
     if (this.sharedFolderRoot == "inbox") {
       let request = {
         m$GetFolder: {
@@ -850,33 +826,14 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
         },
       };
       let response = await this.callEWS(request);
+      result.RootFolder.Folders ??= {};
+      let folders = ensureArray(result.RootFolder.Folders.Folder);
       folders.unshift(response.Folders.Folder);
+      result.RootFolder.Folders.Folder = folders;
     }
-    for (let folder of folders) {
-      if (!folder.FolderClass || folder.FolderClass == "IPF.Note" || folder.FolderClass.startsWith("IPF.Note.")) {
-        let parent = this.folderMap.get(sanitize.string(folder.ParentFolderId.Id));
-        let parentFolders = parent ? parent.subFolders : this.rootFolders;
-        let ewsFolder = parentFolders.find(ewsFolder => ewsFolder.id == folder.FolderId.Id) as EWSFolder;
-        if (!ewsFolder) {
-          ewsFolder = this.findFolder(ewsFolder => ewsFolder.id == folder.FolderId.Id) as EWSFolder
-            ?? this.newFolder();
-          let oldParentFolders = ewsFolder.parent?.subFolders || this.rootFolders;
-          oldParentFolders.remove(ewsFolder);
-          ewsFolder.parent = parent || null;
-          parentFolders.push(ewsFolder);
-        }
-        ewsFolder.fromXML(folder);
-        this.folderMap.set(folder.FolderId.Id, ewsFolder);
-      }
-    }
-    // Iterate from deepest to shallowest
-    for (let folder of this.getAllFolders().reverse()) {
-      if (!this.folderMap.has(folder.id)) {
-        await folder.deleteItLocally();
-      }
-    }
-    for (let folder of this.getAllFolders()) {
-      await folder.save();
+    this.msgFolderRootID = await this.applyFolderHierarchy(result, false);
+    if (!this.isDependentAccount && !this.sharedFolderRoot) {
+      await this.listArchiveMailbox();
     }
     if (this.sharedFolderRoot) {
       return; // Don't automatically add shared addressbook or calendar.
@@ -897,6 +854,167 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
       let calendar = this.createCalendarAccount(folder);
       await calendar.save();
       appGlobal.calendars.add(calendar);
+    }
+  }
+
+  protected folderHierarchyRequest(rootFolderID: string, returnParentFolder = false): any {
+    let findFolder: any = {
+      Traversal: "Deep",
+      m$FolderShape: {
+        t$BaseShape: "Default",
+        t$AdditionalProperties: {
+          t$FieldURI: [{
+            FieldURI: "folder:FolderClass",
+          }, {
+            FieldURI: "folder:ParentFolderId",
+          }, {
+            FieldURI: "folder:DistinguishedFolderId",
+          }],
+        },
+      },
+      m$ParentFolderIds: {
+        t$DistinguishedFolderId: this.sharedFolderRoot && rootFolderID == this.sharedFolderRoot
+        ? {
+          Id: this.sharedFolderRoot,
+          t$Mailbox: {
+            t$EmailAddress: this.username,
+          },
+        }
+        : {
+          Id: rootFolderID,
+        },
+      },
+    };
+    if (returnParentFolder) {
+      findFolder.m$ReturnParentFolder = true;
+    }
+    return {
+      m$FindFolder: findFolder,
+    };
+  }
+
+  protected adoptCachedArchiveMailboxRoot(): void {
+    let cachedRoot = this.rootFolders.find(folder =>
+      folder instanceof EWSFolder && folder.isArchiveMailboxRoot) as EWSFolder | undefined;
+    if (cachedRoot) {
+      this.rootFolders.remove(cachedRoot);
+      this.archiveMailboxRoot ??= cachedRoot;
+    }
+  }
+
+  /** Fetch the optional secondary mailbox without making login depend on it. */
+  protected async listArchiveMailbox(): Promise<void> {
+    let result: any;
+    try {
+      result = await this.callEWS(this.folderHierarchyRequest(kArchiveMailboxRoot, true));
+    } catch {
+      // Not every Exchange account has an Online Archive. Keep a previously
+      // cached hierarchy if the optional request is unavailable temporarily.
+      return;
+    }
+    await this.applyFolderHierarchy(result, true);
+  }
+
+  /** Apply one EWS folder tree to either the primary or archive root. */
+  protected async applyFolderHierarchy(result: any, archiveMailbox: boolean): Promise<string | null> {
+    let rootParent = result?.RootFolder?.ParentFolder;
+    let folders = ensureArray(result?.RootFolder?.Folders?.Folder);
+    let rootID = sanitize.string(rootParent?.FolderId?.Id, null)
+      ?? folders.map(folder => sanitize.string(folder?.ParentFolderId?.Id, null)).find(Boolean);
+    if (!rootID) {
+      return archiveMailbox ? null : "msgfolderroot";
+    }
+    if (archiveMailbox && (rootID == this.msgFolderRootID || rootID == "msgfolderroot")) {
+      return null;
+    }
+
+    let rootFolder = archiveMailbox ? this.archiveMailboxRoot as EWSFolder | null : null;
+    if (archiveMailbox && (!rootFolder || rootFolder.id != rootID)) {
+      rootFolder = this.newFolder();
+    }
+    if (rootFolder) {
+      rootFolder.id = rootID;
+      rootFolder.name = sanitize.label(
+        rootParent?.DisplayName,
+        `${this.name || ""} — ${gt`Archive`}`.trim(),
+      );
+      rootFolder.parent = null;
+      rootFolder.specialFolder = SpecialFolder.Normal;
+      rootFolder.isArchiveMailbox = true;
+      rootFolder.isArchiveMailboxRoot = true;
+      rootFolder.countTotal = sanitize.integer(rootParent?.TotalCount, rootFolder.countTotal);
+      rootFolder.countUnread = sanitize.integer(rootParent?.UnreadCount, rootFolder.countUnread);
+      this.archiveMailboxRoot = rootFolder;
+    }
+
+    let rootCollection = (rootFolder?.subFolders ?? this.rootFolders) as Collection<EWSFolder>;
+    let existingFolders = new Map<string, EWSFolder>();
+    collectFolderTree(rootCollection, existingFolders);
+    let newFolderMap = new Map<string, EWSFolder>();
+    for (let folder of folders) {
+      let folderClass = typeof folder?.FolderClass == "string" ? folder.FolderClass : "";
+      if (folderClass && folderClass != "IPF.Note" && !folderClass.startsWith("IPF.Note.")) {
+        continue;
+      }
+      let folderID = sanitize.string(folder?.FolderId?.Id, null);
+      if (!folderID || (folder === rootParent && this.sharedFolderRoot != "inbox")) {
+        continue;
+      }
+      let ewsFolder = existingFolders.get(folderID) ?? this.newFolder();
+      try {
+        ewsFolder.fromXML(folder, archiveMailbox);
+      } catch (ex) {
+        this.errorCallback(ex);
+        continue;
+      }
+      newFolderMap.set(folderID, ewsFolder);
+    }
+
+    let newRootFolders: EWSFolder[] = [];
+    let newSubFolders = new Map<EWSFolder, EWSFolder[]>();
+    for (let folder of folders) {
+      let folderID = sanitize.string(folder?.FolderId?.Id, null);
+      let ewsFolder = folderID ? newFolderMap.get(folderID) : undefined;
+      if (!ewsFolder) {
+        continue;
+      }
+      let parentID = sanitize.string(folder?.ParentFolderId?.Id, null);
+      let parent = parentID && (parentID != rootID ||
+        (!archiveMailbox && this.sharedFolderRoot == "inbox"))
+        ? newFolderMap.get(parentID) : undefined;
+      ewsFolder.parent = parent || rootFolder || null;
+      if (parent) {
+        let siblings = newSubFolders.get(parent) ?? [];
+        siblings.push(ewsFolder);
+        newSubFolders.set(parent, siblings);
+      } else {
+        newRootFolders.push(ewsFolder);
+      }
+    }
+
+    let oldFolders = [...existingFolders.values()];
+    for (let folder of oldFolders.reverse()) {
+      if (!newFolderMap.has(folder.id)) {
+        await folder.deleteItLocally();
+      }
+    }
+    for (let folder of newFolderMap.values()) {
+      folder.subFolders.replaceAll(newSubFolders.get(folder) ?? []);
+    }
+    rootCollection.replaceAll(newRootFolders);
+    for (let folder of this.getAllFolders()) {
+      await folder.save();
+    }
+    this.rebuildFolderMap();
+    return rootID;
+  }
+
+  protected rebuildFolderMap(): void {
+    this.folderMap.clear();
+    for (let folder of this.getAllFolders()) {
+      if (folder instanceof EWSFolder && folder.id && !folder.isArchiveMailboxRoot) {
+        this.folderMap.set(folder.id, folder);
+      }
     }
   }
 
@@ -1220,6 +1338,15 @@ const kXMLContentType = "text/xml; charset=utf-8";
 
 /** @see <https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxprops/01b52d3c-d194-4a8c-83ee-4ac7506339da> */
 const HiddenPidTag = "0x10F4";
+
+function collectFolderTree(folders: Collection<EWSFolder>, result: Map<string, EWSFolder>): void {
+  for (let folder of folders) {
+    if (folder.id) {
+      result.set(folder.id, folder);
+    }
+    collectFolderTree(folder.subFolders, result);
+  }
+}
 
 function addRecipients(aRequest: any, aType: string, aRecipients: PersonUID[]): void {
   if (!aRecipients.length) {

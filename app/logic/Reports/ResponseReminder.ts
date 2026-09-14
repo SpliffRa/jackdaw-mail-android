@@ -31,9 +31,9 @@ export interface ResponseReminderConfig {
 export interface ResponseReminderStateEntry {
   receivedAt: number;
   firedIntervalsMinutes: number[];
-  /** Устаревший якорь из v1: принимается для совместимости, но не участвует в SLA. */
+  /** Сохранённый момент принятия в работу для письма вне рабочего графика. */
   startedAt?: number;
-  /** Устаревший источник якоря: принимается для совместимости. */
+  /** Источник сохранённого момента старта SLA. */
   startedAtSource?: "taken-in-work";
   /** Последнее известное состояние: запрос взят в работу или ещё нет. */
   takenInWork?: boolean;
@@ -189,13 +189,10 @@ export function shouldNotifyResponseReminderEvent(
 /**
  * Возвращает момент старта SLA.
  *
- * SLA всегда привязан к моменту получения письма. Рабочий календарь
- * определяет, какие интервалы входят в отсчёт, поэтому письмо, пришедшее до
- * начала рабочего дня, начинает расходовать SLA с начала рабочего интервала.
- * Прочтение или назначение категории не меняет этот якорь.
- *
- * Дополнительные параметры сохранены для совместимости со старым форматом
- * состояния: момент принятия в работу больше не может сдвигать SLA.
+ * Письмо, поступившее в рабочее время, всегда считает SLA от получения.
+ * Письмо, поступившее вне графика, ждёт рабочего времени, пока его не
+ * возьмут в работу. Для такого письма сохранённый момент принятия в работу
+ * запускает непрерывный интервал заданной длительности и не меняется повторно.
  */
 export function getResponseSlaStartAt(
   request: PendingResponseRequest,
@@ -203,9 +200,17 @@ export function getResponseSlaStartAt(
   workingHours: WorkingHoursSchedule = DEFAULT_WORKING_HOURS_SCHEDULE,
   storedStartedAt?: number | null,
 ): Date {
-  void now;
-  void workingHours;
-  void storedStartedAt;
+  const receivedAt = request.receivedAt.getTime();
+  const storedStartAt = positiveTimestamp(storedStartedAt);
+  if (
+    !isWithinWorkingHours(request.receivedAt, workingHours) &&
+    storedStartAt != null &&
+    storedStartAt >= receivedAt &&
+    storedStartAt <= now.getTime() &&
+    !isWithinWorkingHours(new Date(storedStartAt), workingHours)
+  ) {
+    return new Date(storedStartAt);
+  }
   return new Date(request.receivedAt);
 }
 
@@ -215,16 +220,20 @@ export function elapsedResponseMinutes(
   workingHours: WorkingHoursSchedule = DEFAULT_WORKING_HOURS_SCHEDULE,
   slaStartedAt?: Date,
 ): number {
-  void slaStartedAt;
-  const startAt = getResponseSlaStartAt(request, now, workingHours);
+  const startAt = getResponseSlaStartAt(
+    request,
+    now,
+    workingHours,
+    slaStartedAt?.getTime(),
+  );
   return Math.max(
     0,
-    elapsedResponseSeconds(startAt, now, workingHours) /
+    elapsedResponseSeconds(request, startAt, now, workingHours) /
       SECONDS_PER_MINUTE,
   );
 }
 
-/** Возвращает живое состояние SLA от получения письма по рабочему календарю. */
+/** Возвращает живое состояние SLA с учётом рабочего и непрерывного режима. */
 export function getResponseSlaProgress(
   request: PendingResponseRequest,
   targetMinutes: number,
@@ -232,25 +241,38 @@ export function getResponseSlaProgress(
   workingHours: WorkingHoursSchedule = DEFAULT_WORKING_HOURS_SCHEDULE,
   slaStartedAt?: Date,
 ): ResponseSlaProgress {
-  void slaStartedAt;
   const safeTargetMinutes = normalizeSlaTargetMinutes(targetMinutes);
   const targetSeconds = safeTargetMinutes * SECONDS_PER_MINUTE;
-  const startAt = getResponseSlaStartAt(request, now, workingHours);
+  const startAt = getResponseSlaStartAt(
+    request,
+    now,
+    workingHours,
+    slaStartedAt?.getTime(),
+  );
+  const continuousClock = usesContinuousClock(
+    request,
+    startAt,
+    now,
+    workingHours,
+  );
   const elapsedSeconds = Math.max(
     0,
     Math.floor(
-      elapsedResponseSeconds(startAt, now, workingHours),
+      elapsedResponseSeconds(request, startAt, now, workingHours),
     ),
   );
   const remainingSeconds = Math.max(targetSeconds - elapsedSeconds, 0);
   const overdueSeconds = Math.max(elapsedSeconds - targetSeconds, 0);
-  const deadlineAt = addWorkingSeconds(startAt, targetSeconds, workingHours);
+  const deadlineAt = continuousClock
+    ? new Date(startAt.getTime() + targetSeconds * 1_000)
+    : addWorkingSeconds(startAt, targetSeconds, workingHours);
   const status: ResponseSlaStatus =
     overdueSeconds > 0
       ? "over-target"
       : elapsedSeconds == 0 &&
           !isWithinWorkingHours(now, workingHours) &&
-          now.getTime() > request.receivedAt.getTime()
+          now.getTime() > request.receivedAt.getTime() &&
+          !continuousClock
         ? "waiting-for-working-hours"
         : "within-target";
   return {
@@ -278,10 +300,17 @@ export function getDueResponseReminderIntervals(
   const fired = new Set(
     state?.receivedAt == receivedAt ? state.firedIntervalsMinutes : [],
   );
+  const slaStartedAt = getResponseSlaStartAt(
+    request,
+    now,
+    workingHours,
+    state?.receivedAt == receivedAt ? state.startedAt : undefined,
+  );
   const elapsedMinutes = elapsedResponseMinutes(
     request,
     now,
     workingHours,
+    slaStartedAt,
   );
   return config.intervalsMinutes.filter(
     (interval) => interval <= elapsedMinutes && !fired.has(interval),
@@ -309,18 +338,30 @@ export function getNextResponseReminderAt(
   const fired = new Set(
     state?.receivedAt == receivedAt ? state.firedIntervalsMinutes : [],
   );
+  const slaStartedAt = getResponseSlaStartAt(
+    request,
+    now,
+    workingHours,
+    state?.receivedAt == receivedAt ? state.startedAt : undefined,
+  );
   const elapsedMinutes = elapsedResponseMinutes(
     request,
     now,
     workingHours,
+    slaStartedAt,
   );
   const nextInterval = config.intervalsMinutes.find(
     (interval) => interval > elapsedMinutes && !fired.has(interval),
   );
-  return nextInterval == null
-    ? null
+  if (nextInterval == null) {
+    return null;
+  }
+  return usesContinuousClock(request, slaStartedAt, now, workingHours)
+    ? new Date(
+        slaStartedAt.getTime() + nextInterval * SECONDS_PER_MINUTE * 1_000,
+      )
     : addWorkingSeconds(
-        request.receivedAt,
+        slaStartedAt,
         nextInterval * SECONDS_PER_MINUTE,
         workingHours,
       );
@@ -369,11 +410,31 @@ function positiveTimestamp(value: unknown): number | undefined {
 }
 
 function elapsedResponseSeconds(
+  request: PendingResponseRequest,
   startAt: Date,
   now: Date,
   workingHours: WorkingHoursSchedule,
 ): number {
-  return workingSecondsBetween(startAt, now, workingHours);
+  return usesContinuousClock(request, startAt, now, workingHours)
+    ? Math.max(0, (now.getTime() - startAt.getTime()) / 1_000)
+    : workingSecondsBetween(startAt, now, workingHours);
+}
+
+function usesContinuousClock(
+  request: PendingResponseRequest,
+  startAt: Date,
+  now: Date,
+  workingHours: WorkingHoursSchedule,
+): boolean {
+  if (isWithinWorkingHours(request.receivedAt, workingHours)) {
+    return false;
+  }
+  return (
+    startAt.getTime() > request.receivedAt.getTime() ||
+    (!isWithinWorkingHours(now, workingHours) &&
+      (request.isRead === true ||
+        request.categoryNames.some((name) => name.trim().length > 0)))
+  );
 }
 
 function normalizeSlaTargetMinutes(value: number): number {

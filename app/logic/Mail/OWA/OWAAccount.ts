@@ -38,9 +38,9 @@ import { Lock } from "../../util/flow/Lock";
 import { notifyChangedProperty } from "../../util/Observable";
 import { isNetworkError, waitUntilOnline } from "../../util/netUtil";
 import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
-import { assert, blobToBase64, NotSupported, NotReached, sleep } from "../../util/util";
+import { assert, blobToBase64, ensureArray, NotSupported, NotReached, sleep } from "../../util/util";
 import { gt } from "../../../l10n/l10n";
-import { ArrayColl } from "svelte-collections";
+import { ArrayColl, type Collection } from "svelte-collections";
 import {
   getTagsSyncAccountId,
   setTagsSyncAccountId,
@@ -72,6 +72,8 @@ const kOWAFolderCountsPerPollShared = 12;
 const kSharedPollConcurrency = 2;
 /** Extra Row subscriptions per shared mailbox for folders that currently have unread. */
 const kSharedUnreadRowSubscriptionLimit = 3;
+/** Distinguished root of the optional Exchange Online Archive mailbox. */
+const kArchiveMailboxRoot = "archivemsgfolderroot";
 
 export class OWAAccount extends ExchangeMailAccount {
   readonly protocol: string = "owa";
@@ -1836,6 +1838,7 @@ export class OWAAccount extends ExchangeMailAccount {
 
   protected async listFoldersUnlocked(): Promise<void> {
     await this.storage.readFolderHierarchy(this);
+    this.adoptCachedArchiveMailboxRoot();
 
     await this.throttle.throttle();
     let result = await this.callOWA(owaFindFoldersRequest(true, this.sharedFolderRoot, this.username));
@@ -1847,26 +1850,94 @@ export class OWAAccount extends ExchangeMailAccount {
         result.RootFolder.ParentFolder = inboxFolder;
       }
     }
-    let rootID = objectID(result?.RootFolder?.ParentFolder?.FolderId)
-      ?? objectID(result?.RootFolder?.ParentFolder?.folderId);
+    this.msgFolderRootID = await this.applyFolderHierarchy(result, false);
+    if (!this.isDependentAccount && !this.sharedFolderRoot) {
+      await this.listArchiveMailbox();
+    }
+    // `MailAccount.inbox` may have been resolved before the remote hierarchy
+    // was loaded and then cached the first root folder. Rebind it explicitly
+    // after every OWA hierarchy refresh so background polling cannot target
+    // Sent Items by mistake.
+    this.findInboxFolder();
+  }
+
+  /** Keep cached archive folders available while the server hierarchy loads. */
+  protected adoptCachedArchiveMailboxRoot(): void {
+    let cachedRoot = this.rootFolders.find(folder =>
+      folder instanceof OWAFolder && folder.isArchiveMailboxRoot) as OWAFolder | undefined;
+    if (cachedRoot) {
+      this.rootFolders.remove(cachedRoot);
+      this.archiveMailboxRoot ??= cachedRoot;
+    }
+  }
+
+  /** Fetch the optional secondary mailbox without making login depend on it. */
+  protected async listArchiveMailbox(): Promise<void> {
+    let result: any;
+    try {
+      result = await this.callOWA(owaFindFoldersRequest(true, null, undefined, kArchiveMailboxRoot));
+    } catch {
+      // Not every Exchange account has an Online Archive. Keep a previously
+      // cached hierarchy if the optional request is unavailable temporarily.
+      return;
+    }
+    await this.applyFolderHierarchy(result, true);
+  }
+
+  /** Apply one OWA folder tree to either the primary or archive root. */
+  protected async applyFolderHierarchy(result: any, archiveMailbox: boolean): Promise<string | null> {
+    let rootParent = result?.RootFolder?.ParentFolder ?? result?.RootFolder?.parentFolder;
+    let rootID = objectID(rootParent?.FolderId) ?? objectID(rootParent?.folderId);
     if (!rootID) {
+      if (archiveMailbox) {
+        return null;
+      }
       throw new OWAError({ message: gt`Could not determine mailbox folder root` });
     }
-    this.msgFolderRootID = rootID;
-    let haveCalendar = this.sharedFolderRoot != null || appGlobal.calendars.some(calendar => calendar.dependsOn(this));
-    let rawFolders = result.RootFolder.Folders ?? [];
+    if (archiveMailbox && rootID == this.msgFolderRootID) {
+      return null;
+    }
+
+    let rootFolder = archiveMailbox ? this.archiveMailboxRoot as OWAFolder | null : null;
+    if (archiveMailbox && (!rootFolder || rootFolder.id != rootID)) {
+      rootFolder = this.newFolder();
+    }
+    if (rootFolder) {
+      rootFolder.id = rootID;
+      rootFolder.name = sanitize.label(
+        rootParent?.DisplayName,
+        `${this.name || ""} — ${gt`Archive`}`.trim(),
+      );
+      rootFolder.parent = null;
+      rootFolder.specialFolder = SpecialFolder.Normal;
+      rootFolder.isArchiveMailbox = true;
+      rootFolder.isArchiveMailboxRoot = true;
+      rootFolder.applyServerCounts(
+        sanitize.integer(rootParent?.TotalCount, rootFolder.countTotal),
+        sanitize.integer(rootParent?.UnreadCount, rootFolder.countUnread),
+      );
+      this.archiveMailboxRoot = rootFolder;
+    }
+
+    let rootCollection = (rootFolder?.subFolders ?? this.rootFolders) as Collection<OWAFolder>;
+    let existingFolders = new Map<string, OWAFolder>();
+    collectFolderTree(rootCollection, existingFolders);
+    let rawFolders = ensureArray(result?.RootFolder?.Folders);
+    let haveCalendar = archiveMailbox || this.sharedFolderRoot != null ||
+      appGlobal.calendars.some(calendar => calendar.dependsOn(this));
     // Build the new tree beside the live one and swap it in at the end, so the
     // UI and any concurrent reader never observe a partially cleared tree.
     let newFolderMap = new Map<string, OWAFolder>();
     for (let folder of rawFolders) {
-      if (!folder.FolderClass || folder.FolderClass == "IPF.Note" || folder.FolderClass.startsWith("IPF.Note.")) {
-        let folderId = folder.FolderId?.Id;
-        if (!folderId) {
+      let folderClass = typeof folder?.FolderClass == "string" ? folder.FolderClass : "";
+      if (!folderClass || folderClass == "IPF.Note" || folderClass.startsWith("IPF.Note.")) {
+        let folderId = objectID(folder?.FolderId) ?? objectID(folder?.folderId);
+        if (!folderId || (folder === rootParent && this.sharedFolderRoot != "inbox")) {
           continue;
         }
-        let owaFolder = this.findFolder(f => f.id == folderId) as OWAFolder ?? this.newFolder();
+        let owaFolder = existingFolders.get(folderId) ?? this.newFolder();
         try {
-          owaFolder.fromJSON(folder);
+          owaFolder.fromJSON(folder, archiveMailbox);
         } catch (ex) {
           // One folder with an unexpected shape must not cost the user their
           // entire folder tree.
@@ -1874,7 +1945,7 @@ export class OWAAccount extends ExchangeMailAccount {
           continue;
         }
         newFolderMap.set(folderId, owaFolder);
-      } else if (folder.DistinguishedFolderId == "calendar" && !haveCalendar) {
+      } else if (!archiveMailbox && folder.DistinguishedFolderId == "calendar" && !haveCalendar) {
         let calendar = this.createCalendarAccount(folder);
         appGlobal.calendars.add(calendar);
         await calendar.save();
@@ -1883,14 +1954,16 @@ export class OWAAccount extends ExchangeMailAccount {
     let newRootFolders: OWAFolder[] = [];
     let newSubFolders = new Map<OWAFolder, OWAFolder[]>();
     for (let folder of rawFolders) {
-      let folderId = folder.FolderId?.Id;
+      let folderId = objectID(folder?.FolderId) ?? objectID(folder?.folderId);
       let owaFolder = folderId ? newFolderMap.get(folderId) : undefined;
       if (!owaFolder) {
         continue;
       }
-      let parentId = folder.ParentFolderId?.Id;
-      let parent = (parentId && parentId != this.msgFolderRootID) ? newFolderMap.get(parentId) : undefined;
-      owaFolder.parent = parent || null;
+      let parentId = objectID(folder?.ParentFolderId) ?? objectID(folder?.parentFolderId);
+      let parent = parentId && (parentId != rootID ||
+        (!archiveMailbox && this.sharedFolderRoot == "inbox"))
+        ? newFolderMap.get(parentId) : undefined;
+      owaFolder.parent = parent || rootFolder || null;
       if (parent) {
         let siblings = newSubFolders.get(parent) ?? [];
         siblings.push(owaFolder);
@@ -1899,28 +1972,31 @@ export class OWAAccount extends ExchangeMailAccount {
         newRootFolders.push(owaFolder);
       }
     }
-    // Iterate from deepest to shallowest
-    for (let folder of this.getAllFolders().reverse()) {
+    let oldFolders = [...existingFolders.values()];
+    // Iterate from deepest to shallowest.
+    for (let folder of oldFolders.reverse()) {
       if (!newFolderMap.has(folder.id)) {
         await folder.deleteItLocally();
       }
     }
-    this.folderMap.clear();
-    for (let [folderId, folder] of newFolderMap) {
-      this.folderMap.set(folderId, folder);
-    }
     for (let folder of newFolderMap.values()) {
       folder.subFolders.replaceAll(newSubFolders.get(folder) ?? []);
     }
-    this.rootFolders.replaceAll(newRootFolders);
+    rootCollection.replaceAll(newRootFolders);
     for (let folder of this.getAllFolders()) {
       await folder.save();
     }
-    // `MailAccount.inbox` may have been resolved before the remote hierarchy
-    // was loaded and then cached the first root folder. Rebind it explicitly
-    // after every OWA hierarchy refresh so background polling cannot target
-    // Sent Items by mistake.
-    this.findInboxFolder();
+    this.rebuildFolderMap();
+    return rootID;
+  }
+
+  protected rebuildFolderMap(): void {
+    this.folderMap.clear();
+    for (let folder of this.getAllFolders()) {
+      if (folder instanceof OWAFolder && folder.id && !folder.isArchiveMailboxRoot) {
+        this.folderMap.set(folder.id, folder);
+      }
+    }
   }
 
   protected findInboxFolder(): OWAFolder | null {
@@ -2765,6 +2841,15 @@ function objectID(value: any): string | null {
     }
   }
   return null;
+}
+
+function collectFolderTree(folders: Collection<OWAFolder>, result: Map<string, OWAFolder>): void {
+  for (let folder of folders) {
+    if (folder.id) {
+      result.set(folder.id, folder);
+    }
+    collectFolderTree(folder.subFolders, result);
+  }
 }
 
 function notificationItemID(notification: any): string | null {

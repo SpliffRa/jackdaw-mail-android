@@ -58,6 +58,110 @@ test("loads valid folders and skips entries without a folder ID", async () => {
   expect(account.inbox?.countUnread).toBe(1);
 });
 
+test("keeps the explicitly loaded shared inbox in the hierarchy", async () => {
+  let account = fakeAccount({
+    RootFolder: {
+      ParentFolder: { FolderId: { Id: "shared-root" } },
+      Folders: [{
+        FolderClass: "IPF.Note",
+        FolderId: { Id: "shared-subfolder" },
+        ParentFolderId: { Id: "shared-inbox" },
+        DisplayName: "Shared subfolder",
+      }],
+    },
+  });
+  (account as any).sharedFolderRoot = "inbox";
+  let calls = 0;
+  (account as any).callOWA = async () => calls++ ? {
+    Folders: [{
+      FolderClass: "IPF.Note",
+      FolderId: { Id: "shared-inbox" },
+      ParentFolderId: { Id: "shared-root" },
+      DistinguishedFolderId: "inbox",
+      DisplayName: "Inbox",
+    }],
+  } : {
+    RootFolder: {
+      ParentFolder: { FolderId: { Id: "shared-root" } },
+      Folders: [{
+        FolderClass: "IPF.Note",
+        FolderId: { Id: "shared-subfolder" },
+        ParentFolderId: { Id: "shared-inbox" },
+        DisplayName: "Shared subfolder",
+      }],
+    },
+  };
+
+  await account.listFolders();
+
+  expect(account.inbox?.id).toBe("shared-inbox");
+  expect(account.rootFolders.contents.map(folder => ({ id: folder.id, children: folder.subFolders.contents.map(child => child.id) }))).toEqual([
+    { id: "shared-inbox", children: ["shared-subfolder"] },
+  ]);
+  expect(account.inbox?.subFolders.length).toBe(1);
+  expect(account.inbox?.subFolders.first.name).toBe("Shared subfolder");
+});
+
+test("loads the Exchange Online Archive as a separate hierarchy", async () => {
+  let account = fakeAccount({
+    RootFolder: {
+      ParentFolder: { FolderId: { Id: "primary-root" } },
+      Folders: [{
+        FolderClass: "IPF.Note",
+        FolderId: { Id: "inbox" },
+        ParentFolderId: { Id: "primary-root" },
+        DistinguishedFolderId: "inbox",
+        DisplayName: "Inbox",
+      }],
+    },
+  });
+  account.name = "Nikita Galkin SDS";
+  let archiveResponse = {
+    RootFolder: {
+      ParentFolder: {
+        FolderId: { Id: "archive-root" },
+        DisplayName: "In-Place Archive — Nikita Galkin SDS",
+      },
+      Folders: [{
+        FolderClass: "IPF.Note",
+        FolderId: { Id: "archive-inbox" },
+        ParentFolderId: { Id: "archive-root" },
+        DistinguishedFolderId: "archiveinbox",
+        DisplayName: "Inbox",
+        TotalCount: 5,
+        UnreadCount: 2,
+      }],
+    },
+  };
+  let calls = 0;
+  let requests: any[] = [];
+  (account as any).callOWA = async (request: any) => {
+    requests.push(request);
+    return calls++ ? archiveResponse : {
+      RootFolder: {
+        ParentFolder: { FolderId: { Id: "primary-root" } },
+        Folders: [{
+          FolderClass: "IPF.Note",
+          FolderId: { Id: "inbox" },
+          ParentFolderId: { Id: "primary-root" },
+          DistinguishedFolderId: "inbox",
+          DisplayName: "Inbox",
+        }],
+      },
+    };
+  };
+
+  await account.listFolders();
+
+  expect(requests[1].Body.ParentFolderIds[0].Id).toBe("archivemsgfolderroot");
+  expect(account.archiveMailboxRoot?.id).toBe("archive-root");
+  expect(account.archiveMailboxRoot?.name).toBe("In-Place Archive — Nikita Galkin SDS");
+  expect(account.archiveMailboxRoot?.subFolders.first.name).toBe("Inbox");
+  expect(account.archiveMailboxRoot?.subFolders.first.countTotal).toBe(5);
+  expect(account.getAllFolders().some(folder => folder.id == "archive-inbox")).toBe(true);
+  expect(account.rootFolders.some(folder => folder.id == "archive-root")).toBe(false);
+});
+
 test("normalizes a stale shared-folder polling offset", async () => {
   let account = fakeAccount({ Folders: [] });
   let folder = account.newFolder();

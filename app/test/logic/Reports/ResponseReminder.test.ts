@@ -301,7 +301,7 @@ describe("ResponseReminder", () => {
     expect(progress.status).toBe("waiting-for-working-hours");
   });
 
-  test("не учитывает время вне рабочего графика после прочтения", () => {
+  test("считает непрерывное время после принятия в работу вне графика", () => {
     const receivedAt = new Date(2026, 8, 9, 18, 12);
     const slaStartedAt = new Date(2026, 8, 9, 18, 20);
     const now = new Date(2026, 8, 9, 18, 25);
@@ -313,14 +313,14 @@ describe("ResponseReminder", () => {
       slaStartedAt,
     );
 
-    expect(progress.elapsedSeconds).toBe(0);
-    expect(progress.remainingSeconds).toBe(30 * 60);
+    expect(progress.elapsedSeconds).toBe(5 * 60);
+    expect(progress.remainingSeconds).toBe(25 * 60);
     expect(progress.overdueSeconds).toBe(0);
-    expect(progress.deadlineAt).toEqual(new Date(2026, 8, 10, 10, 0));
-    expect(progress.status).toBe("waiting-for-working-hours");
+    expect(progress.deadlineAt).toEqual(new Date(2026, 8, 9, 18, 50));
+    expect(progress.status).toBe("within-target");
   });
 
-  test("не меняет якорь SLA при принятии письма в работу вне графика", () => {
+  test("использует сохраненный момент принятия в работу вне графика", () => {
     const receivedAt = new Date(2026, 8, 9, 18, 12);
     const now = new Date(2026, 8, 9, 18, 20);
 
@@ -338,7 +338,7 @@ describe("ResponseReminder", () => {
         weekdaySchedule,
         now.getTime(),
       ),
-    ).toEqual(receivedAt);
+    ).toEqual(now);
   });
 
   test("не запускает новый таймер для уже прочитанного письма при первом наблюдении", () => {
@@ -358,7 +358,7 @@ describe("ResponseReminder", () => {
     expect(progress.status).toBe("over-target");
   });
 
-  test("не учитывает время вне рабочего графика после назначения категории", () => {
+  test("считает непрерывное время после назначения категории вне графика", () => {
     const receivedAt = new Date(2026, 8, 9, 18, 12);
     const slaStartedAt = new Date(2026, 8, 9, 18, 20);
     const now = new Date(2026, 8, 9, 18, 25);
@@ -370,14 +370,14 @@ describe("ResponseReminder", () => {
       slaStartedAt,
     );
 
-    expect(progress.elapsedSeconds).toBe(0);
-    expect(progress.remainingSeconds).toBe(30 * 60);
+    expect(progress.elapsedSeconds).toBe(5 * 60);
+    expect(progress.remainingSeconds).toBe(25 * 60);
     expect(progress.overdueSeconds).toBe(0);
-    expect(progress.deadlineAt).toEqual(new Date(2026, 8, 10, 10, 0));
-    expect(progress.status).toBe("waiting-for-working-hours");
+    expect(progress.deadlineAt).toEqual(new Date(2026, 8, 9, 18, 50));
+    expect(progress.status).toBe("within-target");
   });
 
-  test("напоминание для принятого вне графика письма считает рабочее время", () => {
+  test("напоминание для принятого вне графика письма считает от сохраненного старта", () => {
     const receivedAt = new Date(2026, 8, 9, 18, 12);
     const now = new Date(2026, 8, 9, 18, 25);
     const config = reminderConfig([10, 20]);
@@ -389,6 +389,8 @@ describe("ResponseReminder", () => {
         {
           receivedAt: receivedAt.getTime(),
           firedIntervalsMinutes: [],
+          startedAt: new Date(2026, 8, 9, 18, 20).getTime(),
+          startedAtSource: "taken-in-work",
         },
         now,
         weekdaySchedule,
@@ -401,11 +403,13 @@ describe("ResponseReminder", () => {
         {
           receivedAt: receivedAt.getTime(),
           firedIntervalsMinutes: [],
+          startedAt: new Date(2026, 8, 9, 18, 20).getTime(),
+          startedAtSource: "taken-in-work",
         },
         now,
         weekdaySchedule,
       ),
-    ).toEqual(new Date(2026, 8, 10, 9, 40));
+    ).toEqual(new Date(2026, 8, 9, 18, 30));
   });
 
   test("переносит остаток пятничного SLA через выходные", () => {
