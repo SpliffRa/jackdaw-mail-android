@@ -82,7 +82,7 @@ function urlAttribute(url: URLString, includeExternal = false) {
   if (!url) {
     return "";
   }
-  if (url.startsWith("data:image/") || url.startsWith("cid:") ||
+  if (url.startsWith("data:image/") || url.substring(0, 4).toLowerCase() == "cid:" ||
     includeExternal && (url.startsWith("https://") || url.startsWith("http://"))) {
     return url; // or `${proxy}${escape(url)}`;
   }

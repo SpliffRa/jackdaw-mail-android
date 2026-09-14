@@ -15,7 +15,7 @@ import { Event } from "../Calendar/Event";
 import { InvitationMessage, type iCalMethod } from "../Calendar/Invitation/InvitationStatus";
 import { FilterMoment } from "./FilterRules/FilterMoments";
 import type { EncryptionSystem } from "./Encryption/enums";
-import { fileExtensionForMIMEType, assert, AbstractFunction } from "../util/util";
+import { fileExtensionForMIMEType, assert, AbstractFunction, blobToDataURL } from "../util/util";
 import { sanitize } from "../../../lib/util/sanitizeDatatypes";
 import { PromiseAllDone } from "../util/flow/PromiseAllDone";
 import { Lock } from "../util/flow/Lock";
@@ -636,7 +636,10 @@ export class EMail extends Message {
   }
 
   async loadAttachments() {
-    if (this.attachments.every(a => a.content)) {
+    if (this.attachments.hasItems && this.attachments.every(a => a.content)) {
+      return;
+    }
+    if (!this.attachments.hasItems) {
       return;
     }
     try {
@@ -645,7 +648,15 @@ export class EMail extends Message {
       await storage.read(this);
     } catch (ex) {
       console.error(ex);
-      // fallback
+    }
+    if (this.attachments.hasItems && this.attachments.every(a => a.content)) {
+      return;
+    }
+    // A message can have attachment metadata without a local file yet. In
+    // that case read the original MIME so inline parts get their contents.
+    if (this.mime) {
+      await this.parseMIME();
+    } else {
       await this.loadMIME();
     }
   }
@@ -669,7 +680,7 @@ export class EMail extends Message {
       }
 
       let html = this.html;
-      if (html?.includes("cid:")) {
+      if (html && /cid:/i.test(html)) {
         this._sanitizedHTML = await addCID(html, this);
       }
       this.loadedBody = true; // triggers UI reload
@@ -815,24 +826,48 @@ export class EMail extends Message {
   }
 }
 
-/** For inline images, convert `cid:` URIs into `data:` URIs. */
-async function addCID(html: string, email: EMail): Promise<string> {
+/** Преобразует ссылки `cid:` на встроенные изображения в data URL. */
+export async function addCID(html: string, email: EMail): Promise<string> {
   try {
     let doc = new DOMParser().parseFromString(html, "text/html");
     let imgs = doc.querySelectorAll("img[src]");
-    if (imgs.length) {
+    let cidImages = [...imgs].filter(img => {
+      let src = img.getAttribute("src");
+      return src?.substring(0, 4).toLowerCase() == "cid:";
+    });
+    if (cidImages.length) {
       await email.loadAttachments();
     }
+    let attachmentsByContentID = indexAttachmentsByContentID(email);
+    if (cidImages.some(img => {
+      let cid = normalizeContentID(img.getAttribute("src"));
+      let attachment = attachmentsByContentID.get(cid) ?? attachmentsByContentID.get(cid.toLowerCase());
+      return !attachment?.content;
+    })) {
+      if (email.mime) {
+        await email.parseMIME();
+      } else {
+        await email.loadMIME();
+      }
+      attachmentsByContentID = indexAttachmentsByContentID(email);
+    }
+    let inlineImageURLs = new Map<Attachment, string>();
     for (let img of imgs) {
       let src = img.getAttribute("src");
-      if (!src || !src.startsWith("cid:")) {
+      if (!src || src.substring(0, 4).toLowerCase() != "cid:") {
         continue;
       }
-      let cid = src.substring(4);
-      let attachment = email.attachments.find(a => a.contentID == "<" + cid + ">");
-      src = attachment?.content
-        ? attachment.blobURL
-        : "";
+      let cid = normalizeContentID(src);
+      let attachment = attachmentsByContentID.get(cid) ?? attachmentsByContentID.get(cid.toLowerCase());
+      if (attachment?.content) {
+        src = inlineImageURLs.get(attachment);
+        if (!src) {
+          src = await blobToDataURL(attachment.content);
+          inlineImageURLs.set(attachment, src);
+        }
+      } else {
+        src = "";
+      }
       img.setAttribute("src", src);
       if (src) {
         attachment.hidden = true;
@@ -843,6 +878,34 @@ async function addCID(html: string, email: EMail): Promise<string> {
     email.folder.account.errorCallback(ex);
   }
   return html;
+}
+
+function indexAttachmentsByContentID(email: EMail): Map<string, Attachment> {
+  let attachmentsByContentID = new Map<string, Attachment>();
+  for (let attachment of email.attachments) {
+    let contentID = normalizeContentID(attachment.contentID);
+    if (contentID) {
+      attachmentsByContentID.set(contentID, attachment);
+      attachmentsByContentID.set(contentID.toLowerCase(), attachment);
+    }
+  }
+  return attachmentsByContentID;
+}
+
+function normalizeContentID(contentID: string): string {
+  if (!contentID) {
+    return "";
+  }
+  let normalized = contentID.trim();
+  if (normalized.substring(0, 4).toLowerCase() == "cid:") {
+    normalized = normalized.substring(4);
+  }
+  try {
+    normalized = decodeURIComponent(normalized);
+  } catch (ex) {
+    // Сохраняем потенциально пригодный идентификатор с некорректным URL-кодированием.
+  }
+  return normalized.trim().replace(/^<+|>+$/g, "");
 }
 
 /** Correspondent shown in the message list. */
