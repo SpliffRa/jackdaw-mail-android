@@ -1,10 +1,11 @@
-<Clickable onClick={onSelect}>
-  <vbox class="settings-category" class:selected>
-    <hbox class="label font-small" class:main={category.isMain}>
-      {category.name}
-    </hbox>
-  </vbox>
-</Clickable>
+<button type="button" class="settings-category" class:selected
+  aria-current={selected ? "page" : undefined}
+  aria-expanded={isSectionOpen}
+  on:click={onSelect}>
+  <span class="label font-small" class:main={category.isMain}>
+    {category.name}
+  </span>
+</button>
 {#if isSectionOpen}
   <SubCategoriesList subCategories={category.subCategories} mainCategory={category} />
   <AccountsList {category} />
@@ -16,7 +17,6 @@
   import { openSettingsCategory } from "./CategoriesUtils";
   import SubCategoriesList from "./SubCategoriesList.svelte";
   import AccountsList from "./AccountsList.svelte";
-  import Clickable from "../../Shared/Clickable.svelte";
   import { appGlobal } from "../../../logic/app";
 
   /** in */
@@ -36,8 +36,22 @@
 
 <style>
   .settings-category {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
     align-items: start;
     padding: 0px 0px 2px 18px;
+    cursor: pointer;
+  }
+  .settings-category:focus-visible {
+    outline: 2px solid var(--selected-bg);
+    outline-offset: -2px;
   }
   .settings-category:hover {
     background-color: var(--hover-bg);

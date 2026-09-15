@@ -1,8 +1,16 @@
-<hbox class="sub-app-button" class:selected class:minimized on:click title={$title}>
+<button
+  type="button"
+  class="sub-app-button"
+  class:selected
+  class:minimized
+  aria-label={$title}
+  aria-pressed={selected}
+  on:click
+  title={$title}>
   <hbox class="icon">
     <slot name="icon" />
   </hbox>
-</hbox>
+</button>
 
 <script lang="ts">
   import type { JackdawApp } from "./JackdawApp";
@@ -16,7 +24,12 @@
 
 <style>
   .sub-app-button {
+    display: flex;
+    justify-content: center;
     align-items: center;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
     padding: 2px;
     border-radius: var(--border-radius);
     border: 1px solid transparent;
@@ -35,6 +48,10 @@
     box-shadow:
       var(--glass-highlight),
       0 1px 4px rgba(var(--shadow-color), 0.08);
+  }
+  .sub-app-button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--appbar-fg) 55%, transparent);
+    outline-offset: 1px;
   }
   .icon {
     padding: 2px;

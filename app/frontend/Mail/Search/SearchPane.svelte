@@ -48,7 +48,7 @@
   import { newSearchEMail } from "../../../logic/Mail/Store/setStorage";
   import { globalSearchTerm } from "../../AppsBar/selectedApp";
   import { selectedAccount, selectedFolder, selectedMessage } from "../Selected";
-  import { currentMailSearchAccount } from "./searchScope";
+  import { currentMailSearchAccount, syncSearchToCurrentMailbox } from "./searchScope";
   import type { EMail } from "../../../logic/Mail/EMail";
   import SearchCriteria from "./SearchCriteria.svelte";
   import SavedSearchUI from "./SavedSearchUI.svelte";
@@ -85,10 +85,12 @@
 
   $: $selectedAccount, $selectedFolder, syncSearchScope();
   function syncSearchScope() {
-    let account = currentMailSearchAccount($selectedAccount, $selectedFolder);
-    if (search.account != account) {
+    if (syncSearchToCurrentMailbox(search, $selectedAccount, $selectedFolder)) {
       searchGeneration++;
-      search.account = account;
+      // Не показываем результаты предыдущего ящика, пока новый запрос
+      // пересчитывается.
+      searchMessages = new ArrayColl<EMail>();
+      $selectedMessage = null;
     }
   }
 

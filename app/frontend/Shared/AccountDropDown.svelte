@@ -4,8 +4,8 @@
       <hbox class="icon foop"
         style:width={iconSize} style:height={iconSize}
         style="--account-color: {$selectedAccount?.color ?? "black"}">
-        {#if accountIcon && typeof(accountIcon) == "string" }
-          <img src={accountIcon} width={iconSize} height={iconSize} alt="" class="logo" />
+        {#if accountIcon && typeof accountIcon == "string" && failedAccountIcon != accountIcon}
+          <img src={accountIcon} width={iconSize} height={iconSize} alt="" class="logo" on:error={onAccountIconError} />
         {:else if icon}
           <svelte:component this={icon} />
         {/if}
@@ -51,7 +51,17 @@
   export let withLabel: boolean = true;
   export let disabled: boolean = false;
 
+  let failedAccountIcon: string | null = null;
   $: accountIcon = $selectedAccount?.icon;
+  $: if (failedAccountIcon && failedAccountIcon != accountIcon) {
+    failedAccountIcon = null;
+  }
+
+  function onAccountIconError() {
+    if (typeof accountIcon == "string") {
+      failedAccountIcon = accountIcon;
+    }
+  }
 
   $: showAccounts = filterByWorkspace && $selectedWorkspace
     ? accounts.filterObservable(acc => acc.workspace == $selectedWorkspace)

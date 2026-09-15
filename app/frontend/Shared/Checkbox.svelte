@@ -56,7 +56,7 @@
   import { appGlobal } from "../../logic/app";
   import { randomID } from "../../logic/util/util";
   import { createEventDispatcher } from "svelte";
-  const dispatch = createEventDispatcher<{ change: boolean }>();
+  const dispatch = createEventDispatcher<{ change: boolean | null | undefined }>();
 
   /** in/out */
   export let checked: boolean | null | undefined;

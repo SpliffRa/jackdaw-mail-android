@@ -1,4 +1,10 @@
-<vbox class="app-button {classes}" class:selected class:padding on:click>
+<button
+  type="button"
+  class="app-button {classes}"
+  class:selected
+  class:padding
+  aria-pressed={selected}
+  on:click>
   <hbox class="icon-wrap">
     <hbox class="icon">
       <slot name="icon" />
@@ -10,7 +16,7 @@
   <hbox class="label font-smallest">
     <slot name="label" />
   </hbox>
-</vbox>
+</button>
 
 <script lang="ts">
   export let selected = false;
@@ -22,7 +28,15 @@
 
 <style>
   .app-button {
+    display: flex;
+    flex-direction: column;
     align-items: center;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: center;
     border-radius: var(--border-radius);
     width: 100%;
     box-sizing: border-box;
@@ -49,6 +63,10 @@
   }
   .app-button:active:not(.selected) {
     transform: scale(0.97);
+  }
+  .app-button:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--appbar-fg) 55%, transparent);
+    outline-offset: 1px;
   }
   .label :global(.label) {
     color: color-mix(in srgb, var(--appbar-fg) 78%, transparent);

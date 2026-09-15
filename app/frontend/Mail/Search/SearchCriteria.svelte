@@ -130,6 +130,7 @@
   import { createEventDispatcher } from "svelte";
 
   const dispatchEvent = createEventDispatcher<{ change: void }>();
+  type CheckboxChangeEvent = CustomEvent<boolean | null | undefined>;
 
   /** The search criteria
    * in/out */
@@ -171,8 +172,9 @@
   }
 
   // Translate values from UI controls to `SearchEMail`
-  function updateUnread() {
-    search.isRead = isUnread === false ? true : (isUnread == true ? false : null);
+  function updateUnread(event: CheckboxChangeEvent) {
+    isUnread = event.detail;
+    search.isRead = event.detail === false ? true : (event.detail === true ? false : null);
     notifyCriteriaChanged();
   }
   $: sizeMinMB, updateSizeMin();
@@ -186,31 +188,36 @@
 
   // Enable/disable: From UI controls to `SearchEMail`
   let selectedFolders: ArrayColl<Folder>;
-  function updateAccount() {
+  function updateAccount(event: CheckboxChangeEvent) {
+    hasAccount = event.detail === true;
     search.account = hasAccount ? $selectedAccount : null;
     if (!search.account) {
       search.folder = null;
     }
     notifyCriteriaChanged();
   }
-  function updateFolder() {
+  function updateFolder(event: CheckboxChangeEvent) {
+    hasFolder = event.detail === true;
     search.folder = hasFolder ? $selectedFolder : null;
     notifyCriteriaChanged();
   }
   $: availablePersons = hasPerson && searchMessages ? personsInEMails(searchMessages) : appGlobal.personalAddressbook?.persons;
-  function updatePerson() {
+  function updatePerson(event: CheckboxChangeEvent) {
+    hasPerson = event.detail === true;
     if (!hasPerson) {
       search.includesPerson = null;
     }
     notifyCriteriaChanged();
   }
-  function updateTag() {
+  function updateTag(event: CheckboxChangeEvent) {
+    hasTag = event.detail === true;
     if (!hasTag) {
       search.tags?.clear();
     }
     notifyCriteriaChanged();
   }
-  function updateAttachment() {
+  function updateAttachment(event: CheckboxChangeEvent) {
+    search.hasAttachment = event.detail === true;
     if (!search.hasAttachment) {
       search.hasAttachmentMIMETypes.clear();
     }

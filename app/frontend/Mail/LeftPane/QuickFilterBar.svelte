@@ -17,19 +17,22 @@
           <ChevronDownIcon size="12px" />
         </button>
       {:else}
-        <button type="button"
-          class="pill"
-          class:active={isActive(filter.id, $quickSearch, $mailListSort)}
-          aria-pressed={isActive(filter.id, $quickSearch, $mailListSort)}
-          title={filter.label()}
-          on:click={() => catchErrors(() => toggleFilter(filter.id))}>
-          <span class="pill-label">{filter.label()}</span>
-          <span class="pill-remove"
-            role="button"
-            tabindex="-1"
+        <hbox class="filter-pill"
+          class:active={isActive(filter.id, $quickSearch, $mailListSort)}>
+          <button type="button"
+            class="pill filter-trigger"
+            class:active={isActive(filter.id, $quickSearch, $mailListSort)}
+            aria-pressed={isActive(filter.id, $quickSearch, $mailListSort)}
+            title={filter.label()}
+            on:click={() => catchErrors(() => toggleFilter(filter.id))}>
+            <span class="pill-label">{filter.label()}</span>
+          </button>
+          <button type="button"
+            class="pill-remove"
+            aria-label={$t`Remove this filter button`}
             title={$t`Remove this filter button`}
-            on:click|stopPropagation={() => catchErrors(() => onRemove(filter.id))}>×</span>
-        </button>
+            on:click|stopPropagation={() => catchErrors(() => onRemove(filter.id))}>×</button>
+        </hbox>
       {/if}
     {/each}
 
@@ -272,6 +275,37 @@
     line-height: 1.2;
     max-width: 14em;
   }
+  .filter-pill {
+    display: inline-flex;
+    align-items: center;
+    max-width: 14em;
+    border: 1px solid var(--border);
+    border-radius: var(--border-radius);
+    background-color: transparent;
+    color: var(--main-fg);
+    overflow: hidden;
+  }
+  .filter-pill.active {
+    background-color: var(--selected-bg);
+    color: var(--selected-fg);
+    border-color: transparent;
+  }
+  .filter-trigger {
+    min-width: 0;
+    max-width: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    border-radius: 0;
+    padding-inline-end: 4px;
+  }
+  .filter-trigger:hover {
+    background-color: transparent;
+    color: inherit;
+  }
+  .filter-trigger:focus-visible {
+    outline-offset: -2px;
+  }
   .pill:hover {
     background-color: var(--hover-bg);
     color: var(--hover-fg);
@@ -296,14 +330,21 @@
     white-space: nowrap;
   }
   .pill-remove {
+    flex: 0 0 auto;
     opacity: 0;
     font-size: 14px;
     line-height: 1;
-    margin-inline-end: -2px;
-    padding: 0 2px;
+    border: 0;
+    border-radius: 0;
+    padding: 3px 8px 3px 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
   }
-  .pill:hover .pill-remove,
-  .pill.active .pill-remove {
+  .filter-pill:hover .pill-remove,
+  .filter-pill.active .pill-remove,
+  .pill-remove:focus-visible {
     opacity: 0.55;
   }
   .pill-remove:hover {

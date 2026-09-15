@@ -53,4 +53,29 @@ describe("SearchCriteria", () => {
     expect(search.isOutgoing).toBeUndefined();
     expect(changes).toBe(3);
   });
+
+  test("сбрасывает фильтр прочитанности после возврата tri-state фильтра в пустое состояние", async () => {
+    let search = new SearchEMail();
+    let target = document.createElement("div");
+    document.body.append(target);
+    let instance = mount(SearchCriteria, {
+      target,
+      props: { search, showSearchTerm: false, showAccount: false },
+    });
+    mounted.push(instance);
+    await tick();
+
+    let unread = target.querySelectorAll(".checkbox")[1] as HTMLElement;
+    unread.click();
+    await tick();
+    expect(search.isRead).toBe(false);
+
+    unread.click();
+    await tick();
+    expect(search.isRead).toBe(true);
+
+    unread.click();
+    await tick();
+    expect(search.isRead).toBeNull();
+  });
 });

@@ -79,7 +79,7 @@
   import RibbonCustomizeMenu from "./3pane/RibbonCustomizeMenu.svelte";
   import { ribbonPreferences } from "./3pane/ribbonPreferences";
   import { onDestroy, onMount } from "svelte";
-  import { currentMailSearchAccount } from "./Search/searchScope";
+  import { currentMailSearchAccount, syncSearchToCurrentMailbox } from "./Search/searchScope";
 
   export let selectedAccount: MailAccount;
   export let selectedFolder: Folder;
@@ -113,14 +113,18 @@
 
   $: selectedAccount, selectedFolder, syncSearchScope();
   function syncSearchScope() {
-    if (usingAdvancedSearch) {
-      return;
-    }
-    let account = currentMailSearchAccount(selectedAccount, selectedFolder);
-    if (globalSearch.account == account) {
+    if (!syncSearchToCurrentMailbox(globalSearch, selectedAccount, selectedFolder)) {
       return;
     }
     searchGeneration++;
+    if (usingAdvancedSearch) {
+      // Не показываем результаты старого ящика, пока критерии пересчитываются
+      // для нового.
+      advancedSearchMessages = new ArrayColl<EMail>();
+      $selectedMessageStore = null;
+      refreshAdvancedSearchDebounced();
+      return;
+    }
     globalSearch = newCurrentMailboxSearch();
     if ($globalSearchTerm) {
       runGlobalSearchDebounced();

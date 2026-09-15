@@ -76,4 +76,42 @@ describe("QuickFilterBar", () => {
     expect(unreadButton.classList.contains("active")).toBe(false);
     expect(unreadButton.getAttribute("aria-pressed")).toBe("false");
   });
+
+  test("exposes filter removal as a separate keyboard-accessible button", async () => {
+    let folder = {
+      id: "INBOX",
+      messages: new ArrayColl(),
+      countUnread: 0,
+      countTotal: 0,
+      countNewArrived: 0,
+      subscribe(
+        observer: (folder: any, property: string | null, oldValue: any) => void,
+      ) {
+        observer(this, null, null);
+        return () => {};
+      },
+    } as any;
+    let target = document.createElement("div");
+    document.body.append(target);
+    mounted.push(
+      mount(QuickFilterBar, {
+        target,
+        props: { folder, searchMessages: null },
+      }),
+    );
+
+    let unreadButton = [...target.querySelectorAll("button.pill")]
+      .find(button => button.textContent?.trim() == "Unread") as HTMLButtonElement;
+    expect(unreadButton).toBeTruthy();
+    let removeButton = unreadButton.parentElement?.querySelector("button.pill-remove") as HTMLButtonElement;
+    expect(removeButton).toBeTruthy();
+    expect(removeButton.getAttribute("aria-label")).toBe("Remove this filter button");
+    expect(removeButton.tabIndex).toBe(0);
+    expect(unreadButton.parentElement?.querySelector('[role="button"]')).toBeNull();
+
+    removeButton.click();
+    await tick();
+
+    expect(unreadButton.isConnected).toBe(false);
+  });
 });

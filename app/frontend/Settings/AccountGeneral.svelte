@@ -26,10 +26,12 @@
         <label for="name">{$t`Account name`}</label>
         <input type="text" bind:value={account.name} name="name" on:change={onChange} />
         <input type="color" bind:value={account.color} name="color" on:change={onChange} list="proposed-colors" />
-        {#if account.icon && typeof(account.icon) == "string"}
-          <img src={account.icon} width="24px" height="24px" alt="" />
+        {#if accountIcon && failedAccountIcon != accountIcon}
+          <img src={accountIcon} width="24px" height="24px" alt="" on:error={onAccountIconError} />
         {:else}
-          <hbox class="icon placeholder" />
+          <hbox class="icon placeholder">
+            <svelte:component this={AccountIcon} size="24px" />
+          </hbox>
         {/if}
 
         <label for="workspace">{$t`Workspace`}</label>
@@ -87,6 +89,16 @@
   import { t } from "../../l10n/l10n";
 
   export let account: Account;
+
+  let failedAccountIcon: string | null = null;
+  $: accountIcon = typeof account.icon == "string" ? account.icon : null;
+  $: if (failedAccountIcon && failedAccountIcon != accountIcon) {
+    failedAccountIcon = null;
+  }
+
+  function onAccountIconError() {
+    failedAccountIcon = accountIcon;
+  }
 
   $: extraSettings = accountSettings.filterObservable(cat => account instanceof cat.type && cat.isMain && cat.id != "acc-general");
 

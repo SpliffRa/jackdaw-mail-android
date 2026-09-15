@@ -1,14 +1,16 @@
-<vbox class="workspace-selector">
+<vbox class="workspace-selector" role="menu" on:keydown={onKeyDown} bind:this={selectorEl}>
   {#each [null, ...appGlobal.workspaces.each] as workspace}
-    <Clickable onClick={event => onWorkspaceSelected(workspace, event)}>
-      <hbox class="workspace"
-        style="--workspace-color: {workspace?.color ?? "var(--fg)"}"
-        class:selected={workspace == $selectedWorkspace}
-        >
-        <hbox class="dot" />
-        <hbox class="name">{workspace?.name ?? $t`All`}</hbox>
-      </hbox>
-    </Clickable>
+    <button
+      type="button"
+      class="workspace"
+      style="--workspace-color: {workspace?.color ?? "var(--fg)"}"
+      class:selected={workspace == $selectedWorkspace}
+      aria-current={workspace == $selectedWorkspace ? "true" : undefined}
+      role="menuitem"
+      on:click={event => onWorkspaceSelected(workspace, event)}>
+      <span class="dot" aria-hidden="true" />
+      <span class="name">{workspace?.name ?? $t`All`}</span>
+    </button>
   {/each}
 </vbox>
 
@@ -16,14 +18,31 @@
   import { Workspace } from "../../logic/Abstract/Workspace";
   import { selectedWorkspace } from "./Selected";
   import { appGlobal } from "../../logic/app";
-  import Clickable from "../Shared/Clickable.svelte";
   import { t } from "../../l10n/l10n";
+  import { createEventDispatcher } from "svelte";
 
   export let open: boolean;
+  const dispatch = createEventDispatcher<{ selected: void; close: void }>();
+  let selectorEl: HTMLElement;
+
+  export function focusFirst() {
+    selectorEl?.querySelector<HTMLButtonElement>("button")?.focus();
+  }
 
   function onWorkspaceSelected(workspace: Workspace, event: Event) {
+    event.stopPropagation();
     open = false;
     $selectedWorkspace = workspace;
+    dispatch("selected");
+  }
+
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.key == "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      open = false;
+      dispatch("close");
+    }
   }
 </script>
 
@@ -35,6 +54,14 @@
     color: var(--main-fg);
   }
   .workspace {
+    width: 100%;
+    border: 0;
+    display: flex;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
@@ -66,5 +93,9 @@
   .workspace.selected:hover {
     background-color: var(--selected-hover-bg);
     color: var(--selected-hover-fg);
+  }
+  .workspace:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
   }
 </style>
