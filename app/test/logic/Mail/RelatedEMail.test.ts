@@ -53,6 +53,33 @@ test("recognizes an exact duplicate without treating a bare number as an identif
   expect(extractRelatedIdentifiers("Срок ответа 30 минут, дата 15.09.2026")).toEqual([]);
 });
 
+test("does not treat a technical error code as a request identifier", () => {
+  expect(extractRelatedIdentifiers("Ошибка обработки адреса: ORA-20201")).toEqual([]);
+  expect(extractRelatedIdentifiers("Номер КН-1001058111")).toContain("кн-1001058111");
+});
+
+test("recognizes a labeled customer number across different subjects", () => {
+  const signal = classifyRelatedMail(
+    {
+      subject: "Re: Syle, клиент 1010002318",
+      body: "Заявка всё ещё не создаётся.",
+    },
+    {
+      subject: "ORA-20799 при создании заказа",
+      body: "Проверка клиента 1010002318 завершилась ошибкой.",
+    },
+  );
+  expect(signal).toMatchObject({ reason: "same-identifier" });
+  expect(signal?.sharedIdentifiers).toContain("1010002318");
+});
+
+test("does not connect messages only because they use the same corporate domain", () => {
+  expect(classifyRelatedMail(
+    { subject: "Проблема с заказом", body: "Нужна проверка.", contactEmail: "hello@syle.ru" },
+    { subject: "Уточнение по интеграции", body: "Есть новости?", contactEmail: "support@syle.ru" },
+  )).toBeNull();
+});
+
 test("connects parallel messages by a request identifier", () => {
   const signal = classifyRelatedMail(
     { subject: "Вопрос по заявке #ABC-12345", body: "Нужна проверка." },

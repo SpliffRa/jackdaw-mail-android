@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import LinkIcon from "lucide-svelte/icons/link";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import ChevronRightIcon from "lucide-svelte/icons/chevron-right";
@@ -28,47 +28,41 @@
 
   export let message: EMail;
 
-  type RelatedState = "loading" | "ready" | "error";
-  let status: RelatedState = "loading";
+  type RelatedState = "idle" | "loading" | "ready" | "error";
+  let status: RelatedState = "idle";
   let matches: RelatedMailMatch[] = [];
   let expandedGroupKeys = new Set<string>();
   let popupOpen = false;
   let triggerElement: HTMLButtonElement;
   let popupCloseButton: HTMLButtonElement;
   let loadToken = 0;
-  let scheduledLoad: ReturnType<typeof setTimeout> | null = null;
 
   const popupId = `related-messages-popup-${++nextRelatedPopupId}`;
   const titleId = `${popupId}-title`;
 
-  $: triggerLabel = status == "loading"
-    ? $t`Checking local mail…`
-    : status == "error"
-      ? $t`Could not check related messages.`
-      : matches.length
-        ? $t`Found related messages: ${matches.length}`
-        : $t`No related messages found in local mail.`;
+  $: triggerLabel = status == "idle"
+    ? $t`Search in mail`
+    : status == "loading"
+      ? $t`Checking local mail…`
+      : status == "error"
+        ? $t`Could not check related messages.`
+        : matches.length
+          ? $t`Found related messages: ${matches.length}`
+          : $t`No related messages found in local mail.`;
 
   $: if (popupOpen) {
     void focusPopup();
   }
   $: relatedGroups = groupRelatedMailMatches(matches);
 
-  onMount(() => {
-    // Поиск запускается после отрисовки тела письма, чтобы не задерживать первый кадр.
-    scheduledLoad = setTimeout(() => {
-      scheduledLoad = null;
-      void loadRelated();
-    }, 250);
-    return () => {
-      loadToken++;
-      if (scheduledLoad) {
-        clearTimeout(scheduledLoad);
-      }
-    };
+  onDestroy(() => {
+    loadToken++;
   });
 
   async function loadRelated() {
+    if (status == "loading") {
+      return;
+    }
     const token = ++loadToken;
     status = "loading";
     matches = [];
@@ -89,6 +83,9 @@
 
   function togglePopup() {
     popupOpen = !popupOpen;
+    if (popupOpen && (status == "idle" || status == "error")) {
+      void loadRelated();
+    }
   }
 
   function closePopup() {
@@ -154,6 +151,10 @@
   function contactLabel(email: EMail): string {
     return personDisplayName(email.contact) || email.from?.emailAddress || "";
   }
+
+  function sharedContextLabel(match: RelatedMailMatch): string {
+    return match.sharedIdentifiers[0] ?? "";
+  }
 </script>
 
 <svelte:window on:keydown={onWindowKeydown} />
@@ -203,7 +204,9 @@
         <LinkIcon size="16px" aria-hidden="true" />
         <div class="related-title-copy">
           <h2 id={titleId}>{$t`Related messages`}</h2>
-          {#if status == "loading"}
+          {#if status == "idle"}
+            <span class="related-summary">{$t`Search in mail`}</span>
+          {:else if status == "loading"}
             <span class="related-summary">{$t`Checking local mail…`}</span>
           {:else if status == "ready"}
             <span class="related-summary">
@@ -215,7 +218,7 @@
         </div>
       </div>
       <div class="related-actions">
-        {#if status != "loading"}
+        {#if status == "ready" || status == "error"}
           <button
             type="button"
             class="popup-icon-button"
@@ -240,7 +243,11 @@
     </header>
 
     <div class="related-popup-body">
-      {#if status == "loading"}
+      {#if status == "idle"}
+        <p class="state-row idle-state" role="status">
+          {$t`Search in mail`}
+        </p>
+      {:else if status == "loading"}
         <div class="loading-row" aria-live="polite">
           <span class="skeleton-line short"></span>
           <span class="skeleton-line"></span>
@@ -307,8 +314,8 @@
                           {:else}
                             <span class="reply-status">{$t`Received message`}</span>
                           {/if}
-                          {#if match.sharedIdentifiers.length}
-                            <span class="identifier">{match.sharedIdentifiers[0]}</span>
+                          {#if sharedContextLabel(match)}
+                            <span class="identifier">{sharedContextLabel(match)}</span>
                           {/if}
                         </div>
                       </button>

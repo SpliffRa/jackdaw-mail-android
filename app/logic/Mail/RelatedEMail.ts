@@ -16,6 +16,8 @@ const kMinimumTopicSubjectLength = 8;
 const kMinimumSimilarSubjectTokens = 2;
 const kMinimumSimilarBodyTokens = 4;
 const kSimilarTopicThreshold = 0.42;
+const kTechnicalErrorCodePattern = /^(?:ora|err(?:or)?|http|sqlstate|smtp|imap|pop)[-_/]\d{3,}$/iu;
+const kLabeledCustomerNumberPattern = /(?<![\p{L}\p{N}])(?:кн|клиент(?:а|у|ом|ский|ского|скому|ским)?(?:\s+номер(?:а|у|ом|е)?)?|номер(?:а|у|ом|е)?\s+клиента|client(?:\s+(?:number|id))?|customer(?:\s+(?:number|id))?)[\s:№#-]*(\d{6,14})(?!\d)/giu;
 
 const kStopWords = new Set([
   "а", "без", "бы", "в", "вам", "вас", "ведь", "во", "вот", "вы",
@@ -126,13 +128,20 @@ export function extractRelatedIdentifiers(text: string | null | undefined): stri
   }
   const patterns = [
     /#[\p{L}\p{N}][\p{L}\p{N}_/-]{2,39}/gu,
-    /\b[\p{L}]{1,8}[-_/][\p{N}]{3,12}\b/giu,
-    /\b[\p{L}]{2,8}[\p{N}]{4,12}\b/giu,
+    /(?<![\p{L}\p{N}])[\p{L}]{1,8}[-_/][\p{N}]{3,12}(?![\p{L}\p{N}])/giu,
+    /(?<![\p{L}\p{N}])[\p{L}]{2,8}[\p{N}]{4,12}(?![\p{L}\p{N}])/giu,
   ];
   const identifiers = new Set<string>();
+  for (const match of text.matchAll(kLabeledCustomerNumberPattern)) {
+    identifiers.add(match[1].toLocaleLowerCase());
+  }
   for (const pattern of patterns) {
     for (const match of text.match(pattern) ?? []) {
-      identifiers.add(match.toLocaleLowerCase());
+      const identifier = match.toLocaleLowerCase();
+      if (kTechnicalErrorCodePattern.test(identifier.replace(/^#/u, ""))) {
+        continue;
+      }
+      identifiers.add(identifier);
     }
   }
   return [...identifiers];
@@ -196,7 +205,11 @@ export function classifyRelatedMail(
     sourceBodyTokens.size >= kMinimumSimilarBodyTokens;
   if (combinedSimilarity >= kSimilarTopicThreshold &&
       (hasEnoughSubjectOverlap || hasEnoughBodyOverlap)) {
-    return { reason: "similar-topic", score: combinedSimilarity, sharedIdentifiers };
+    return {
+      reason: "similar-topic",
+      score: combinedSimilarity,
+      sharedIdentifiers,
+    };
   }
   return null;
 }
@@ -251,6 +264,7 @@ type RelatedMailRow = RelatedMailText & {
   id: number;
   folderID: number;
   pID?: string | number | null;
+  parentMsgID?: string | null;
   dateSent?: number | null;
   dateReceived?: number | null;
   outgoing?: number | null;
@@ -349,6 +363,21 @@ async function findCandidateRows(
       e.messageID IN ${referenceIDs} OR e.parentMsgID IN ${referenceIDs}
     )`);
   }
+  const sourceIdentifiers = uniqueStrings([
+    ...extractRelatedIdentifiers(source.subject),
+    ...extractRelatedIdentifiers(source.body),
+  ]);
+  for (const identifier of sourceIdentifiers) {
+    const pattern = `%${escapeLikePattern(identifier)}%`;
+    relationClauses.push(sql`(
+      lower(ifnull(e.subject, '')) LIKE ${pattern} ESCAPE '\\' OR
+      lower(ifnull(e.plaintext, '')) LIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
+  const contactEmail = source.contactEmail?.trim().toLocaleLowerCase();
+  if (contactEmail) {
+    relationClauses.push(sql`lower(trim(ifnull(e.contactEmail, ''))) = ${contactEmail}`);
+  }
   const subjectVariants = relatedSubjectVariants(source.subject);
   if (subjectVariants.length) {
     relationClauses.push(sql`e.subject IN ${subjectVariants}`);
@@ -431,7 +460,7 @@ function textFromRow(row: RelatedMailRow, fallback?: EMail): RelatedMailText {
     references: fallback?.references ?? null,
     subject: row.subject ?? fallback?.subject ?? "",
     body: row.body ?? fallback?.rawText ?? (fallback?.loadedBody ? fallback.text : ""),
-    contactEmail: row.contactEmail ?? fallback?.contact?.emailAddress ?? null,
+    contactEmail: row.contactEmail ?? contactEmailFromMessage(fallback) ?? null,
     sentAt: typeof row.dateSent == "number" ? row.dateSent * 1000 : fallback?.sent?.getTime(),
   };
 }
@@ -445,9 +474,23 @@ function textFromEmail(email: EMail): RelatedMailText {
     references: email.references,
     subject: email.subject,
     body: email.rawText ?? (email.loadedBody ? email.text : ""),
-    contactEmail: email.contact?.emailAddress ?? null,
+    contactEmail: contactEmailFromMessage(email),
     sentAt: email.sent?.getTime(),
   };
+}
+
+function contactEmailFromMessage(email: EMail | null | undefined): string | null {
+  const contact = email?.contact;
+  if (!contact) {
+    return null;
+  }
+  if ("emailAddress" in contact) {
+    return contact.emailAddress ?? null;
+  }
+  if ("emailAddresses" in contact) {
+    return contact.emailAddresses.first?.value ?? null;
+  }
+  return null;
 }
 
 function relatedMessageIDs(message: RelatedMailText): Set<string> {
@@ -503,6 +546,10 @@ function jaccardSimilarity(left: Set<string>, right: Set<string>): number {
 
 function uniqueStrings(values: (string | null | undefined)[]): string[] {
   return [...new Set(values.filter((value): value is string => !!value))];
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/gu, character => `\\${character}`);
 }
 
 function relatedSubjectVariants(subject: string | null | undefined): string[] {

@@ -35,6 +35,15 @@
   let messageBackgroundSetting = getMessageViewerBackgroundSetting();
   let displayE: HTMLElement;
   let displayReady = false;
+  const cssScrollableMessage = `
+    html {
+      overflow-x: auto !important;
+    }
+    body {
+      width: auto;
+      overflow-x: auto !important;
+    }
+  `;
 
   onMount(() => {
     displayReady = true;
@@ -57,7 +66,7 @@
   $: bodyClass = `jackdaw-email-${darkEmail ? "dark" : "light"} jackdaw-email-background-${messageBackground}`;
   $: displayHtml = darkEmail ? adaptEmailHtmlForDarkMode(html) : html;
   $: displayColors = readDisplayColors(messageBackground, darkEmail, displayReady, $colorsSetting.value);
-  $: headHTML = `<style>\n${cssBody}\n${fitContent ? cssBodyEmbed + "\n" : ""}${cssContent}\n${cssBodyDark}\n${displayColorsCSS(messageBackground, darkEmail, displayColors)}\n</style>`;
+  $: headHTML = `<style>\n${cssBody}\n${fitContent ? cssBodyEmbed + "\n" : ""}${cssContent}\n${cssBodyDark}\n${cssScrollableMessage}\n${displayColorsCSS(messageBackground, darkEmail, displayColors)}\n</style>`;
 
   function readDisplayColors(
     backgroundMode: MessageViewerBackground,
@@ -117,5 +126,6 @@
   .html-display :global(webview),
   .html-display :global(iframe) {
     background-color: var(--message-viewer-bg, var(--main-bg));
+    overflow-x: auto;
   }
 </style>

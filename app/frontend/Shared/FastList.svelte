@@ -154,6 +154,7 @@
    * Set by `onScroll()`
    * {integer} index position in entries */
   let showStartPos = 0;
+  let scrollFrame: number | null = null;
 
   /** How many rows are actually visible on the screen, without scroll */
   let showRows = 1;
@@ -287,7 +288,7 @@
     observedItems?.unregisterObserver(itemsChangeObserver);
     resizeObserver.disconnect();
     updateSizeThrottled.cancel();
-    onScrollThrottled.cancel();
+    cancelScrollFrame();
   }
 
   function onKey(event: KeyboardEvent) {
@@ -409,7 +410,30 @@
     return Math.max(Math.min(fromIndex, items.length - 1), 0);
   }
 
-  const onScrollThrottled = throttle(onScroll, 10);
+  function onScrollThrottled() {
+    if (scrollFrame != null) {
+      return;
+    }
+    if (typeof requestAnimationFrame != "function") {
+      onScroll();
+      return;
+    }
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = null;
+      onScroll();
+    });
+  }
+
+  function cancelScrollFrame() {
+    if (scrollFrame == null) {
+      return;
+    }
+    if (typeof cancelAnimationFrame == "function") {
+      cancelAnimationFrame(scrollFrame);
+    }
+    scrollFrame = null;
+  }
+
   function onScroll() {
     let topY = listE.scrollTop - headerHeight;
     let startPosCalc = Math.floor(topY / rowHeight);
@@ -563,6 +587,8 @@
   .fast-list {
     position: relative;
     flex: 1 0 0;
+    min-width: 0;
+    min-height: 0;
     overflow-y: scroll;
     overflow-x: hidden;
   }

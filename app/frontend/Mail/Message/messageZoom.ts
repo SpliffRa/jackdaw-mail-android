@@ -55,7 +55,7 @@ export function messageZoomReflowCss(
   }
   let wrapRules = `
 body {
-  overflow-x: hidden !important;
+  overflow-x: auto !important;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -78,7 +78,7 @@ body {
   width: calc(100% / ${factor}) !important;
   max-width: calc(100% / ${factor}) !important;
   box-sizing: border-box;
-  overflow-x: hidden !important;
+  overflow-x: auto !important;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

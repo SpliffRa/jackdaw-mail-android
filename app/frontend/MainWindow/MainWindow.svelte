@@ -83,6 +83,7 @@
   import { restoreSelectedWorkspace } from "./Selected";
   import {
     applyCategoryShortcut,
+    type CategoryShortcutTarget,
     findCategoryShortcut,
     keyboardCategoryShortcutFromEvent,
     KeyboardCategoryShortcutPressGuard,
@@ -237,6 +238,7 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   }
   const saveWindowSettingsDebounced = debounce(() => catchErrors(saveWindowSettings), 1000);
   const pressedCategoryShortcutCodes = new KeyboardCategoryShortcutPressGuard();
+  let categoryShortcutApplicationInProgress = false;
 
   function clearPressedCategoryShortcutCodes(): void {
     pressedCategoryShortcutCodes.clear();
@@ -277,11 +279,27 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
       return;
     }
     if (!pressedCategoryShortcutCodes.claim(shortcut.code)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    await applyCategoryShortcut(target);
+    event.stopImmediatePropagation();
+    await applyCategoryShortcutOnce(target);
+  }
+
+  async function applyCategoryShortcutOnce(target: CategoryShortcutTarget): Promise<void> {
+    if (categoryShortcutApplicationInProgress) {
+      return;
+    }
+    categoryShortcutApplicationInProgress = true;
+    try {
+      await applyCategoryShortcut(target);
+    } finally {
+      categoryShortcutApplicationInProgress = false;
+    }
   }
 
   function onCategoryShortcutKeyup(event: KeyboardEvent): void {
@@ -305,7 +323,7 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     }
     event.preventDefault();
     event.stopPropagation();
-    await applyCategoryShortcut(target);
+    await applyCategoryShortcutOnce(target);
   }
 
   function canHandleCategoryShortcut(event: Event): boolean {

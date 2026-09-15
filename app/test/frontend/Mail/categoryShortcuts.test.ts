@@ -66,14 +66,25 @@ describe("category shortcuts", () => {
   test("does not claim the same physical key until it is released", () => {
     let guard = new KeyboardCategoryShortcutPressGuard();
 
-    expect(guard.claim("KeyK")).toBe(true);
-    expect(guard.claim("KeyK")).toBe(false);
+    expect(guard.claim("KeyK", 0)).toBe(true);
+    expect(guard.claim("KeyK", 1)).toBe(false);
 
     guard.release("KeyK");
-    expect(guard.claim("KeyK")).toBe(true);
+    expect(guard.claim("KeyK", 50)).toBe(false);
+    expect(guard.claim("KeyK", 200)).toBe(true);
 
     guard.clear();
-    expect(guard.claim("KeyK")).toBe(true);
+    expect(guard.claim("KeyK", 201)).toBe(true);
+  });
+
+  test("clears the duplicate-event cooldown", () => {
+    let guard = new KeyboardCategoryShortcutPressGuard();
+
+    expect(guard.claim("KeyK", 0)).toBe(true);
+    guard.release("KeyK");
+    guard.clear();
+
+    expect(guard.claim("KeyK", 1)).toBe(true);
   });
 
   test("moves a shortcut when another target claims it", () => {

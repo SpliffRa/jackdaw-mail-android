@@ -6,6 +6,9 @@ import { blobToDataURL, NotImplemented, type URLString } from "../../logic/util/
 import { gt } from "../../l10n/l10n";
 import { ArrayColl } from "svelte-collections";
 import { openMailImageFromContext } from "../Mail/Message/openMailImage";
+import { bringAppToFront, globalSearchTerm } from "../AppsBar/selectedApp";
+import { selectedSearchTab } from "../Mail/Selected";
+import { SearchView } from "../Mail/LeftPane/SearchSwitcher.svelte";
 
 /**
  * Handles the Electron `<webview>` `"context-menu"` event.
@@ -65,6 +68,7 @@ export async function buildContextMenu(context: ContextInfo, win: any): Promise<
     add("paste", gt`Paste`, null, pasteText, context.editFlags.canPaste);
   }
   if (context.isText && !context.isLink) {
+    add("searchMail", gt`Search in mail`, null, searchMail);
     add("search", gt`Search the web`, null, searchWeb);
     /* if (os == "mac") {
       add("lookup", gt`Look up`, null, lookUpSelection);
@@ -210,6 +214,16 @@ async function searchWeb(context: ContextInfo, win: any) {
   const url = new URL('https://www.google.com/search');
   url.searchParams.set('q', context.selectionText);
   await openBrowser(url.toString());
+}
+
+function searchMail(context: ContextInfo, win: any) {
+  const searchTerm = context.selectionText?.replace(/\s+/gu, " ").trim();
+  if (!searchTerm) {
+    return;
+  }
+  globalSearchTerm.set(searchTerm.slice(0, 200));
+  selectedSearchTab.set(SearchView.Search);
+  bringAppToFront();
 }
 
 function lookUpSelection(context: ContextInfo, win: any) {

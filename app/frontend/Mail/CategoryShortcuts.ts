@@ -30,15 +30,23 @@ export type MouseCategoryShortcut = {
 
 export type CategoryShortcut = KeyboardCategoryShortcut | MouseCategoryShortcut;
 
+const kCategoryShortcutDuplicateWindowMs = 200;
+
 /** Не даёт одному физическому нажатию применить категорию несколько раз. */
 export class KeyboardCategoryShortcutPressGuard {
   private readonly pressedCodes = new Set<string>();
+  private readonly lastClaimedAt = new Map<string, number>();
 
-  claim(code: string): boolean {
+  claim(code: string, now = Date.now()): boolean {
     if (!code || this.pressedCodes.has(code)) {
       return false;
     }
+    let lastClaim = this.lastClaimedAt.get(code);
+    if (lastClaim != null && now - lastClaim < kCategoryShortcutDuplicateWindowMs) {
+      return false;
+    }
     this.pressedCodes.add(code);
+    this.lastClaimedAt.set(code, now);
     return true;
   }
 
@@ -48,6 +56,7 @@ export class KeyboardCategoryShortcutPressGuard {
 
   clear(): void {
     this.pressedCodes.clear();
+    this.lastClaimedAt.clear();
   }
 }
 
