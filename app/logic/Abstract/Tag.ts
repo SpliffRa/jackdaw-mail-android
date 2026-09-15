@@ -22,6 +22,27 @@ export class Tag extends Observable {
 }
 
 export const availableTags = new SetColl<Tag>();
+/**
+ * Хранит один объект Tag для каждого имени в течение работы приложения.
+ *
+ * Категория может быть удалена из `availableTags`, пока загруженные письма
+ * всё ещё ссылаются на неё. Если создать новый объект при чтении флага
+ * сервера, в одном письме окажутся два разных объекта с одним именем, что
+ * ломает ключи списков Svelte.
+ */
+const tagsByName = new Map<string, Tag>();
+
+function findTagByName(name: string): Tag | undefined {
+  let existing = tagsByName.get(name);
+  if (existing) {
+    return existing;
+  }
+  existing = availableTags.find(tag => tag.name == name);
+  if (existing) {
+    tagsByName.set(name, existing);
+  }
+  return existing;
+}
 
 /** Outlook-style ordering: explicit list position, then natural name sort. */
 export function compareTags(a: Tag, b: Tag): number {
@@ -40,7 +61,13 @@ export function compareTags(a: Tag, b: Tag): number {
 }
 
 export function sortedTagList(tags: Iterable<Tag> = availableTags.contents): Tag[] {
-  return [...tags].sort(compareTags);
+  let unique = new Map<string, Tag>();
+  for (let tag of tags) {
+    if (!unique.has(tag.name)) {
+      unique.set(tag.name, tag);
+    }
+  }
+  return [...unique.values()].sort(compareTags);
 }
 
 function nextTagSortOrder(): number {
@@ -54,32 +81,61 @@ function nextTagSortOrder(): number {
 }
 
 export function getTagByName(name: string, autoAdd = true): Tag {
-  let existing = availableTags.find(tag => tag.name == name);
+  let existing = findTagByName(name);
   if (existing) {
+    if (autoAdd && !availableTags.contains(existing)) {
+      availableTags.add(existing);
+    }
     return existing;
   }
   let tag = new Tag();
   tag.name = name;
   tag.color = "#000000";
   tag.sortOrder = nextTagSortOrder();
+  tagsByName.set(name, tag);
   if (autoAdd) {
     availableTags.add(tag);
   }
   return tag;
 }
 
+/** Добавляет пользовательскую категорию, сохраняя один объект на имя. */
+export function addAvailableTag(tag: Tag): Tag {
+  let canonical = getTagByName(tag.name, false);
+  if (canonical !== tag) {
+    canonical.color = tag.color;
+  }
+  if (!availableTags.contains(canonical)) {
+    availableTags.add(canonical);
+  }
+  return canonical;
+}
+
 export async function loadTagsList() {
   let json: any[] = sanitize.array(JSON.parse(sanitize.nonemptystring(localStorage.getItem("tags"), "[]")), []);
   availableTags.clear();
+  let names = new Set<string>();
+  let normalized = false;
   for (let [index, tagJSON] of json.entries()) {
     let tag = new Tag();
     tag.name = sanitize.label(tagJSON.name);
+    if (!tag.name || names.has(tag.name)) {
+      normalized = true;
+      continue;
+    }
     tag.color = sanitize.string(tagJSON.color, "#00FF00");
     let sortOrder = tagJSON.sortOrder;
     tag.sortOrder = typeof sortOrder == "number" && Number.isFinite(sortOrder) ? sortOrder : index;
-    availableTags.add(tag);
+    let canonical = getTagByName(tag.name, false);
+    canonical.color = tag.color;
+    canonical.sortOrder = tag.sortOrder;
+    availableTags.add(canonical);
+    names.add(tag.name);
   }
   assignTagSortOrders(sortedTagList());
+  if (normalized) {
+    await saveTagsList();
+  }
 }
 
 export async function saveTagsList() {

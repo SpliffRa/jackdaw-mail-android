@@ -136,7 +136,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Tag, availableTags, moveTag, reorderTag, saveTagsList, setTagsSyncAccountId, sortedTagList } from "../../../logic/Abstract/Tag";
+  import { Tag, addAvailableTag, availableTags, moveTag, reorderTag, saveTagsList, setTagsSyncAccountId, sortedTagList } from "../../../logic/Abstract/Tag";
   import {
     createTagCombination,
     removeTagCombination,
@@ -226,7 +226,7 @@
   }
 
   async function onAdd(tag: Tag) {
-    availableTags.add(tag);
+    addAvailableTag(tag);
     await saveTagsList();
   }
 

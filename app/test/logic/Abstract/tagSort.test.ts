@@ -4,6 +4,8 @@ import {
   Tag,
   availableTags,
   compareTags,
+  getTagByName,
+  loadTagsList,
   moveTag,
   reorderTag,
   sortedTagList,
@@ -164,5 +166,48 @@ describe("compareTags", () => {
       ], { removeOthers: false });
       expect(existing.color).toBe("#ED616F");
     });
+  });
+});
+
+describe("канонизация категорий", () => {
+  beforeEach(() => {
+    availableTags.clear();
+    const store = new Map<string, string>();
+    globalThis.localStorage = {
+      getItem: key => store.get(key) ?? null,
+      setItem: (key, value) => { store.set(key, value); },
+      removeItem: key => { store.delete(key); },
+      clear: () => { store.clear(); },
+      key: () => null,
+      length: store.size,
+    } as Storage;
+  });
+
+  test("повторно использует объект категории после ее удаления из списка", () => {
+    let name = `Encrypt-${crypto.randomUUID()}`;
+    let original = getTagByName(name);
+    let messageTags = new Set([original]);
+
+    availableTags.remove(original);
+    let reloaded = getTagByName(name);
+    messageTags.add(reloaded);
+
+    expect(reloaded).toBe(original);
+    expect(messageTags.size).toBe(1);
+  });
+
+  test("удаляет дубликаты категорий из локального хранилища", async () => {
+    let name = `duplicate-${crypto.randomUUID()}`;
+    localStorage.setItem("tags", JSON.stringify([
+      { name, color: "#111111", sortOrder: 0 },
+      { name, color: "#222222", sortOrder: 1 },
+      { name: `${name}-other`, color: "#333333", sortOrder: 2 },
+    ]));
+
+    await loadTagsList();
+
+    expect(sortedTagList().map(tag => tag.name)).toEqual([name, `${name}-other`]);
+    expect(JSON.parse(localStorage.getItem("tags")!).map((tag: { name: string }) => tag.name))
+      .toEqual([name, `${name}-other`]);
   });
 });

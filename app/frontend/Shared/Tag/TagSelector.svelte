@@ -31,7 +31,7 @@
 </vbox>
 
 <script lang="ts">
-  import { saveTagsList, sortedTagList, type Tag, type TaggableObject } from "../../../logic/Abstract/Tag";
+  import { addAvailableTag, saveTagsList, sortedTagList, type Tag, type TaggableObject } from "../../../logic/Abstract/Tag";
   import TagBubble from "./TagBubble.svelte";
   import TagAdd from "./TagAdd.svelte";
   import RoundButton from "../../Shared/RoundButton.svelte";
@@ -76,9 +76,10 @@
     isAdding = false;
   }
   async function onAdd(tag: Tag) {
-    tags.add(tag);
+    let canonical = addAvailableTag(tag);
+    tags.add(canonical);
     await saveTagsList();
-    await onSelectToggle(tag);
+    await onSelectToggle(canonical);
     isAdding = false;
   }
 </script>
