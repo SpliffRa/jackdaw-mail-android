@@ -90,6 +90,51 @@
   .message-display.message-background-white {
     --message-viewer-bg: #ffffff;
     --message-viewer-fg: #111827;
+
+    /*
+     * Элементы управления письмом находятся внутри просмотрщика, но их
+     * общие стили используют токены темы приложения. При белом фоне письма
+     * они должны оставаться читаемыми даже в тёмной теме приложения.
+     */
+    --bg: #ffffff;
+    --fg: #111827;
+    --main-bg: #ffffff;
+    --main-fg: #111827;
+    --border: #c7ced8;
+    --hover-bg: #edf1f5;
+    --hover-fg: #111827;
+    --icon-primary: #9a5b00;
+    --button-bg: #f5f6f8;
+    --button-fg: #111827;
+    --button-border: #b8c1cc;
+    --selected-bg: #f4dfb5;
+    --selected-fg: #111827;
+    --selected-hover-bg: #edcc8a;
+    --selected-hover-fg: #111827;
+    --offset-bg: #f1f3f5;
+    --offset-fg: #111827;
+    --inverted-bg: #111827;
+    --inverted-fg: #ffffff;
+    --link-fg: #9a5b00;
+    --link-hover-fg: #754200;
+    --surface-subtle: #f4f5f7;
+    --leftbar-bg: #f5f6f8;
+    --leftbar-fg: #111827;
+    --input-bg: #ffffff;
+    --input-fg: #111827;
+    --input-line: #b8c1cc;
+    --input-placeholder: #6b7280;
+    --danger-fg: #b42318;
+    --glass-bg-elevated: rgba(255, 255, 255, 0.98);
+    --glass-border: #c7ced8;
+    --glass-hover-bg: rgba(17, 24, 39, 0.06);
+    --glass-selected-bg: #f4f6f8;
+    --glass-selected-border: rgba(154, 91, 0, 0.4);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    --glass-shadow: 0 12px 28px rgba(17, 24, 39, 0.18);
+  }
+  .message-display.message-background-white :global(button.plain) {
+    color: var(--message-viewer-fg);
   }
   .message-display.message-background-dark {
     --message-viewer-bg: #1a1a1c;
