@@ -9,6 +9,16 @@
     class:ribbon-center={ribbonPlacement == "center"}
     class:ribbon-end={ribbonPlacement == "end"}>
     <hbox class="toolbar-left-controls">
+      {#if !$mailFolderPaneExpandedSetting.value}
+        <button type="button" class="folder-pane-toggle"
+          title={$t`Show folders`}
+          aria-label={$t`Show folders`}
+          aria-pressed="false"
+          aria-controls="mail-folders-pane"
+          on:click={toggleMailFolderPane}>
+          <PanelLeftOpenIcon size="16px" />
+        </button>
+      {/if}
       <hbox class="search-wrap">
         <SearchField bind:searchTerm={$globalSearchTerm} variant="toolbar" />
         <button type="button" class="search-filters-btn"
@@ -80,6 +90,8 @@
   import { ribbonPreferences } from "./3pane/ribbonPreferences";
   import { onDestroy, onMount } from "svelte";
   import { currentMailSearchAccount, syncSearchToCurrentMailbox } from "./Search/searchScope";
+  import { mailFolderPaneExpandedSetting, toggleMailFolderPane } from "./mailFolderPaneState";
+  import PanelLeftOpenIcon from "lucide-svelte/icons/panel-left-open";
 
   export let selectedAccount: MailAccount;
   export let selectedFolder: Folder;
@@ -278,6 +290,45 @@
     max-width: 100%;
     overflow: hidden;
   }
+  .folder-pane-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid var(--toolbar-control-border);
+    border-radius: var(--border-radius);
+    background: var(--toolbar-control-bg);
+    color: var(--toolbar-control-fg);
+    cursor: pointer;
+    transition:
+      background-color 0.16s ease,
+      border-color 0.16s ease,
+      color 0.16s ease,
+      transform 0.18s cubic-bezier(0.34, 1.35, 0.64, 1);
+  }
+  .folder-pane-toggle:hover {
+    background: var(--hover-bg);
+    border-color: var(--border);
+    color: var(--hover-fg);
+  }
+  .folder-pane-toggle:active {
+    transform: scale(0.96);
+  }
+  .folder-pane-toggle:focus-visible {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 1px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .folder-pane-toggle {
+      transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+    .folder-pane-toggle:active {
+      transform: none;
+    }
+  }
   .toolbar-command-area {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 34px;
@@ -469,6 +520,7 @@
     flex: 0 0 auto;
   }
   .mail-toolbar.toolbar-compact .search-filters-btn,
+  .mail-toolbar.toolbar-compact .folder-pane-toggle,
   .mail-toolbar.toolbar-compact :global(.create),
   .mail-toolbar.toolbar-compact :global(.mail-create-item-menu .menu-button),
   .mail-toolbar.toolbar-compact :global(.quick-filters .pill) {
@@ -489,6 +541,7 @@
     padding: 0;
   }
   .mail-toolbar.toolbar-large .search-filters-btn,
+  .mail-toolbar.toolbar-large .folder-pane-toggle,
   .mail-toolbar.toolbar-large :global(.create),
   .mail-toolbar.toolbar-large :global(.mail-create-item-menu .menu-button),
   .mail-toolbar.toolbar-large :global(.quick-filters .pill) {
@@ -508,6 +561,7 @@
     padding: 0;
   }
   .mail-toolbar.toolbar-large .search-filters-btn,
+  .mail-toolbar.toolbar-large .folder-pane-toggle,
   .mail-toolbar.toolbar-large :global(.create),
   .mail-toolbar.toolbar-large :global(.mail-create-item-menu .menu-button) {
     width: 44px;

@@ -1,7 +1,19 @@
 <svelte:window on:keydown={onFolderCreationKeydown} />
 
-<vbox flex class="folder-pane">
+<vbox flex class="folder-pane" id="mail-folders-pane">
   <hbox class="brand-bar">
+    <button type="button" class="folder-pane-toggle"
+      title={$mailFolderPaneExpandedSetting.value ? $t`Hide folders` : $t`Show folders`}
+      aria-label={$mailFolderPaneExpandedSetting.value ? $t`Hide folders` : $t`Show folders`}
+      aria-pressed={$mailFolderPaneExpandedSetting.value}
+      aria-controls="mail-folders-pane"
+      on:click={toggleMailFolderPane}>
+      {#if $mailFolderPaneExpandedSetting.value}
+        <PanelLeftCloseIcon size="16px" />
+      {:else}
+        <PanelLeftOpenIcon size="16px" />
+      {/if}
+    </button>
     {#if $appGlobal.isMobile}
       <WorkspaceHeader selectedApp={mailApp} />
     {/if}
@@ -116,6 +128,9 @@
   import WorkspaceHeader from "../../MainWindow/WorkspaceHeader.svelte";
   import { mailApp } from "../MailJackdawApp";
   import HiddenFolders from "./HiddenFolders.svelte";
+  import { mailFolderPaneExpandedSetting, toggleMailFolderPane } from "../mailFolderPaneState";
+  import PanelLeftCloseIcon from "lucide-svelte/icons/panel-left-close";
+  import PanelLeftOpenIcon from "lucide-svelte/icons/panel-left-open";
 
   export let accounts: Collection<MailAccount>; /** in */
   export let folders: Collection<Folder>; /** in */
@@ -205,6 +220,7 @@
       folderCreationOpen = false;
     }
   }
+
 </script>
 
 <style>
@@ -237,6 +253,45 @@
     padding: 0 12px;
     box-sizing: border-box;
     border-block-end: 1px solid var(--border);
+  }
+  .folder-pane-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--leftbar-fg);
+    cursor: pointer;
+    transition:
+      background-color 0.16s ease,
+      border-color 0.16s ease,
+      color 0.16s ease,
+      transform 0.18s cubic-bezier(0.34, 1.35, 0.64, 1);
+  }
+  .folder-pane-toggle:hover {
+    background-color: var(--hover-bg);
+    border-color: var(--border);
+    color: var(--hover-fg);
+  }
+  .folder-pane-toggle:active {
+    transform: scale(0.96);
+  }
+  .folder-pane-toggle:focus-visible {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 1px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .folder-pane-toggle {
+      transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    }
+    .folder-pane-toggle:active {
+      transform: none;
+    }
   }
   .brand-bar :global(.workspace) {
     color: var(--leftbar-fg);

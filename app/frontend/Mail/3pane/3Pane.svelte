@@ -1,4 +1,5 @@
 <Splitter name="mail.3pane.folders" initialRightRatio={5}
+  hasLeft={$mailFolderPaneExpandedSetting.value}
   leftMinWidth={230} rightMinWidth={560}>
   <LeftPane {accounts} {folders}
     bind:selectedAccount bind:selectedFolder bind:selectedFolders bind:searchMessages
@@ -54,6 +55,7 @@
   import { ArrayColl, type Collection } from 'svelte-collections';
   import { onMount } from "svelte";
   import { ensureAccountExpanded } from "../mailSidebarState";
+  import { mailFolderPaneExpandedSetting } from "../mailFolderPaneState";
 
   export let horizontal: boolean = true;
   export let accounts: Collection<MailAccount>; /** in */
