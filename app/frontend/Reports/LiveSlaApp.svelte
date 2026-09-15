@@ -966,7 +966,7 @@
                 <div>
                   <h3>{$t`SLA tracking and reminders`}</h3>
                   <p>
-                    {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes from the schedule above.`}
+                    {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
                   </p>
                 </div>
                 <span
@@ -1136,7 +1136,7 @@
         <div class="live-settings-summary">
           <div>
             <span>{$t`Response target`}</span>
-            <strong>{responseTargetMinutes} {$t`minutes`}</strong>
+            <strong>{responseTargetMinutes} {$t`working minutes`}</strong>
           </div>
           <div>
             <span>{$t`Working hours for response SLA`}</span>
@@ -1154,7 +1154,7 @@
           </div>
         </div>
         <p class="live-scope-note">
-          {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes from the schedule above.`}
+          {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
         </p>
       </section>
     {/if}

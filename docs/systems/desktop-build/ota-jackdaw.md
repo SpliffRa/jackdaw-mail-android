@@ -96,6 +96,15 @@ Example after a Windows-only fix:
 
 **Users do not wait for finalize or carry-forward.** OTA works once **their** platform job finishes (carry-forward adds the other OS metadata within ~1 min for single-OS dispatches).
 
+### Post-push GitHub history cleanup
+
+After a successful push-triggered desktop publish, `.github/workflows/cleanup-github-history.yml`
+keeps the newest non-empty GitHub Release and its tag. It removes older releases, their
+release tags, and completed historical Actions runs. The cleanup deliberately waits for a
+successful publish, so a failed build cannot delete the last working OTA release. In-progress
+runs, the current publish run, and the cleanup run are preserved; tags that are not attached
+to a release are not changed.
+
 ---
 
 ## GitHub secrets

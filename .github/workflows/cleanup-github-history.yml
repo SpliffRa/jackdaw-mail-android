@@ -1,0 +1,74 @@
+name: Cleanup old GitHub history
+
+on:
+  workflow_run:
+    workflows:
+      - Jackdaw Mail Publish Desktop Update
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  cleanup:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove old completed Actions runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          CURRENT_PUBLISH_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+          CURRENT_CLEANUP_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPOSITORY/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | select(.status == "completed") | [.id, .created_at] | @tsv' |
+            while IFS=$'\t' read -r RUN_ID CREATED_AT; do
+              [ -z "$RUN_ID" ] && continue
+              if [ "$RUN_ID" = "$CURRENT_PUBLISH_RUN_ID" ] || [ "$RUN_ID" = "$CURRENT_CLEANUP_RUN_ID" ]; then
+                echo "Keeping current run $RUN_ID ($CREATED_AT)"
+                continue
+              fi
+              echo "Deleting completed Actions run $RUN_ID ($CREATED_AT)"
+              gh api -X DELETE "repos/$REPOSITORY/actions/runs/$RUN_ID"
+            done
+
+      - name: Keep the newest non-empty release and its tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEEP_TAG=$(
+            gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and (.assets | length) > 0) | [.created_at, .tag_name] | @tsv' |
+              sort -r | head -n 1 | cut -f 2-
+          )
+
+          if [ -z "$KEEP_TAG" ]; then
+            echo "No non-empty release found; leaving releases and tags untouched."
+            exit 0
+          fi
+
+          echo "Keeping newest non-empty release: $KEEP_TAG"
+          gh api --paginate "repos/$REPOSITORY/releases?per_page=100" \
+            --jq '.[].tag_name' |
+            while IFS= read -r TAG; do
+              [ -z "$TAG" ] && continue
+              if [ "$TAG" = "$KEEP_TAG" ]; then
+                continue
+              fi
+              echo "Deleting old release and tag: $TAG"
+              gh release delete "$TAG" --repo "$REPOSITORY" --yes --cleanup-tag
+            done

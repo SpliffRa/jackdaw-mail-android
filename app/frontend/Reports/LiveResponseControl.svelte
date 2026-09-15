@@ -346,7 +346,7 @@
       <p class="live-control-kicker">{$t`LIVE SLA`}</p>
       <h2 id="live-control-title">{$t`Live response control`}</h2>
       <p>
-        {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes from the schedule above.`}
+        {$t`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`}
       </p>
     </div>
     <button
@@ -400,7 +400,7 @@
       </div>
       <div>
         <strong class="live-number">{waitingCount}</strong>
-        <span>{$t`waiting for workday`}</span>
+        <span>{$t`waiting for working hours`}</span>
       </div>
     </div>
 

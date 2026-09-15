@@ -52,6 +52,7 @@
   import { assert } from "../../../logic/util/util";
   import { t } from "../../../l10n/l10n";
   import WorkspaceAccounts from "./WorkspaceAccounts.svelte";
+  import { selectWorkspace, selectedWorkspace } from "../../MainWindow/Selected";
 
   export let workspace: Workspace;
 
@@ -60,6 +61,9 @@
 
   async function onDelete() {
     assert(workspaces.length > 1, $t`Cannot remove the last workspace`);
+    if ($selectedWorkspace == workspace) {
+      selectWorkspace(null);
+    }
     workspaces.remove(workspace);
     await saveWorkspaces();
   }

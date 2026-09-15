@@ -667,7 +667,7 @@ async function showResponseEventNotification(
       : gt`Request taken into work`,
     event == "overdue"
       ? gt`No reply to “${subject}” within ${targetMinutes} working minutes.`
-      : gt`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes from the schedule above.`,
+      : gt`The timer starts when the incoming message is received. Reminder intervals are measured in working minutes using the schedule configured for the selected mailbox.`,
     `response-sla:${event}:${responseReminderKey(candidate)}`,
     soundEvent,
   );

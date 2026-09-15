@@ -3365,7 +3365,7 @@
                       <div>
                         <h3>{$t`Who answers most outside working hours`}</h3>
                         <p>
-                          {$t`Ranked by first replies sent outside the selected schedule.`}
+                          {$t`Ranked by the number of first replies sent outside the selected schedule.`}
                         </p>
                       </div>
                     </div>
@@ -3407,6 +3407,9 @@
                     </div>
                     <p class="table-note">
                       {$t`One reply with several categories is counted once for each category.`}
+                    </p>
+                    <p class="table-note">
+                      {$t`The ranking uses the number of replies sent outside working hours. The percentage shows their share among the employee's verified replies.`}
                     </p>
                   </div>
 

@@ -6,6 +6,9 @@
   <hbox class="subject-line">
     <value class="subject">{$message.subject}</value>
     <hbox flex />
+    {#key $message.dbID ?? $message.messageID}
+      <RelatedMessages message={$message} />
+    {/key}
     <value class="date font-small" title={$message.sent?.toLocaleString(getDateTimeLocale())}>
       {getDateTimeString($message.sent)}
     </value>
@@ -101,6 +104,7 @@
   import type { Tag } from "../../../logic/Abstract/Tag";
   import { appGlobal } from "../../../logic/app";
   import MessageToolbar from "./MessageToolbar.svelte";
+  import RelatedMessages from "./RelatedMessages.svelte";
   import RecipientsList from "./RecipientsList.svelte";
   import Recipient from "./Recipient.svelte";
   import PersonPicture from "../../Contacts/Person/PersonPicture.svelte";

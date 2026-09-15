@@ -15,9 +15,9 @@ export class Workspace extends Observable {
   @notifyChangedProperty
   icon: any;
 
-  constructor(name: string, color: string, icon: any) {
+  constructor(name: string, color: string, icon: any, id?: string) {
     super();
-    this.id = name;
+    this.id = id ?? name;
     this.name = name;
     this.color = color ?? randomAccountColor();
     this.icon = icon ?? defaultWorkspaceIcon;
@@ -41,9 +41,10 @@ export async function loadWorkspaces() {
   let json: any[] = sanitize.array(JSON.parse(sanitize.nonemptystring(localStorage.getItem("workspaces"), "[]")), []);
   for (let workspaceJSON of json) {
     let name = sanitize.label(workspaceJSON.name);
+    let id = sanitize.nonemptystring(workspaceJSON.id, name);
     let color = sanitize.string(workspaceJSON.color, randomAccountColor());
     let icon = sanitize.string(workspaceJSON.icon, defaultWorkspaceIcon);
-    let workspace = new Workspace(name, color, icon);
+    let workspace = new Workspace(name, color, icon, id);
     appGlobal.workspaces.add(workspace);
   }
   if (appGlobal.workspaces.isEmpty) {
@@ -52,10 +53,11 @@ export async function loadWorkspaces() {
 }
 
 export async function saveWorkspaces() {
-  let json = appGlobal.workspaces.contents.map(tag => ({
-    name: tag.name,
-    color: tag.color,
-    icon: tag.icon,
+  let json = appGlobal.workspaces.contents.map(workspace => ({
+    id: workspace.id,
+    name: workspace.name,
+    color: workspace.color,
+    icon: workspace.icon,
   }));
   localStorage.setItem("workspaces", JSON.stringify(json));
 }

@@ -80,6 +80,7 @@
   // #endif
   import { notifications } from "./Notification";
   import { selectedAccount } from "../Mail/Selected";
+  import { restoreSelectedWorkspace } from "./Selected";
   import {
     applyCategoryShortcut,
     findCategoryShortcut,
@@ -174,6 +175,7 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     SplashScreen.hide();
     // #endif
     await startup();
+    restoreSelectedWorkspace(appGlobal.workspaces);
     changeTheme($themeSetting.value);
     await disableAppsBasedOnFeaturesXML();
   }

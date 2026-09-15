@@ -15,8 +15,8 @@
 </vbox>
 
 <script lang="ts">
-  import { Workspace } from "../../logic/Abstract/Workspace";
-  import { selectedWorkspace } from "./Selected";
+  import type { Workspace } from "../../logic/Abstract/Workspace";
+  import { selectedWorkspace, selectWorkspace } from "./Selected";
   import { appGlobal } from "../../logic/app";
   import { t } from "../../l10n/l10n";
   import { createEventDispatcher } from "svelte";
@@ -29,10 +29,10 @@
     selectorEl?.querySelector<HTMLButtonElement>("button")?.focus();
   }
 
-  function onWorkspaceSelected(workspace: Workspace, event: Event) {
+  function onWorkspaceSelected(workspace: Workspace | null, event: Event) {
     event.stopPropagation();
     open = false;
-    $selectedWorkspace = workspace;
+    selectWorkspace(workspace);
     dispatch("selected");
   }
 
