@@ -42,7 +42,7 @@ export function resolveOWAAccountForTagSync(fallbackPrimary?: OWAAccount | null)
   let accounts = listOWAAccountsForTagSync();
   let shared = accounts.filter(account => account.isDependentAccount);
   if (shared.length) {
-    return shared.find(account => /integrators/i.test(account.name)) ?? shared[0];
+    return shared[0];
   }
   if (fallbackPrimary && !fallbackPrimary.isDependentAccount && fallbackPrimary.isLoggedIn) {
     return fallbackPrimary;

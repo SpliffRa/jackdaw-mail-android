@@ -14,8 +14,19 @@ import {
   type NativeMenuAction,
   type NativeMenuLabels,
 } from '../../../app/logic/util/nativeMenu'
+import {
+  composeWindowCloseChannel,
+  composeWindowClosedChannel,
+  composeWindowDataChannel,
+  composeWindowFocusChannel,
+  composeWindowOpenChannel,
+  isComposeWindowPayload,
+  type ComposeWindowMail,
+} from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
 
 let primaryWindow: BrowserWindow | null = null;
+let currentJPCSecret: string | null = null;
+const composeWindows = new Map<string, { window: BrowserWindow; payload: ComposeWindowMail }>();
 const pendingNativeMenuActions = new WeakMap<BrowserWindow, NativeMenuAction>();
 let currentNativeMenuLabels: NativeMenuLabels = {
   about: 'About Jackdaw Mail',
@@ -85,16 +96,158 @@ function isNativeMenuLabels(value: unknown): value is NativeMenuLabels {
     typeof labels[key] === 'string' && (labels[key] as string).length <= 200);
 }
 
+function isComposeWindowID(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 128;
+}
+
+function isPrimaryRenderer(sender: WebContents): boolean {
+  return !!primaryWindow && !primaryWindow.isDestroyed() && primaryWindow.webContents === sender;
+}
+
+function notifyComposeWindowClosed(windowID: string): void {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+  try {
+    window.webContents.send(composeWindowClosedChannel, windowID);
+  } catch (ex) {
+    console.error("Could not notify the main window about a closed compose window", ex);
+  }
+}
+
+function closeComposeWindows(): void {
+  for (const entry of composeWindows.values()) {
+    if (!entry.window.isDestroyed()) {
+      entry.window.close();
+    }
+  }
+  composeWindows.clear();
+}
+
+function loadRendererWindow(window: BrowserWindow, hash: string): void {
+  if (is.dev) {
+    window.loadURL('http://localhost:5454/#' + hash)
+      .catch(console.error);
+  } else if (process.env['ELECTRON_RENDERER_URL']) {
+    window.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#' + hash)
+      .catch(console.error);
+  } else {
+    window.loadFile(join(__dirname, '../renderer/index.html'), { hash })
+      .catch(console.error);
+  }
+}
+
+function createComposeWindow(windowID: string, payload: ComposeWindowMail): void {
+  if (!currentJPCSecret) {
+    return;
+  }
+  const composeWindow = new BrowserWindow({
+    width: 920,
+    height: 640,
+    minWidth: 520,
+    minHeight: 360,
+    show: false,
+    title: "Jackdaw Mail — Compose",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(import.meta.dirname, '../preload/index.mjs'),
+      sandbox: false,
+      webviewTag: true,
+    },
+  });
+  setupSpellcheckContextMenu(composeWindow);
+  const entry = { window: composeWindow, payload };
+  composeWindows.set(windowID, entry);
+  composeWindow.on("closed", () => {
+    if (composeWindows.get(windowID)?.window === composeWindow) {
+      composeWindows.delete(windowID);
+      notifyComposeWindowClosed(windowID);
+    }
+  });
+  composeWindow.once("ready-to-show", () => {
+    if (!composeWindow.isDestroyed()) {
+      composeWindow.show();
+      composeWindow.focus();
+    }
+  });
+  composeWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (isMainFrame) {
+      console.error("Compose window failed to load", errorCode, errorDescription);
+    }
+  });
+  const hash = new URLSearchParams({
+    jpcSecret: currentJPCSecret,
+    composeWindow: windowID,
+  }).toString();
+  loadRendererWindow(composeWindow, hash);
+}
+
+ipcMain.on(composeWindowOpenChannel, (event, windowID: unknown, payload: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || !isComposeWindowID(windowID) ||
+      !isComposeWindowPayload(payload) || payload.windowID !== windowID) {
+    return;
+  }
+  const existing = composeWindows.get(windowID);
+  if (existing && !existing.window.isDestroyed()) {
+    existing.payload = payload;
+    existing.window.show();
+    existing.window.focus();
+    return;
+  }
+  composeWindows.delete(windowID);
+  createComposeWindow(windowID, payload);
+});
+
+ipcMain.on(composeWindowFocusChannel, (event, windowID: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || !isComposeWindowID(windowID)) {
+    return;
+  }
+  const composeWindow = composeWindows.get(windowID)?.window;
+  if (!composeWindow || composeWindow.isDestroyed()) {
+    return;
+  }
+  if (composeWindow.isMinimized()) {
+    composeWindow.restore();
+  }
+  composeWindow.show();
+  composeWindow.focus();
+});
+
+ipcMain.on(composeWindowCloseChannel, (event, windowID: unknown) => {
+  if (!isComposeWindowID(windowID)) {
+    return;
+  }
+  const entry = composeWindows.get(windowID);
+  if (!entry || entry.window.isDestroyed() ||
+      (event.sender !== entry.window.webContents && !isPrimaryRenderer(event.sender))) {
+    return;
+  }
+  entry.window.close();
+});
+
+ipcMain.handle(composeWindowDataChannel, (event, windowID: unknown): ComposeWindowMail | null => {
+  if (!isComposeWindowID(windowID)) {
+    return null;
+  }
+  const entry = composeWindows.get(windowID);
+  if (!entry || entry.window.isDestroyed() || entry.window.webContents !== event.sender) {
+    return null;
+  }
+  return entry.payload;
+});
+
 async function createWindow(): Promise<void> {
   try {
-    let jpcSecret = createJPCSecret();
+    const jpcSecret = createJPCSecret();
+    currentJPCSecret = jpcSecret;
     try {
       await startupBackend(jpcSecret);
     } catch (ex) {
       console.error("Backend startup failed; frontend will retry JPC connection", ex);
     }
 
-    // Create the browser window.
+    // Создаём главное окно приложения.
     const mainWindow = new BrowserWindow({
       width: 1700,
       height: 950,
@@ -139,7 +292,11 @@ async function createWindow(): Promise<void> {
       });
     }
 
-    mainWindow.on('closed', () => shutdownBackend().catch(console.error));
+    mainWindow.on('closed', () => {
+      closeComposeWindows();
+      currentJPCSecret = null;
+      shutdownBackend().catch(console.error);
+    });
     mainWindow.on('closed', () => {
       if (primaryWindow === mainWindow) {
         primaryWindow = null;
@@ -183,16 +340,7 @@ async function createWindow(): Promise<void> {
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     // The `try` above cannot catch these, because they fail asynchronously
-    if (is.dev && true) {
-      mainWindow.loadURL('http://localhost:5454/#jpcSecret=' + jpcSecret)
-        .catch(console.error);
-    } else if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#jpcSecret=' + jpcSecret)
-        .catch(console.error);
-    } else {
-      mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'jpcSecret=' + jpcSecret })
-        .catch(console.error);
-    }
+    loadRendererWindow(mainWindow, 'jpcSecret=' + jpcSecret);
   } catch (ex) {
     console.error(ex);
   }

@@ -1439,8 +1439,8 @@ export class OWAAccount extends ExchangeMailAccount {
     }
     addRecipients(request, "BccRecipients", email.bcc.contents);
     request.addField("Message", "From", { Mailbox: { Name: email.from.name, EmailAddress: email.from.emailAddress } }, "message:From");
-    let importance = email.appportanceLevel === "high" ? "High"
-      : email.appportanceLevel === "low" ? "Low" : "Normal";
+    let importance = email.importanceLevel === "high" ? "High"
+      : email.importanceLevel === "low" ? "Low" : "Normal";
     request.addField("Message", "Importance", importance, "item:Importance");
     if (email.requestReadReceipt) {
       request.addField("Message", "IsReadReceiptRequested", true, "item:IsReadReceiptRequested");
@@ -2784,7 +2784,7 @@ function resolveOWAAccountForTagSync(primary: OWAAccount): OWAAccount | null {
     }
   }
   if (shared.length) {
-    return shared.find(account => /integrators/i.test(account.name)) ?? shared[0];
+    return shared[0];
   }
   return primary.isDependentAccount ? null : primary;
 }

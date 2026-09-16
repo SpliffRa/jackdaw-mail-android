@@ -5,6 +5,14 @@ import {
   nativeMenuLabelsChannel,
   type NativeMenuLabels,
 } from '../../../app/logic/util/nativeMenu'
+import {
+  composeWindowCloseChannel,
+  composeWindowClosedChannel,
+  composeWindowDataChannel,
+  composeWindowFocusChannel,
+  composeWindowOpenChannel,
+  type ComposeWindowMail,
+} from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
 
 // Custom APIs for renderer
 const api = {
@@ -19,6 +27,27 @@ const api = {
   },
   setNativeMenuLabels: (labels: NativeMenuLabels): void => {
     ipcRenderer.send(nativeMenuLabelsChannel, labels)
+  },
+  openComposeWindow: (windowID: string, payload: ComposeWindowMail): void => {
+    ipcRenderer.send(composeWindowOpenChannel, windowID, payload)
+  },
+  focusComposeWindow: (windowID: string): void => {
+    ipcRenderer.send(composeWindowFocusChannel, windowID)
+  },
+  closeComposeWindow: (windowID: string): void => {
+    ipcRenderer.send(composeWindowCloseChannel, windowID)
+  },
+  getComposeWindowData: (windowID: string): Promise<ComposeWindowMail | null> => {
+    return ipcRenderer.invoke(composeWindowDataChannel, windowID)
+  },
+  onComposeWindowClosed: (callback: (windowID: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, windowID: unknown): void => {
+      if (typeof windowID === 'string') {
+        callback(windowID)
+      }
+    }
+    ipcRenderer.on(composeWindowClosedChannel, listener)
+    return () => ipcRenderer.removeListener(composeWindowClosedChannel, listener)
   }
 }
 

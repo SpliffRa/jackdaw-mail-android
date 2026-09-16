@@ -23,9 +23,11 @@
   import {
     floatingComposes,
     focusFloatingCompose,
+    openFloatingCompose,
     shouldOpenComposeInWindow,
     type FloatingComposeEntry,
   } from "../Mail/Composer/composeFloating";
+  import { focusNativeComposeWindow, supportsNativeComposeWindow } from "../Mail/Composer/composeNative";
   import type { EMail } from "../../logic/Mail/EMail";
 
   export let mainApp: JackdawApp;
@@ -38,6 +40,9 @@
     if (!(app instanceof WriteMailJackdawApp) || !shouldOpenComposeInWindow()) {
       return false;
     }
+    if (supportsNativeComposeWindow()) {
+      return false;
+    }
     let mail = app.windowParams?.mail as EMail | undefined;
     if (!mail) {
       return false;
@@ -47,8 +52,16 @@
 
   function onSelectApp(app: JackdawApp) {
     if (app instanceof WriteMailJackdawApp && shouldOpenComposeInWindow()) {
-      focusFloatingCompose(app.windowParams.mail);
-      bringAppToFront();
+      if (supportsNativeComposeWindow()) {
+        void focusNativeComposeWindow(app, app.windowParams.mail)
+          .catch(() => {
+            openFloatingCompose(app, app.windowParams.mail);
+            bringAppToFront();
+          });
+      } else {
+        focusFloatingCompose(app.windowParams.mail);
+        bringAppToFront();
+      }
       return;
     }
     openApp(app, app.windowParams);

@@ -30,7 +30,7 @@ export type MouseCategoryShortcut = {
 
 export type CategoryShortcut = KeyboardCategoryShortcut | MouseCategoryShortcut;
 
-const kCategoryShortcutDuplicateWindowMs = 200;
+const kCategoryShortcutDuplicateWindowMs = 500;
 
 /** Не даёт одному физическому нажатию применить категорию несколько раз. */
 export class KeyboardCategoryShortcutPressGuard {

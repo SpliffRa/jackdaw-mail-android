@@ -689,7 +689,6 @@
   "0LIuxw": "For a shared mailbox, select the name tags employees put on incoming requests. One request should have one employee tag.",
   "uBJYVi": "For chat events that support notifications",
   "NaSPk0": "For each working day, the end time must be later than the start time.",
-  "2bS6Mb": "For example, exclude “Переписка (мы в копии)” when this category means the request is already handled.",
   "PDpDpw": "For other system events",
   "H2d88D": "for replies with measured response time",
   "kI1qVD": "Format",
@@ -1995,5 +1994,6 @@
   "A7/yby": "The audio file must be smaller than 2 MB.",
   "2J2qku": "The notification includes this mailbox name, so you can tell which account received the message.",
   "Wrhatf": "This setting applies to this mailbox only. External content can let a sender know that you opened a message.",
-  "qECVne": "Use global mail sound"
+  "qECVne": "Use global mail sound",
+  "ZUhzbJ": "Select the categories that should not require a reply. This choice is saved separately for each mailbox."
 }

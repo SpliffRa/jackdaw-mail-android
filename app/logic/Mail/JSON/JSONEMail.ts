@@ -48,7 +48,7 @@ export class JSONEMail {
     json.isReplied = email.isReplied;
     json.isForwarded = email.isForwarded;
     json.isImportant = email.isImportant;
-    json.importanceLevel = email.appportanceLevel;
+    json.importanceLevel = email.importanceLevel;
     json.requestReadReceipt = email.requestReadReceipt;
     json.requestDeliveryReceipt = email.requestDeliveryReceipt;
     json.isSpam = email.isSpam;
@@ -196,7 +196,7 @@ export class JSONEMail {
     email.isReplied = sanitize.boolean(json.isReplied, false);
     email.isForwarded = sanitize.boolean(json.isForwarded, false);
     email.isImportant = sanitize.boolean(json.isImportant, false);
-    email.appportanceLevel = sanitizeImportanceLevel(json.importanceLevel, email.isImportant);
+    email.importanceLevel = sanitizeImportanceLevel(json.importanceLevel, email.isImportant);
     email.requestReadReceipt = sanitize.boolean(json.requestReadReceipt, false);
     email.requestDeliveryReceipt = sanitize.boolean(json.requestDeliveryReceipt, false);
     email.isSpam = sanitize.boolean(json.isSpam, false);
@@ -213,7 +213,7 @@ export class JSONEMail {
     email.isReplied = sanitize.boolean(json.isReplied, false);
     email.isForwarded = sanitize.boolean(json.isForwarded, false);
     email.isImportant = sanitize.boolean(json.isImportant, false);
-    email.appportanceLevel = sanitizeImportanceLevel(json.importanceLevel, email.isImportant);
+    email.importanceLevel = sanitizeImportanceLevel(json.importanceLevel, email.isImportant);
     email.requestReadReceipt = sanitize.boolean(json.requestReadReceipt, false);
     email.requestDeliveryReceipt = sanitize.boolean(json.requestDeliveryReceipt, false);
     email.isDraft = sanitize.boolean(json.isDraft, false);

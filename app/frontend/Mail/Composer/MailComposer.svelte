@@ -8,12 +8,13 @@
         <IdentitySelector bind:selectedIdentity={fromIdentity}
           bind:fromAddress={mail.from.emailAddress}
           bind:fromName={mail.from.name}
+          workspace={standalone ? mail.folder?.account.workspace : $selectedWorkspace}
           compact />
         <EncryptionButtons {mail} identity={fromIdentity} />
         <hbox flex class="spacer" />
         {#if appGlobal.isMobile}
           <CloseButton {mail} on:close={onClose} />
-        {:else if !floating}
+        {:else if !floating || standalone}
           <hbox class="header-actions">
             <RoundButton
               classes="plain toolbar-chrome"
@@ -98,7 +99,7 @@
         bind:openLinkDialog
       sendDisabledTooltip={sendDisabledTooltip}
       sending={sending || loading || !composeContentReady}
-      importanceLevel={mail.appportanceLevel}
+      importanceLevel={mail.importanceLevel}
       requestReadReceipt={mail.requestReadReceipt}
       requestDeliveryReceipt={mail.requestDeliveryReceipt}
       isFlagged={mail.isStarred}
@@ -229,11 +230,13 @@
   import SaveIcon from "lucide-svelte/icons/save";
   import { t, gt } from "../../../l10n/l10n";
   import { tick } from "svelte";
+  import { selectedWorkspace } from "../../MainWindow/Selected";
   import type { Editor } from '@tiptap/core';
   import type { QuoteEditorCommand, QuoteEditorHandle } from "./quoteEditorCommands";
 
   export let mail: EMail;
   export let floating = false;
+  export let standalone = false;
 
   const dispatchEvent = createEventDispatcher<{ close: void }>();
 
@@ -511,11 +514,11 @@
   }
 
   function toggleHighImportance() {
-    mail.appportanceLevel = mail.appportanceLevel === "high" ? "normal" : "high";
+    mail.importanceLevel = mail.importanceLevel === "high" ? "normal" : "high";
   }
 
   function toggleLowImportance() {
-    mail.appportanceLevel = mail.appportanceLevel === "low" ? "normal" : "low";
+    mail.importanceLevel = mail.importanceLevel === "low" ? "normal" : "low";
   }
 
   function isEditorTarget(target: EventTarget | null): boolean {
@@ -743,6 +746,15 @@
   function onClose() {
     if (floating) {
       closeFloatingCompose(mail);
+      dispatchEvent("close");
+      return;
+    }
+    if (standalone) {
+      closing = true;
+      for (let func of doOnClose) {
+        func();
+      }
+      doOnClose = [];
       dispatchEvent("close");
       return;
     }

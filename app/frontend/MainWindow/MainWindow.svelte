@@ -91,7 +91,7 @@
   } from "../Mail/CategoryShortcuts";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { loadApps, disableAppsBasedOnFeaturesXML } from "../AppsBar/loadApps";
-  import { mailApp } from "../Mail/MailJackdawApp";
+  import { handleNativeComposeWindowClosed, mailApp } from "../Mail/MailJackdawApp";
   import { meetApp } from "../Meet/MeetJackdawApp";
   import { categoriesLoaded } from "../Settings/SettingsCategories";
   import { applyColors } from "../Settings/Global/AppThemeColors";
@@ -163,9 +163,14 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     syncNativeMenuLabels();
     const unsubscribeLocale = locale.subscribe(syncNativeMenuLabels);
     const unsubscribeNativeMenu = subscribeToNativeMenuActions(handleNativeMenuActionWithErrors);
+    const nativeAPI = (window as any).api;
+    const unsubscribeComposeWindow = typeof nativeAPI?.onComposeWindowClosed === "function"
+      ? nativeAPI.onComposeWindowClosed(handleNativeComposeWindowClosed)
+      : () => {};
     return () => {
       unsubscribeLocale();
       unsubscribeNativeMenu();
+      unsubscribeComposeWindow();
     };
   });
 

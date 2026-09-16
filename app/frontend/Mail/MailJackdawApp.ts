@@ -9,6 +9,7 @@ import AuthIcon from "lucide-svelte/icons/key-round";
 import { derived } from "svelte/store";
 import { gt } from "../../l10n/l10n";
 import { openFloatingCompose, shouldOpenComposeInWindow } from "./Composer/composeFloating";
+import { openNativeComposeWindow, supportsNativeComposeWindow } from "./Composer/composeNative";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
 
@@ -24,7 +25,12 @@ export class MailJackdawApp extends JackdawApp {
     composerApp.windowParams = { mail: mail };
     mailApp.subApps.add(composerApp);
     if (shouldOpenComposeInWindow()) {
-      openFloatingCompose(composerApp, mail);
+      if (supportsNativeComposeWindow()) {
+        void openNativeComposeWindow(composerApp, mail)
+          .catch(() => openFloatingCompose(composerApp, mail));
+      } else {
+        openFloatingCompose(composerApp, mail);
+      }
       if (get(selectedApp)?.id === "mail-write") {
         openApp(mailApp, {});
       }
@@ -45,6 +51,14 @@ export class MailJackdawApp extends JackdawApp {
 }
 
 export const mailApp = new MailJackdawApp();
+
+export function handleNativeComposeWindowClosed(windowID: string): void {
+  let composer = mailApp.subApps.find(app =>
+    app instanceof WriteMailJackdawApp && app.windowParams?.nativeComposeWindowID === windowID);
+  if (composer) {
+    mailApp.subApps.remove(composer);
+  }
+}
 
 export class WriteMailJackdawApp extends JackdawApp {
   id = "mail-write";

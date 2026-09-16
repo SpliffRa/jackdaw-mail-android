@@ -1,6 +1,7 @@
 import './app.css';
 import { mount } from 'svelte';
 import MainWindow from './MainWindow/MainWindow.svelte';
+import StandaloneComposeWindow from './Mail/Composer/StandaloneComposeWindow.svelte';
 import { appName, appVersion, production } from '../logic/build';
 import { getLocalStorage } from './Util/LocalStorage';
 import { sanitize } from '../../lib/util/sanitizeDatatypes';
@@ -19,13 +20,18 @@ if (production) {
   });
 }
 
-const app = mount(MainWindow, {
-  target: document.getElementById('app'),
-});
+const composeWindowID = new URLSearchParams(location.hash.slice(1)).get("composeWindow");
+const target = document.getElementById('app');
+const app = composeWindowID
+  ? mount(StandaloneComposeWindow, { target, props: { composeWindowID } })
+  : mount(MainWindow, { target });
 
 export default app;
 
 function loadWindowSettings() {
+  if (composeWindowID) {
+    return;
+  }
   let windowSize = getLocalStorage("window.size", []).value;
   try {
     assert(windowSize?.length == 2 && windowSize.every(i => sanitize.integer(i, -1) > 0), "Bad window size");

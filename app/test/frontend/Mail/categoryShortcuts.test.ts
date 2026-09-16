@@ -70,11 +70,21 @@ describe("category shortcuts", () => {
     expect(guard.claim("KeyK", 1)).toBe(false);
 
     guard.release("KeyK");
-    expect(guard.claim("KeyK", 50)).toBe(false);
-    expect(guard.claim("KeyK", 200)).toBe(true);
+    expect(guard.claim("KeyK", 499)).toBe(false);
+    expect(guard.claim("KeyK", 500)).toBe(true);
 
     guard.clear();
     expect(guard.claim("KeyK", 201)).toBe(true);
+  });
+
+  test("игнорирует повторный keydown после раннего keyup", () => {
+    let guard = new KeyboardCategoryShortcutPressGuard();
+
+    expect(guard.claim("KeyK", 1000)).toBe(true);
+    guard.release("KeyK");
+
+    expect(guard.claim("KeyK", 1200)).toBe(false);
+    expect(guard.claim("KeyK", 1500)).toBe(true);
   });
 
   test("clears the duplicate-event cooldown", () => {

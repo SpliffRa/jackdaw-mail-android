@@ -1102,7 +1102,7 @@
                 >
               </div>
               <p class="live-setting-help">
-                {$t`For example, exclude “Переписка (мы в копии)” when this category means the request is already handled.`}
+                {$t`Select the categories that should not require a reply. This choice is saved separately for each mailbox.`}
               </p>
               {#if categoryNamesLoading}
                 <p class="live-setting-help" aria-live="polite">

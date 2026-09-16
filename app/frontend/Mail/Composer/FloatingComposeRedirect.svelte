@@ -4,6 +4,7 @@
   import { mailApp, WriteMailJackdawApp } from "../MailJackdawApp";
   import { openApp } from "../../AppsBar/selectedApp";
   import { focusFloatingCompose, floatingComposes, openFloatingCompose } from "./composeFloating";
+  import { openNativeComposeWindow, supportsNativeComposeWindow } from "./composeNative";
   import { get } from "svelte/store";
 
   export let mail: EMail;
@@ -19,9 +20,19 @@
         app.windowParams = { mail };
         mailApp.subApps.add(app);
       }
-      openFloatingCompose(app, mail);
+      if (supportsNativeComposeWindow()) {
+        void openNativeComposeWindow(app, mail)
+          .catch(() => openFloatingCompose(app, mail));
+      } else {
+        openFloatingCompose(app, mail);
+      }
     } else {
-      focusFloatingCompose(mail);
+      if (supportsNativeComposeWindow()) {
+        void openNativeComposeWindow(existing.app, mail)
+          .catch(() => openFloatingCompose(existing.app, mail));
+      } else {
+        focusFloatingCompose(mail);
+      }
     }
     openApp(mailApp, {});
   });

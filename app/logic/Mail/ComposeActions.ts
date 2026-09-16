@@ -456,11 +456,11 @@ export class ComposeActions {
     this.email.headers.delete("Disposition-Notification-To");
     this.email.headers.delete("Return-Receipt-To");
 
-    if (this.email.appportanceLevel === "high") {
+    if (this.email.importanceLevel === "high") {
       this.email.isImportant = true;
       this.email.headers.set("Importance", "high");
       this.email.headers.set("X-Priority", "1");
-    } else if (this.email.appportanceLevel === "low") {
+    } else if (this.email.importanceLevel === "low") {
       this.email.isImportant = false;
       this.email.headers.set("Importance", "low");
       this.email.headers.set("X-Priority", "5");

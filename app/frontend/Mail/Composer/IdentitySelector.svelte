@@ -14,9 +14,9 @@
       </hbox>
     {/if}
   {/if}
-  {#if $identities.length > 1}
+  {#if $visibleIdentities.length > 1}
     <select bind:value={selectedIdentity} class:catch-all={selectedIdentity.isCatchAll}>
-      {#each $identities.each as identity }
+      {#each $visibleIdentities.each as identity }
         <option value={identity}>
           {identity.isCatchAll && identity.isEMailAddress(fromAddress) && identity.emailAddress != fromAddress
             ? fromAddress
@@ -31,6 +31,7 @@
 
 <script lang="ts">
   import { findAllIdentities, type MailIdentity } from "../../../logic/Mail/MailIdentity";
+  import type { Workspace } from "../../../logic/Abstract/Workspace";
   import { catchErrors } from "../../Util/error";
   import type { Collection } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
@@ -46,10 +47,23 @@
   export let fromName: string;
   /** Hide secondary account label in compact compose header */
   export let compact = false;
+  /** Если задано, показывать только адреса аккаунтов этого пространства. */
+  export let workspace: Workspace | null | undefined = undefined;
 
   let beforeCustom: string;
   let afterCustom: string;
   let editableCustom: string;
+  $: visibleIdentities = workspace
+    ? identities.filterObservable(identity => identity.account?.workspace == workspace)
+    : identities;
+
+  // При смене пространства оставляем выбранного отправителя в видимом списке.
+  $: $visibleIdentities, selectedIdentity, keepSelectedIdentityInWorkspace();
+  function keepSelectedIdentityInWorkspace() {
+    if ($visibleIdentities.hasItems && !$visibleIdentities.includes(selectedIdentity)) {
+      selectedIdentity = $visibleIdentities.first;
+    }
+  }
 
   $: $selectedIdentity && setIdentity($selectedIdentity)
   function setIdentity(identity: MailIdentity) {

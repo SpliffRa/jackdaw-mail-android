@@ -235,8 +235,8 @@ export class EWSAccount extends ExchangeMailAccount implements EWSSubscribable {
     if (!email.sendRawMIME && email.replyTo) {
       addRecipients(request, "ReplyTo", [email.replyTo]);
     }
-    let importance = email.appportanceLevel === "high" ? "High"
-      : email.appportanceLevel === "low" ? "Low" : "Normal";
+    let importance = email.importanceLevel === "high" ? "High"
+      : email.importanceLevel === "low" ? "Low" : "Normal";
     request.addField("Message", "Importance", importance, "item:Importance");
     if (email.requestReadReceipt) {
       request.addField("Message", "IsReadReceiptRequested", true, "item:IsReadReceiptRequested");
