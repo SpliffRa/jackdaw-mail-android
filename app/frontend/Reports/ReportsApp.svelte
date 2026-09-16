@@ -29,9 +29,11 @@
     loadReportMailFolders,
     loadReportData,
     normalizeResponseTargetMinutes,
+    reportDateRangeForPreset,
     validateReportDateRange,
     type ReportData,
     type ReportDateRange,
+    type ReportDatePreset,
     type ReportMailAccountOption,
     type ReportMailFolderOption,
     type ResponseTimeStatus,
@@ -96,7 +98,7 @@
   import { openLiveSlaWidget } from "../Widgets/widgetState";
   import { createReportHTML, downloadTextFile } from "./ReportsExport";
 
-  type PresetID = "7d" | "30d" | "90d" | "year" | "all";
+  type PresetID = ReportDatePreset;
   type ResponseDaySortColumn =
     "day" | "answered" | "average" | "maximum" | "overTarget";
   type ResponseDetailSortColumn =
@@ -135,6 +137,7 @@
   const presets: { id: PresetID; label: string }[] = [
     { id: "7d", label: gt`Last 7 days` },
     { id: "30d", label: gt`Last 30 days` },
+    { id: "month", label: gt`Current month` },
     { id: "90d", label: gt`Last 90 days` },
     { id: "year", label: gt`This year` },
     { id: "all", label: gt`All time` },
@@ -150,6 +153,7 @@
   });
   const REPORT_MAIL_ACCOUNTS_RETRY_DELAY_MS = 250;
   const REPORT_MAIL_ACCOUNTS_MAX_EMPTY_RETRIES = 20;
+  const REPORT_DETAIL_PAGE_SIZE = 100;
 
   let fromDate = initialRange.from;
   let toDate = initialRange.to;
@@ -205,6 +209,8 @@
   let reportViewerElement: HTMLElement;
   let reportViewerContentElement: HTMLElement;
   let reportViewerScrollTop = 0;
+  let responseDetailVisibleCount = REPORT_DETAIL_PAGE_SIZE;
+  let outsideHoursVisibleCount = REPORT_DETAIL_PAGE_SIZE;
   let draggedPanelId: ReportDashboardSectionId | null = null;
   let fromDateInput: HTMLInputElement;
   let toDateInput: HTMLInputElement;
@@ -307,6 +313,12 @@
     responseDetailSort,
     responseDetailSortValue,
   );
+  $: renderedResponseTimes = sortedResponseTimes.slice(
+    0,
+    responseDetailVisibleCount,
+  );
+  $: renderedOutsideWorkingHoursResponseTimes =
+    outsideWorkingHoursResponseTimes.slice(0, outsideHoursVisibleCount);
   $: reportCategories = report?.mail.categories ?? [];
   $: selectedMailAccount =
     mailAccounts.find(
@@ -649,6 +661,7 @@
         workingHours: normalizeWorkingHoursSchedule(workingHours),
       });
       if (requestId == reportRequestId) {
+        resetResponseDetailVisibility();
         report = nextReport;
         syncResponderAttribution(nextReport);
         return true;
@@ -694,6 +707,25 @@
     reportViewerOpen = false;
     dashboardLayoutMode = false;
     draggedPanelId = null;
+  }
+
+  function resetResponseDetailVisibility(): void {
+    responseDetailVisibleCount = REPORT_DETAIL_PAGE_SIZE;
+    outsideHoursVisibleCount = REPORT_DETAIL_PAGE_SIZE;
+  }
+
+  function showMoreResponseDetails(): void {
+    responseDetailVisibleCount = Math.min(
+      responseDetailVisibleCount + REPORT_DETAIL_PAGE_SIZE,
+      sortedResponseTimes.length,
+    );
+  }
+
+  function showMoreOutsideHoursResponses(): void {
+    outsideHoursVisibleCount = Math.min(
+      outsideHoursVisibleCount + REPORT_DETAIL_PAGE_SIZE,
+      outsideWorkingHoursResponseTimes.length,
+    );
   }
 
   function onReportViewerKeydown(event: KeyboardEvent): void {
@@ -925,20 +957,9 @@
   }
 
   function applyPreset(id: PresetID) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const start = new Date(today);
-    if (id == "all") {
-      fromDate = "1970-01-01";
-    } else if (id == "year") {
-      start.setMonth(0, 1);
-      fromDate = toInputDate(start);
-    } else {
-      const days = id == "7d" ? 7 : id == "90d" ? 90 : 30;
-      start.setDate(start.getDate() - days + 1);
-      fromDate = toInputDate(start);
-    }
-    toDate = toInputDate(today);
+    const range = reportDateRangeForPreset(id);
+    fromDate = range.from;
+    toDate = range.to;
     activePreset = id;
     categoryFilter = null;
     closeReportViewer();
@@ -1461,12 +1482,6 @@
       rhythmCategoryNames,
       rhythmSelectedCategoryName: effectiveRhythmCategoryName,
     };
-  }
-
-  function toInputDate(date: Date): string {
-    return [date.getFullYear(), date.getMonth() + 1, date.getDate()]
-      .map((value, index) => String(value).padStart(index == 0 ? 4 : 2, "0"))
-      .join("-");
   }
 
   function formatNumber(value: number, maximumFractionDigits = 0): string {
@@ -3129,7 +3144,7 @@
                           </tr>
                         </thead>
                         <tbody>
-                          {#each sortedResponseTimes as response}
+                          {#each renderedResponseTimes as response}
                             <tr
                               class:overdue-row={response.withinTarget ===
                                 false}
@@ -3191,12 +3206,31 @@
                                 </div>
                               </td>
                             </tr>
+                          {:else}
+                            <tr>
+                              <td colspan="6" class="empty-cell"
+                                >{$t`No verified replies in this period, so response time is not calculated.`}</td
+                              >
+                            </tr>
                           {/each}
                         </tbody>
                       </table>
                     </div>
                     <p class="table-note">
-                      {$t`All response details for this period are shown here. Scroll to review the full list.`}
+                      <span aria-live="polite">
+                        {#if renderedResponseTimes.length < sortedResponseTimes.length}
+                          {$t`Showing ${renderedResponseTimes.length} of ${sortedResponseTimes.length} response details.`}
+                        {:else}
+                          {$t`All response details for this period are shown here.`}
+                        {/if}
+                      </span>
+                      {#if renderedResponseTimes.length < sortedResponseTimes.length}
+                        <button
+                          type="button"
+                          class="table-more-button"
+                          on:click={showMoreResponseDetails}
+                        >{$t`Show more`}</button>
+                      {/if}
                       <span class="outside-hours-legend"
                         ><i aria-hidden="true"
                         ></i>{$t`Outside working hours`}</span
@@ -3238,7 +3272,7 @@
                         </tr>
                       </thead>
                       <tbody>
-                        {#each outsideWorkingHoursResponseTimes as response}
+                        {#each renderedOutsideWorkingHoursResponseTimes as response}
                           <tr class="outside-hours-row">
                             <td data-label={$t`Replied`}
                               >{formatDateTime(response.responseAt)}</td
@@ -3296,7 +3330,20 @@
                     </table>
                   </div>
                   <p class="table-note">
-                    {$t`The list is sorted by reply time, newest first. Click a topic to open the email.`}
+                    <span aria-live="polite">
+                      {#if renderedOutsideWorkingHoursResponseTimes.length < outsideWorkingHoursResponseTimes.length}
+                        {$t`Showing ${renderedOutsideWorkingHoursResponseTimes.length} of ${outsideWorkingHoursResponseTimes.length} replies outside working hours.`}
+                      {:else}
+                        {$t`The list is sorted by reply time, newest first. Click a topic to open the email.`}
+                      {/if}
+                    </span>
+                    {#if renderedOutsideWorkingHoursResponseTimes.length < outsideWorkingHoursResponseTimes.length}
+                      <button
+                        type="button"
+                        class="table-more-button"
+                        on:click={showMoreOutsideHoursResponses}
+                      >{$t`Show more`}</button>
+                    {/if}
                   </p>
                 </div>
               </section>
@@ -7217,10 +7264,30 @@
   }
 
   .table-note {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     margin: 12px 0 0;
     color: color-mix(in srgb, var(--main-fg) 54%, transparent);
     font-size: 11px;
     line-height: 1.45;
+  }
+
+  .table-more-button {
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--reports-accent);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .table-more-button:hover {
+    color: var(--main-fg);
   }
 
   .report-note {

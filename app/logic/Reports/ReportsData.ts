@@ -23,6 +23,8 @@ export interface ReportDateRange {
   to: string;
 }
 
+export type ReportDatePreset = "7d" | "30d" | "90d" | "month" | "year" | "all";
+
 export interface ReportFilters {
   /** Почтовый аккаунт, для которого нужно построить почтовую часть отчёта. */
   mailAccountId?: number | null;
@@ -475,9 +477,36 @@ export function buildResponseTimeDays(
 }
 
 export function defaultReportDateRange(now = new Date()): ReportDateRange {
+  return reportDateRangeForPreset("30d", now);
+}
+
+export function reportDateRangeForPreset(
+  preset: ReportDatePreset,
+  now = new Date(),
+): ReportDateRange {
   const to = startOfLocalDay(now);
   const from = new Date(to);
-  from.setDate(from.getDate() - 29);
+
+  switch (preset) {
+    case "all":
+      return { from: "1970-01-01", to: dateInputValue(to) };
+    case "year":
+      from.setMonth(0, 1);
+      break;
+    case "month":
+      from.setDate(1);
+      break;
+    case "7d":
+      from.setDate(from.getDate() - 6);
+      break;
+    case "90d":
+      from.setDate(from.getDate() - 89);
+      break;
+    case "30d":
+      from.setDate(from.getDate() - 29);
+      break;
+  }
+
   return { from: dateInputValue(from), to: dateInputValue(to) };
 }
 

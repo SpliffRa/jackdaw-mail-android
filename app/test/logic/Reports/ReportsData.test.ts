@@ -15,6 +15,7 @@ import {
   mergeReportTopics,
   normalizeResponseTargetMinutes,
   normalizeReportTopic,
+  reportDateRangeForPreset,
   validateReportDateRange,
   type RawMailTopicRow,
 } from "../../../logic/Reports/ReportsData";
@@ -25,6 +26,15 @@ describe("ReportsData helpers", () => {
     expect(defaultReportDateRange(new Date(2026, 8, 9, 16, 30))).toEqual({
       from: "2026-08-11",
       to: "2026-09-09",
+    });
+  });
+
+  test("builds a current-month range from the first day through today", () => {
+    expect(
+      reportDateRangeForPreset("month", new Date(2026, 8, 16, 16, 30)),
+    ).toEqual({
+      from: "2026-09-01",
+      to: "2026-09-16",
     });
   });
 
