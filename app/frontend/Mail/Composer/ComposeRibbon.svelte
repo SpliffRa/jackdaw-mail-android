@@ -1232,10 +1232,19 @@
     line-height: 1;
     cursor: default;
     flex-shrink: 0;
+    transform-origin: center;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      border-color 160ms ease,
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      box-shadow 180ms ease;
   }
   .ribbon-btn :global(svg) {
     display: block;
     flex-shrink: 0;
+    transform-origin: center;
+    transition: transform var(--button-motion-duration) var(--button-motion-ease);
   }
   .paste-menu-btn {
     min-width: 18px;
@@ -1259,12 +1268,35 @@
   .ribbon-btn:hover:not(:disabled) {
     background: var(--hover-bg);
     color: var(--hover-fg);
+    transform: translateY(var(--button-motion-lift));
+    box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.09);
+  }
+  .ribbon-btn:hover:not(:disabled) :global(svg) {
+    transform: translateY(-1px) scale(1.03);
+  }
+  .ribbon-btn:active:not(:disabled) {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
+  }
+  .ribbon-btn:active:not(:disabled) :global(svg) {
+    transform: none;
   }
   .ribbon-btn.color-tool:hover:not(:disabled) .font-color-glyph {
     color: var(--hover-fg);
   }
   .ribbon-btn:disabled {
     opacity: 0.35;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ribbon-btn,
+    .ribbon-btn :global(svg) {
+      transition: none;
+    }
+    .ribbon-btn:hover:not(:disabled),
+    .ribbon-btn:active:not(:disabled),
+    .ribbon-btn:hover:not(:disabled) :global(svg),
+    .ribbon-btn:active:not(:disabled) :global(svg) {
+      transform: none;
+    }
   }
   .ribbon-btn.on :global(svg) {
     color: var(--icon-primary);

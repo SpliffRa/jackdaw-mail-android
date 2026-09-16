@@ -2,6 +2,7 @@
   <hbox class="buttons" class:hidden={!dir.parent}>
     <RoundButton
       onClick={goBack}
+      label={$t`Back`}
       icon={BackIcon}
       iconSize="24px"
       padding="4px"
@@ -35,6 +36,7 @@
   <hbox class="buttons">
     <RoundButton
       onClick={refresh}
+      label={$t`Refresh`}
       icon={RefreshIcon}
       iconSize="14px"
       padding="6px"
@@ -42,6 +44,7 @@
       />
     <RoundButton
       onClick={addFile}
+      label={$t`Upload file`}
       icon={PlusIcon}
       iconSize="18px"
       padding="4px"
@@ -49,6 +52,7 @@
       />
     <RoundButton
       onClick={newFolder}
+      label={$t`New folder`}
       icon={FolderPlusIcon}
       iconSize="18px"
       padding="4px"

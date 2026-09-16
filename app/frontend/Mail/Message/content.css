@@ -32,6 +32,10 @@ a {
   color: #0563c1;
   text-decoration: underline;
 }
+a[href^="tel:"] {
+  color: #0563c1;
+  text-decoration: underline;
+}
 
 blockquote {
   border-inline-start: 3px solid #0078d4;
@@ -42,6 +46,19 @@ blockquote {
 img[src=""] {
   visibility: hidden;
   max-height: 0px;
+}
+img[src=""][data-jackdaw-image-src] {
+  visibility: visible;
+  display: inline-block;
+  min-width: 24px;
+  min-height: 24px;
+  max-height: none;
+  border: 1px dashed currentColor;
+  opacity: 0.7;
+  cursor: zoom-in;
+}
+img[data-jackdaw-image-src]:not([src=""]) {
+  cursor: zoom-in;
 }
 
 /* Outlook signature block in replies */

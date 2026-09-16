@@ -521,7 +521,9 @@
     transition:
       background-color 160ms ease,
       color 160ms ease,
-      outline-color 160ms ease;
+      outline-color 160ms ease,
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      box-shadow 180ms ease;
   }
   .ribbon-btn :global(svg) {
     display: block;
@@ -553,6 +555,11 @@
   .ribbon-btn:focus-visible:not(:disabled) {
     background-color: var(--hover-bg);
     color: var(--ribbon-hover-color);
+    transform: translateY(var(--button-motion-lift));
+    box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.09);
+  }
+  .ribbon-btn:active:not(:disabled) {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
   }
   .ribbon-btn:focus-visible:not(:disabled) {
     outline: 2px solid color-mix(in srgb, var(--icon-primary) 72%, transparent);

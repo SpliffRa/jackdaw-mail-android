@@ -8,6 +8,7 @@
     style="--workspace-color: {$selectedWorkspace?.color ?? "inherit" }"
     class:is-workspace-selected={$selectedWorkspace}
     aria-label={$selectedWorkspace?.name ?? $t`Workspace`}
+    title={$selectedWorkspace?.name ?? $t`Workspace`}
     aria-haspopup="menu"
     aria-expanded={showWorkspaceDropdown}
     on:click={onWorkspaceToggle}>

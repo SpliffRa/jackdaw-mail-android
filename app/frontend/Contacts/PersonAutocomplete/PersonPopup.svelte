@@ -5,6 +5,7 @@
         <PersonPicture {person} size={32} />
       {:else}
         <RoundButton
+          label={$t`Edit`}
           icon={AvatarFallbackIcon}
           iconSize="24px" filled
           onClick={onEditPerson}

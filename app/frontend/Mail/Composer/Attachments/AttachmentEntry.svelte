@@ -12,7 +12,8 @@
       </hbox>
       <hbox flex />
       <hbox class="buttons">
-        <Button plain icon={DeleteIcon} iconSize="16px" iconOnly onClick={onDelete} />
+        <Button plain icon={DeleteIcon} iconSize="16px" iconOnly
+          label={$t`Delete this attachment`} onClick={onDelete} />
         <!--<Button plain icon={ChevronDownIcon} iconSize="16px" iconOnly />-->
       </hbox>
     </hbox>

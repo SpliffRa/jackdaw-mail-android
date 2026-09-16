@@ -10,7 +10,7 @@
     {autofocus}
     spellcheck={false} />
   {#if showX || searchInput && showX === null }
-    <RoundButton icon={XIcon} iconSize="16px" padding="2px" border={false}
+    <RoundButton label={$t`Clear search`} icon={XIcon} iconSize="16px" padding="2px" border={false}
       onClick={onClear} />
   {/if}
 </hbox>

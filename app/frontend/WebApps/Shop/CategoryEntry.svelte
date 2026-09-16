@@ -3,7 +3,9 @@
     <hbox flex class="name">{category.nameTranslated}</hbox>
   </Clickable>
   {#if hasChildCategories}
-    <Button plain classes="openClose" onClick={toggleOpenClose} icon={isOpen ? ChevronUpIcon : ChevronDownIcon} />
+    <Button plain classes="openClose" onClick={toggleOpenClose}
+      icon={isOpen ? ChevronUpIcon : ChevronDownIcon}
+      iconOnly label={isOpen ? $t`Collapse` : $t`Expand`} />
   {/if}
 </hbox>
 {#if isOpen}
@@ -20,6 +22,7 @@
   import ChevronUpIcon from "lucide-svelte/icons/chevron-up";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
   import type { MapColl } from "svelte-collections";
+  import { t } from "../../../l10n/l10n";
 
   export let allCategories: MapColl<string, WebAppCategory>;
   export let category: WebAppCategory;

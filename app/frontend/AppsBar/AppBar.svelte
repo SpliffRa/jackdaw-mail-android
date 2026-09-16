@@ -1,9 +1,10 @@
 <hbox class="app-bar-shell" class:collapsed={collapsed} class:mac>
   <vbox class="app-bar" class:sidebar-collapsed={collapsed}>
-    <vbox class="app-bar-main" class:collapsed={collapsed}>
+    <vbox class="app-bar-main">
       {#each $showApps.each as app (app.id)}
         {#if app.id !== "settings"}
-          <AppButton selected={selectedApp == app} classes={app.id}
+          <AppButton selected={selectedApp == app} classes={app.id} iconOnly={collapsed}
+            ariaLabel={app.barLabel ?? app.name}
             badgeCount={app.id === "mail" && appbarBadgeEnabled ? mailUnreadTotal : 0}
             on:click={() => catchErrors(() => onSelectApp(app))} >
             <AppIcon slot="icon" icon={app.icon} size="22px" strokeWidth={1.75} />
@@ -17,7 +18,8 @@
       <vbox flex class="middle" />
     </vbox>
     {#if settingsApp}
-      <AppButton selected={selectedApp == settingsApp} classes="settings"
+      <AppButton selected={selectedApp == settingsApp} classes="settings" iconOnly={collapsed}
+        ariaLabel={settingsApp.barLabel ?? settingsApp.name}
         on:click={() => catchErrors(() => onSelectApp(settingsApp))} >
         <AppIcon slot="icon" icon={settingsApp.icon} size="22px" strokeWidth={1.75} />
         <hbox slot="label" class="label">
@@ -29,6 +31,7 @@
   <button
     type="button"
     class="toggle"
+    data-no-button-motion
     class:collapsed={collapsed}
     title={collapsed ? $t`Expand sidebar` : $t`Collapse sidebar`}
     aria-label={collapsed ? $t`Expand sidebar` : $t`Collapse sidebar`}
@@ -141,15 +144,6 @@
       width 0.18s ease,
       opacity 0.18s ease;
   }
-  .app-bar-main.collapsed {
-    flex: 0 0 auto;
-    width: 0;
-    min-width: 0;
-    height: 0;
-    min-height: 0;
-    opacity: 0;
-    pointer-events: none;
-  }
   .toggle {
     position: absolute;
     inset-inline-start: 50%;
@@ -170,6 +164,12 @@
     cursor: pointer;
     app-region: no-drag;
     z-index: 5;
+    transform-origin: center;
+    transition:
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      background-color 0.18s ease,
+      color 0.18s ease,
+      box-shadow 0.18s ease;
   }
   .toggle:not(.collapsed) {
     width: 32px;
@@ -177,6 +177,10 @@
   .toggle:hover {
     background: var(--glass-hover-bg);
     color: var(--appbar-fg);
+    transform: translateX(-50%) translateY(var(--button-motion-lift));
+  }
+  .toggle:active {
+    transform: translateX(-50%) translateY(0) scale(var(--button-motion-press-scale));
   }
   .toggle:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--appbar-fg) 40%, transparent);
@@ -198,5 +202,14 @@
   }
   .app-bar.sidebar-collapsed :global(.app-button.settings .label .label) {
     display: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toggle {
+      transition: none;
+    }
+    .toggle:hover,
+    .toggle:active {
+      transform: translateX(-50%);
+    }
   }
 </style>

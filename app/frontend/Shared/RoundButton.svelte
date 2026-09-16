@@ -1,5 +1,6 @@
 <button on:click on:dblclick on:click={myOnClick}
-  title={typeof(disabled) == "string" ? disabled : tooltip ?? label}
+  title={tooltipCalc}
+  aria-label={tooltipCalc}
   class="button {classes}"
   class:filled class:border
   class:selected
@@ -56,6 +57,8 @@
   export let errorCallback = showError;
   export let loadDelayMS = 500; // ms before showing the spinner
 
+  $: tooltipCalc = typeof(disabled) == "string" ? disabled : tooltip ?? label;
+
   let loading = false;
   async function myOnClick(event: Event) {
     if (!(onClick && typeof(onClick) == "function")) {
@@ -93,6 +96,13 @@
 
     background-color: var(--button-bg);
     color: var(--button-fg);
+    transform-origin: center;
+    transition:
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease;
   }
   button.border {
     border: 1px solid var(--button-border);
@@ -120,6 +130,13 @@
     background-color: var(--hover-bg);
     color: var(--hover-fg);
     border: 1px solid transparent;
+    transform: translateY(var(--button-motion-lift));
+  }
+  button.button:hover:not(.disabled):not(.plain) {
+    box-shadow: 0 5px 14px rgba(var(--shadow-color), 0.1);
+  }
+  button.button:active:not(.disabled) {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
   }
   .selected:not(.disabled) {
     background-color: var(--selected-bg);
@@ -134,5 +151,33 @@
   }
   button.plain {
     background-color: transparent;
+  }
+  .icon :global(svg),
+  .icon :global(img) {
+    transform-origin: center;
+    transition: transform var(--button-motion-duration) var(--button-motion-ease);
+  }
+  button.button:hover:not(.disabled) .icon :global(svg),
+  button.button:hover:not(.disabled) .icon :global(img) {
+    transform: translateY(-1px) scale(1.03);
+  }
+  button.button:active:not(.disabled) .icon :global(svg),
+  button.button:active:not(.disabled) .icon :global(img) {
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button,
+    .icon :global(svg),
+    .icon :global(img) {
+      transition: none;
+    }
+    button:hover:not(.disabled),
+    button:active:not(.disabled),
+    button:hover:not(.disabled) .icon :global(svg),
+    button:hover:not(.disabled) .icon :global(img),
+    button:active:not(.disabled) .icon :global(svg),
+    button:active:not(.disabled) .icon :global(img) {
+      transform: none;
+    }
   }
 </style>

@@ -24,7 +24,7 @@
   export let allowExternalImages = false;
   /** Size iframe to quoted content (compose reply history). */
   export let fitContent = false;
-  /** Double-click / context menu: open inline images */
+  /** Одиночный клик или контекстное меню: открыть встроенную картинку */
   export let allowImageOpen = false;
   export let zoom = 100;
   /** out only */

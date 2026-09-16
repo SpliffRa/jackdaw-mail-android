@@ -28,6 +28,8 @@
             onClick={() => showEmojis = !showEmojis}
             icon={EmojiIcon}
             iconSize="16px"
+            iconOnly
+            label={$t`Emoji`}
             selected={showEmojis}
             slot="start"
             />
@@ -35,6 +37,8 @@
             onClick={() => isEnterSend = !isEnterSend}
             icon={EnterKeyIcon}
             iconSize="16px"
+            iconOnly
+            label={$t`Send`}
             selected={!isEnterSend}
             slot="last"
             />
@@ -82,6 +86,7 @@
   import { catchErrors } from "../Util/error";
   import { assert } from "../../logic/util/util";
   import type { Editor } from '@tiptap/core';
+  import { t } from "../../l10n/l10n";
 
   export let to: ChatRoom;
 

@@ -6,84 +6,88 @@
   <hbox class="subject-line">
     <value class="subject">{$message.subject}</value>
     <hbox flex />
-    {#key $message.dbID ?? $message.messageID}
-      <RelatedMessages message={$message} />
-    {/key}
-    <value class="date font-small" title={$message.sent?.toLocaleString(getDateTimeLocale())}>
-      {getDateTimeString($message.sent)}
-    </value>
-    {#if !$appGlobal.isSmall}
-      <MessageZoomControls />
-      <vbox class="display-mode">
-        <DisplayModeSwitcher {message} />
-      </vbox>
-    {/if}
+    <hbox class="subject-tools">
+      {#key $message.dbID ?? $message.messageID}
+        <RelatedMessages message={$message} />
+      {/key}
+      <value class="date font-small" title={$message.sent?.toLocaleString(getDateTimeLocale())}>
+        {getDateTimeString($message.sent)}
+      </value>
+      {#if !$appGlobal.isSmall}
+        <MessageZoomControls />
+        <vbox class="display-mode">
+          <DisplayModeSwitcher {message} />
+        </vbox>
+      {/if}
+    </hbox>
   </hbox>
   <ShowReplyBanner {message} />
-  <hbox>
+  <hbox class="message-meta">
     {#if $message.contact instanceof Person && $message.contact.picture}
-      <PersonPicture person={$message.contact} />
+      <PersonPicture person={$message.contact} size={avatarSize} />
     {/if}
-    <hbox class="from">
-      {#if $message.outgoing && !$message.folder?.account?.isDependentAccount}
-        <value class="from" title={$message.from.emailAddress}>
-          {$t`me *=> myself as sender of the email`}
-          {#if $message.from.emailAddress}
-            <span class="sender-email">&lt;{$message.from.emailAddress}&gt;</span>
+    <vbox class="message-details" flex>
+      <hbox class="identity-row">
+        <hbox class="sender">
+          {#if $message.outgoing && !$message.folder?.account?.isDependentAccount}
+            <value class="sender-name" title={$message.from.emailAddress}>
+              {$t`me *=> myself as sender of the email`}
+              {#if $message.from.emailAddress}
+                <span class="sender-email">&lt;{$message.from.emailAddress}&gt;</span>
+              {/if}
+            </value>
+          {:else}
+            <Recipient recipient={$message.from} showFullEmail={true} />
           {/if}
-        </value>
-      {:else}
-        <Recipient recipient={$message.from} showFullEmail={true} />
-      {/if}
-      <EncryptionButtons {message} bind:isExpanded={isEncryptionExpanded} />
-    </hbox>
-    <hbox flex />
-    <vbox class="top-right">
-      <MessageToolbar {message} />
-      <hbox>
-        {#if $tags.hasItems}
-          <hbox class="tags">
-            <TagSelector tags={$tags} object={message} canAdd={false}>
-              <RoundButton
-                slot="tag-button"
-                let:tag
-                label={$t`Remove`}
-                onClick={() => onTagRemove(tag)}
-                icon={RemoveIcon}
-                classes="small remove"
-                iconSize="12px"
-                padding="0px"
-                border={false}
-                />
-            </TagSelector>
+          <EncryptionButtons {message} bind:isExpanded={isEncryptionExpanded} />
+        </hbox>
+        <hbox flex class="identity-spacer" />
+        <hbox class="message-actions">
+          <MessageToolbar {message} />
+          {#if $tags.hasItems}
+            <hbox class="tags">
+              <TagSelector tags={$tags} object={message} canAdd={false}>
+                <RoundButton
+                  slot="tag-button"
+                  let:tag
+                  label={$t`Remove`}
+                  onClick={() => onTagRemove(tag)}
+                  icon={RemoveIcon}
+                  classes="small remove"
+                  iconSize="12px"
+                  padding="0px"
+                  border={false}
+                  />
+              </TagSelector>
+            </hbox>
+          {/if}
+        </hbox>
+      </hbox>
+      <vbox class="recipients">
+        {#if $message.to.hasItems}
+          <hbox class="to font-small">
+            <hbox class="label">{$t`to`}</hbox>
+            <RecipientsList recipients={$message.to} />
           </hbox>
         {/if}
-      </hbox>
+        {#if $message.cc.hasItems}
+          <hbox class="cc font-small">
+            <hbox class="label">{$t`cc`}</hbox>
+            <RecipientsList recipients={$message.cc} />
+          </hbox>
+        {/if}
+        {#if $message.bcc.hasItems}
+          <hbox class="bcc font-small">
+            <hbox class="label">{$t`bcc`}</hbox>
+            <RecipientsList recipients={$message.bcc} />
+          </hbox>
+        {/if}
+      </vbox>
+      {#if isEncryptionExpanded}
+        <EncryptionDetails {message} bind:isExpanded={isEncryptionExpanded} />
+      {/if}
     </vbox>
   </hbox>
-  {#if isEncryptionExpanded}
-    <EncryptionDetails {message} bind:isExpanded={isEncryptionExpanded} />
-  {/if}
-  <vbox class="recipients">
-    {#if $message.to.hasItems}
-      <hbox class="to font-small">
-        <hbox class="label">{$t`to`}</hbox>
-        <RecipientsList recipients={$message.to} />
-      </hbox>
-    {/if}
-    {#if $message.cc.hasItems}
-      <hbox class="cc font-small">
-        <hbox class="label">{$t`cc`}</hbox>
-        <RecipientsList recipients={$message.cc} />
-      </hbox>
-    {/if}
-    {#if $message.bcc.hasItems}
-      <hbox class="bcc font-small">
-        <hbox class="label">{$t`bcc`}</hbox>
-        <RecipientsList recipients={$message.bcc} />
-      </hbox>
-    {/if}
-  </vbox>
   {#if message.to.isEmpty || message.from.emailAddress == kDummyPerson.emailAddress}
   {#await message.loadForDisplay()}
     <!-- Subject etc. are loaded by search,
@@ -121,11 +125,14 @@
   import { catchErrors, backgroundError } from "../../Util/error";
   import { getDateTimeString } from "../../Util/date";
   import { getDateTimeLocale, t } from "../../../l10n/l10n";
+  import { normalizeUIDensity, uiDensitySetting } from "../../Settings/Global/uiDensity";
   import { onDestroy } from "svelte";
 
   export let message: EMail;
 
   $: tags = message.tags;
+  $: density = normalizeUIDensity($uiDensitySetting.value);
+  $: avatarSize = density == "compact" ? 28 : density == "large" ? 40 : 32;
 
   let readDelaySetting = getLocalStorage("mail.read.after", 0); // 0 = Immediately; -1 = Manually; 1 to 20 = delay in seconds
   $: readDelay = $readDelaySetting.value;
@@ -183,46 +190,110 @@
 
 <style>
   .message-header {
-    min-height: 5em;
-    padding: 16px 24px 12px;
-    background-color: transparent;
-    border-block-end: 1px solid var(--border);
+    min-height: 0;
+    padding: var(--message-header-padding-block-start, 10px)
+      var(--message-header-padding-inline, 20px)
+      var(--message-header-padding-block-end, 10px);
+    background-color: color-mix(in srgb, var(--message-viewer-bg, var(--main-bg)) 94%, var(--offset-bg));
+    border: 0;
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 22%, transparent);
     z-index: 1;
+    container-type: inline-size;
+    container-name: message-header;
+    transition: padding 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
   }
-  .message-header > hbox:not(.subject-line) {
+  .message-meta,
+  .identity-row,
+  .message-actions,
+  .subject-tools {
     align-items: center;
   }
-  .top-right {
-    align-items: end;
+  .message-meta {
+    gap: 10px;
+    min-width: 0;
+  }
+  .message-meta :global(.avatar) {
+    flex: 0 0 auto;
+  }
+  .message-details,
+  .sender,
+  .message-actions {
+    min-width: 0;
+  }
+  .message-details {
+    gap: 1px;
+    flex: 1 1 0;
+  }
+  .identity-row {
+    min-width: 0;
+    min-height: var(--message-toolbar-control-size, 30px);
+    gap: 8px;
+  }
+  .identity-spacer {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .sender {
+    align-items: center;
+    overflow: hidden;
+    font-weight: 650;
+  }
+  .sender-name,
+  .sender :global(.recipient),
+  .sender :global(.recipient .name),
+  .sender :global(.recipient .full-email) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tags {
-    margin-inline-end: 12px;
+    margin-inline-start: 4px;
+    flex-shrink: 0;
   }
   .subject {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-weight: 700;
-    font-size: 15px;
+    font-size: calc(15px * var(--ui-font-scale, 1));
+    line-height: 1.25;
     letter-spacing: -0.015em;
-  }
-  .from {
-    font-weight: bold;
   }
   .sender-email {
     font-weight: normal;
     margin-inline-start: 4px;
   }
-  .from :global(.domain) {
+  .sender :global(.domain) {
     font-weight: normal;
   }
-  .outgoing .from {
+  .outgoing .sender-name {
     font-weight: normal;
     color: color-mix(in srgb, var(--message-viewer-fg, var(--main-fg)) 68%, transparent);
   }
   .recipients {
-    justify-content: end;
+    min-width: 0;
+    justify-content: start;
+    gap: 1px;
+    overflow: hidden;
+  }
+  .recipients > hbox {
+    min-width: 0;
+    align-items: baseline;
+    overflow: hidden;
+  }
+  .recipients :global(.persons) {
+    min-width: 0;
+    max-height: none;
+    font-size: inherit;
+    line-height: 1.3;
   }
   .recipients .label {
     margin-block-start: 2px;
     margin-inline-end: 6px;
+    flex-shrink: 0;
   }
   .to {
     color: color-mix(in srgb, var(--message-viewer-fg, var(--main-fg)) 68%, transparent);
@@ -236,18 +307,32 @@
   }
   .date {
     align-self: center;
-    margin-inline-end: 16px;
+    margin-inline: 2px 4px;
     font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .subject-line {
-    flex-wrap: wrap;
-    justify-content: end;
+    min-width: 0;
+    flex-wrap: nowrap;
     align-items: center;
-    min-height: 28px;
-    margin-block-end: 10px;
+    min-height: 22px;
+    margin-block-end: 6px;
+    gap: 8px;
+  }
+  .subject-tools {
+    flex-shrink: 0;
+    gap: 2px;
   }
   .display-mode {
     justify-content: end;
+  }
+  .message-header :global(.show-reply) {
+    margin-block: 4px 5px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 8px;
+    background-color: color-mix(in srgb, var(--border) 18%, transparent);
   }
   .message-header :global(.error) {
     margin-inline: -4px -12px;
@@ -255,13 +340,41 @@
   @media (max-width: 600px)  {
     .message-header {
       min-height: 0;
-      padding: 10px 8px 8px 16px;
+      padding-inline: 16px 8px;
+      padding-block: 8px;
     }
     .display-mode {
       display: none;
     }
     .date {
-      margin-inline-end: 6px;
+      margin-inline-end: 2px;
+    }
+  }
+  @container message-header (max-width: 720px) {
+    .subject-line {
+      flex-wrap: wrap;
+    }
+    .subject {
+      flex: 1 1 100%;
+    }
+    .subject-tools {
+      margin-inline-start: auto;
+    }
+    .message-meta {
+      align-items: flex-start;
+    }
+    .message-actions {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .message-actions :global(.buttons) {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .message-header {
+      transition: none;
     }
   }
 </style>

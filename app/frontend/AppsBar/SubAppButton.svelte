@@ -36,11 +36,18 @@
     transition:
       background-color 0.18s ease,
       border-color 0.18s ease,
-      box-shadow 0.18s ease;
+      box-shadow 0.18s ease,
+      transform var(--button-motion-duration) var(--button-motion-ease);
+  }
+  .sub-app-button:hover {
+    transform: translateY(var(--button-motion-lift));
   }
   .sub-app-button:hover:not(.selected) {
     background: var(--glass-hover-bg);
     border-color: var(--glass-border-subtle);
+    box-shadow:
+      var(--glass-highlight),
+      0 5px 14px rgba(var(--shadow-color), 0.1);
   }
   .sub-app-button.selected {
     background: var(--glass-selected-bg);
@@ -53,11 +60,21 @@
     outline: 2px solid color-mix(in srgb, var(--appbar-fg) 55%, transparent);
     outline-offset: 1px;
   }
+  .sub-app-button:active {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
+  }
   .icon {
     padding: 2px;
     color: color-mix(in srgb, var(--appbar-fg) 84%, transparent);
     align-items: center;
     justify-content: center;
+    transition: transform var(--button-motion-duration) var(--button-motion-ease);
+  }
+  .sub-app-button:hover .icon {
+    transform: translateY(-1px);
+  }
+  .sub-app-button:active .icon {
+    transform: none;
   }
   .icon :global(svg) {
     stroke: currentColor;
@@ -83,5 +100,17 @@
 
   :global(.sub-app-bar[app="webapps"]) .icon {
     filter: grayscale(0.7);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sub-app-button,
+    .icon {
+      transition: none;
+    }
+    .sub-app-button:hover,
+    .sub-app-button:active,
+    .sub-app-button:hover .icon,
+    .sub-app-button:active .icon {
+      transform: none;
+    }
   }
 </style>

@@ -1,5 +1,6 @@
 <button type="button" class="quick-folder" class:selected={selected}
   aria-pressed={selected}
+  title={displayLabel}
   on:click={() => dispatch("select", folder)}
   on:contextmenu={contextMenu.onContextMenu}>
   <FolderIcon {folder} size="14px" />

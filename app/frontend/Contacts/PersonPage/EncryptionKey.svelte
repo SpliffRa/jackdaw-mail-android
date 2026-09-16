@@ -80,6 +80,7 @@
           <hbox class="label">{$t`Verification code`}</hbox>
           <hbox>
             <RoundButton
+              label={$t`Info`}
               icon={InfoIcon}
               border={false}
               classes="plain"

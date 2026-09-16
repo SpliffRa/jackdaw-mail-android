@@ -9,7 +9,7 @@
       {/if}
     </hbox>
     <hbox flex />
-    <RoundButton icon={CloseIcon} iconSize="16px" classes="plain small" border={false}
+    <RoundButton label={$t`Close`} icon={CloseIcon} iconSize="16px" classes="plain small" border={false}
       onClick={onClose} />
   </StatusMessage>
 </vbox>
@@ -28,6 +28,7 @@
   import ErrorIcon from "lucide-svelte/icons/triangle-alert";
   import WarningIcon from "lucide-svelte/icons/circle-alert";
   import CloseIcon from "lucide-svelte/icons/x";
+  import { t } from "../../l10n/l10n";
   import { createEventDispatcher } from 'svelte';
   const dispatchEvent = createEventDispatcher();
 

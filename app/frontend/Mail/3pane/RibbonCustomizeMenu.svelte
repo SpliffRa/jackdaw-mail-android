@@ -53,12 +53,14 @@
         type="button"
         class="arrow-button"
         aria-label={$t`Move up`}
+        title={$t`Move up`}
         disabled={index == 0}
         on:click={() => moveGroup(group, "up")}>↑</button>
       <button
         type="button"
         class="arrow-button"
         aria-label={$t`Move down`}
+        title={$t`Move down`}
         disabled={index == visibleGroups.length - 1}
         on:click={() => moveGroup(group, "down")}>↓</button>
     </hbox>

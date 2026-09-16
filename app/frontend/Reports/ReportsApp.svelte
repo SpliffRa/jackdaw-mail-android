@@ -3294,6 +3294,7 @@
                                 disabled={openingResponseEmailId ==
                                   response.emailId}
                                 aria-label={`${$t`Open email`}: ${response.subject}`}
+                                title={`${$t`Open email`}: ${response.subject || $t`(no subject)`}`}
                                 on:click={() => openReportEmail(response)}
                               >
                                 <MailIcon size="13px" />

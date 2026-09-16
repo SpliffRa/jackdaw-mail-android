@@ -18,6 +18,9 @@
   class:mobile={$appGlobal.isMobile}
   class:desktop={!$appGlobal.isMobile}
   class:mail-mode={mailMode}
+  class:ui-density-compact={uiDensity == "compact"}
+  class:ui-density-normal={uiDensity == "normal"}
+  class:ui-density-large={uiDensity == "large"}
   on:pointerdown={onMainWindowPointerDown}>
   {#if !appGlobal.isMobile}
     <WindowHeader selectedApp={$selectedApp} />
@@ -70,6 +73,7 @@
 <script lang="ts">
   import { selectedApp, sidebarApp, apps, goTo, openApp, history } from "../AppsBar/selectedApp";
   import { appGlobal } from "../../logic/app";
+  import { normalizeUIDensity, uiDensitySetting } from "../Settings/Global/uiDensity";
   // #if [!WEBMAIL]
   import { getStartObjects, loginOnStartup } from "../../logic/startup";
   import { predefinedConfig } from "../../logic/Mail/AutoConfig/predefinedConfig";
@@ -138,6 +142,7 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
   $: $sidebarApp = $meetApp.showSidebar ? meetApp : null;
   $: sidebar = $sidebarApp?.sidebar;
   $: mailMode = $selectedApp?.id == "mail" || $selectedApp?.id == "mail-write" || $selectedApp?.id == "settings";
+  $: uiDensity = normalizeUIDensity($uiDensitySetting.value);
   $: rtl = rtlLocales.includes(getUILocale()) ? 'rtl' : null;
   categoriesLoaded; /* make sure to import the file, so that that categories load */
 

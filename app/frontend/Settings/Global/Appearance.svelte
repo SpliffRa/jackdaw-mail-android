@@ -9,6 +9,33 @@
     <AppThemeColors />
   </HeaderGroupBox>
 
+  <HeaderGroupBox classes="density-group">
+    <hbox slot="header">{$t`Interface density`}</hbox>
+    <vbox class="density-setting">
+      <hbox class="density-options" role="group" aria-label={$t`Interface density`}>
+        <button
+          type="button"
+          class:active={uiDensity == "compact"}
+          aria-pressed={uiDensity == "compact"}
+          on:click={() => setDensity("compact")}
+          >{$t`Compact`}</button>
+        <button
+          type="button"
+          class:active={uiDensity == "normal"}
+          aria-pressed={uiDensity == "normal"}
+          on:click={() => setDensity("normal")}
+          >{$t`Normal`}</button>
+        <button
+          type="button"
+          class:active={uiDensity == "large"}
+          aria-pressed={uiDensity == "large"}
+          on:click={() => setDensity("large")}
+          >{$t`Large`}</button>
+      </hbox>
+      <hbox class="density-hint font-small">{$t`Changes text size, spacing and message header density`}</hbox>
+    </vbox>
+  </HeaderGroupBox>
+
   <HeaderGroupBox>
     <hbox slot="header">{$t`Language`}</hbox>
     <hbox class="wrap">
@@ -68,12 +95,18 @@
   import { catchErrors } from "../../Util/error";
   import { widgetsEnabled } from "../../Widgets/widgetState";
   import { webMail } from "../../../logic/build";
+  import { normalizeUIDensity, uiDensitySetting, type UIDensity } from "./uiDensity";
 
   let language = getUILocalePref();
   let dateTimeFormat = getDateTimeLocalePref();
   let dateTimeFormatDisplayed = getDateTimeLocale();
   const sampleDate = new Date(new Date().getFullYear() + 1, 0, 20, 13, 0, 0);
   let widgetsEnabledSetting = widgetsEnabled;
+  $: uiDensity = normalizeUIDensity($uiDensitySetting.value);
+
+  function setDensity(density: UIDensity): void {
+    uiDensitySetting.value = density;
+  }
 
   async function onSaveLanguage() {
     saveUILocale(language);
@@ -123,5 +156,57 @@
     align-items: center;
     gap: 8px;
     cursor: default;
+  }
+  .density-setting {
+    gap: 8px;
+  }
+  .density-options {
+    width: fit-content;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--border) 24%, transparent);
+  }
+  .density-options button {
+    min-width: 88px;
+    padding: 7px 12px;
+    border: 0;
+    border-radius: 8px;
+    background-color: transparent;
+    color: color-mix(in srgb, var(--main-fg) 68%, transparent);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .density-options button:hover {
+    background-color: var(--hover-bg);
+    color: var(--hover-fg);
+  }
+  .density-options button:active {
+    transform: scale(0.98);
+  }
+  .density-options button.active {
+    background-color: var(--main-bg);
+    color: var(--main-fg);
+    box-shadow: 0 1px 4px rgba(var(--shadow-color), 0.12);
+  }
+  .density-options button:focus-visible {
+    outline: 2px solid var(--input-focus);
+    outline-offset: 1px;
+  }
+  .density-hint {
+    color: color-mix(in srgb, var(--main-fg) 62%, transparent);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .density-options button {
+      transition: background-color 160ms ease, color 160ms ease;
+    }
+    .density-options button:active {
+      transform: none;
+    }
   }
 </style>

@@ -3,7 +3,7 @@
     <hbox class="header top font-small">{$t`Advanced search`}</hbox>
     <hbox flex />
     <hbox class="buttons top-right">
-      <RoundButton icon={XIcon} iconSize="16px" padding="4px" border={false} classes="plain small"
+      <RoundButton label={$t`Clear search`} icon={XIcon} iconSize="16px" padding="4px" border={false} classes="plain small"
         onClick={onClear} />
     </hbox>
   </hbox>

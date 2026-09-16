@@ -8,13 +8,14 @@
   role="textbox"
   aria-multiline="true"
   use:quoteEditable={{ html, onChange }}
+  on:click={onClick}
   on:dblclick={onDoubleClick}
   on:touchend={onTouchEnd}
   on:keydown={onKeyDown}
 />
 
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onDestroy } from "svelte";
   import { openMailImageFromElement } from "../Message/openMailImage";
   import { catchErrors, showUserError } from "../../Util/error";
   import {
@@ -29,6 +30,7 @@
   let rootEl: HTMLDivElement;
 
   const dispatch = createEventDispatcher<{ change: string }>();
+  const kImageDoubleClickDelay = 220;
 
   function onChange(bodyHtml: string) {
     dispatch("change", bodyHtml);
@@ -64,8 +66,35 @@
       return;
     }
     event.preventDefault();
+    clearPendingImageClick();
     openImage(img);
   }
+
+  let pendingImageClick: ReturnType<typeof setTimeout> | null = null;
+  function clearPendingImageClick() {
+    if (pendingImageClick) {
+      clearTimeout(pendingImageClick);
+      pendingImageClick = null;
+    }
+  }
+
+  function onClick(event: MouseEvent) {
+    if (event.detail != 1) {
+      return;
+    }
+    let img = (event.target as Element | null)?.closest("img");
+    if (!img || !(img instanceof HTMLImageElement)) {
+      return;
+    }
+    event.preventDefault();
+    clearPendingImageClick();
+    pendingImageClick = setTimeout(() => {
+      pendingImageClick = null;
+      openImage(img);
+    }, kImageDoubleClickDelay);
+  }
+
+  onDestroy(clearPendingImageClick);
 
   let lastTouchEnd = 0;
   function onTouchEnd(event: TouchEvent) {
@@ -140,15 +169,26 @@
 <style>
   .compose-quote-html {
     margin: 0;
-    padding: 0;
+    padding: 16px;
+    width: 100%;
+    box-sizing: border-box;
     outline: none;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     font-family:
       -apple-system, BlinkMacSystemFont,
       "Segoe UI", system-ui,
       "Helvetica Neue", Helvetica, Arial, sans-serif;
     line-height: 1.45;
-    font-size: inherit;
+    font-size: 16px;
+    font-weight: 400;
     color: inherit;
+    font-synthesis: none;
+    text-rendering: auto;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    -webkit-text-size-adjust: 100%;
     user-select: text;
     cursor: text;
   }
@@ -157,11 +197,56 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
-  .compose-quote-html :global(p) {
-    margin-block: 0;
+  .compose-quote-html :global(table) {
+    border-collapse: collapse;
+  }
+  .compose-quote-html :global(td),
+  .compose-quote-html :global(th) {
+    vertical-align: top;
+  }
+  .compose-quote-html :global(hr) {
+    border: none;
+    border-top: 1px solid currentColor;
+    margin: 8px 0;
+    width: 100%;
+    height: 0;
+  }
+  .compose-quote-html :global(a) {
+    color: #0563c1;
+    text-decoration: underline;
+  }
+  .compose-quote-html :global(blockquote) {
+    border-inline-start: 3px solid #0078d4;
+    padding-inline-start: 20px;
+    margin-inline-start: 0;
   }
   .compose-quote-html :global(img) {
     max-width: 100%;
     height: auto;
+    cursor: zoom-in;
+  }
+  .compose-quote-html :global(img[src=""]) {
+    visibility: hidden;
+    max-height: 0;
+  }
+  .compose-quote-html :global(img[src=""][data-jackdaw-image-src]) {
+    visibility: visible;
+    display: inline-block;
+    min-width: 24px;
+    min-height: 24px;
+    max-height: none;
+    border: 1px dashed var(--button-border, currentColor);
+    background: var(--input-bg, transparent);
+  }
+  .compose-quote-html :global(footer.signature),
+  .compose-quote-html :global(.signature) {
+    margin-block-start: 1em;
+  }
+  .compose-quote-html :global(footer.signature) {
+    line-height: 1;
+  }
+  .compose-quote-html :global(footer.signature p),
+  .compose-quote-html :global(.signature p) {
+    margin-block: 0;
   }
 </style>

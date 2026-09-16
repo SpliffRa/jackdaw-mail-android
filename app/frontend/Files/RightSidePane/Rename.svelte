@@ -15,6 +15,7 @@
   <hbox class="buttons">
     <RoundButton
       onClick={isRenaming ? onRenameSave : onRenameStart}
+      label={isRenaming ? $t`Save` : $t`Rename`}
       icon={isRenaming ? OKIcon : PencilIcon}
       iconSize="16px"
       padding="6px"
@@ -33,6 +34,7 @@
   import PencilIcon from "lucide-svelte/icons/pencil";
   import OKIcon from "lucide-svelte/icons/check";
   import { catchErrors } from "../../Util/error";
+  import { t } from "../../../l10n/l10n";
 
   export let file: FileOrDirectory;
 

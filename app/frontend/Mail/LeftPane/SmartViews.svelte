@@ -23,6 +23,7 @@
     </ButtonMenu>
     <button type="button" class="collapse-button"
       aria-label={expanded ? $t`Collapse smart views` : $t`Expand smart views`}
+      title={expanded ? $t`Collapse smart views` : $t`Expand smart views`}
       aria-expanded={expanded}
       on:click={() => expanded = !expanded}>
       <svelte:component this={expanded ? ChevronUpIcon : ChevronDownIcon} size="14px" />
@@ -33,6 +34,7 @@
     {#each orderedViews as view (view.id)}
       <button type="button" class="smart-view"
         class:active={isActive(view.id, $quickSearch)}
+        title={view.label()}
         aria-pressed={isActive(view.id, $quickSearch)}
         disabled={!folder}
         on:contextmenu={(event) => openViewMenu(event, view.id)}

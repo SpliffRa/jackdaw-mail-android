@@ -6,6 +6,7 @@
       style="--workspace-color: {workspace?.color ?? "var(--fg)"}"
       class:selected={workspace == $selectedWorkspace}
       aria-current={workspace == $selectedWorkspace ? "true" : undefined}
+      title={workspace?.name ?? $t`All`}
       role="menuitem"
       on:click={event => onWorkspaceSelected(workspace, event)}>
       <span class="dot" aria-hidden="true" />

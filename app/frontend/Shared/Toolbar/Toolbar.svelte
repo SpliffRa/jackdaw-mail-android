@@ -21,8 +21,27 @@
     background-color: transparent;
     padding: 6px 6px;
     color: #595065;
+    transition:
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease;
+  }
+  .toolbar :global(button.button:hover:not(.disabled)) {
+    transform: translateY(var(--button-motion-lift));
+  }
+  .toolbar :global(button.button:active:not(.disabled)) {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
   }
   .toolbar :global(button.button.disabled) {
     opacity: 20%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toolbar :global(button.button),
+    .toolbar :global(button.button:hover:not(.disabled)),
+    .toolbar :global(button.button:active:not(.disabled)) {
+      transition: none;
+      transform: none;
+    }
   }
 </style>

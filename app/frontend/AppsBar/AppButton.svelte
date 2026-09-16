@@ -2,6 +2,9 @@
   type="button"
   class="app-button {classes}"
   class:selected
+  class:icon-only={iconOnly}
+  aria-label={ariaLabel}
+  title={ariaLabel}
   class:padding
   aria-pressed={selected}
   on:click>
@@ -21,6 +24,8 @@
 <script lang="ts">
   export let selected = false;
   export let classes: string = "";
+  export let iconOnly = false;
+  export let ariaLabel: string | undefined = undefined;
   export let padding = true;
   /** Unread / notification count on the app icon. */
   export let badgeCount = 0;
@@ -45,14 +50,40 @@
       background-color 0.18s ease,
       border-color 0.18s ease,
       box-shadow 0.18s ease,
-      transform 0.12s ease;
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      color 0.18s ease;
   }
   .app-button.padding {
     padding: 6px 0 4px;
   }
+  .app-button.icon-only {
+    padding: 3px 1px;
+  }
+  .app-button.icon-only .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .app-button.icon-only .icon-wrap {
+    width: 30px;
+    height: 30px;
+  }
+  .app-button:hover {
+    transform: translateY(var(--button-motion-lift));
+  }
   .app-button:hover:not(.selected) {
     background: var(--glass-hover-bg);
     border-color: var(--glass-border-subtle);
+    box-shadow:
+      var(--glass-highlight),
+      0 5px 14px rgba(var(--shadow-color), 0.1);
   }
   .app-button.selected {
     background: var(--glass-selected-bg);
@@ -61,8 +92,8 @@
       var(--glass-highlight),
       0 2px 8px rgba(var(--shadow-color), 0.08);
   }
-  .app-button:active:not(.selected) {
-    transform: scale(0.97);
+  .app-button:active {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
   }
   .app-button:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--appbar-fg) 55%, transparent);
@@ -82,6 +113,13 @@
     width: 36px;
     height: 36px;
     border-radius: var(--border-radius);
+    transition: transform var(--button-motion-duration) var(--button-motion-ease);
+  }
+  .app-button:hover .icon-wrap {
+    transform: translateY(-1px);
+  }
+  .app-button:active .icon-wrap {
+    transform: none;
   }
   .badge {
     position: absolute;
@@ -135,5 +173,17 @@
     letter-spacing: -0.03em;
     line-height: 1.15;
     justify-content: center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-button,
+    .icon-wrap {
+      transition: none;
+    }
+    .app-button:hover,
+    .app-button:active,
+    .app-button:hover .icon-wrap,
+    .app-button:active .icon-wrap {
+      transform: none;
+    }
   }
 </style>

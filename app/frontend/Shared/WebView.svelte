@@ -78,7 +78,7 @@
    * This does *not* limit user clicks on links like `<a href="https://...">`.
    */
   export let allowServerCalls: boolean | string = true;
-  /** Double-click / context menu: open inline images in the OS viewer */
+  /** Одиночный клик или контекстное меню: открыть встроенную картинку в ОС */
   export let allowImageOpen = false;
   /** ⌘/Ctrl + scroll over email body adjusts zoom */
   export let enableZoomWheel = false;
@@ -86,6 +86,14 @@
   export let forwardKeysToMail = false;
   /** Scale untrusted HTML content (percent, 100 = default). */
   export let contentZoom = 100;
+
+  type GuestWebview = HTMLIFrameElement & {
+    executeJavaScript: (code: string) => Promise<unknown>;
+  };
+
+  function executeGuestJavaScript<T = unknown>(code: string): Promise<T> {
+    return (webviewE as unknown as GuestWebview).executeJavaScript(code) as Promise<T>;
+  }
 
   $: partition = sessionID ? "persist:" + sessionID : undefined;
 
@@ -252,7 +260,7 @@
       if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
         return;
       }
-      let onImage = await webviewE.executeJavaScript(`
+      let onImage = await executeGuestJavaScript(`
         (function () {
           const el = document.elementFromPoint(${event.x}, ${event.y});
           return !!(el && el.closest("img"));
@@ -269,12 +277,26 @@
     if (!webviewE) {
       return;
     }
+    await executeGuestJavaScript(`
+      (() => {
+        if (window.__jackdawImageOpenListener) {
+          return;
+        }
+        window.__jackdawImageOpenListener = true;
+        document.addEventListener("click", event => {
+          const target = event.target;
+          if (target instanceof Element && target.closest("img")) {
+            event.preventDefault();
+          }
+        }, true);
+      })()
+    `);
     let id = (webviewE as any).getWebContentsId();
     await appGlobal.remoteApp.addEventListenerWebContents(id, "input-event", async (event) => {
-      if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 2) {
+      if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
         return;
       }
-      let onImage = await webviewE.executeJavaScript(`
+      let onImage = await executeGuestJavaScript(`
         (function () {
           const el = document.elementFromPoint(${event.x}, ${event.y});
           return !!(el && el.closest("img"));
@@ -367,7 +389,7 @@
     } catch {
       // Electron <webview> has no contentDocument
     }
-    let webview = webviewE as HTMLElement & {
+    let webview = webviewE as unknown as HTMLElement & {
       addEventListener: (type: string, listener: (event: { message?: string }) => void) => void;
       executeJavaScript: (code: string) => Promise<unknown>;
       __zoomConsoleListener?: boolean;
@@ -375,7 +397,7 @@
     };
     if (!webview.__zoomConsoleListener) {
       webview.__zoomConsoleListener = true;
-      webview.addEventListener("console-message", event => {
+      webview.addEventListener("console-message", (event: { message?: string }) => {
         let message = event.message ?? "";
         if (!message.startsWith("jackdaw-zoom:")) {
           return;
@@ -461,7 +483,7 @@
   let size: { width: number; height: number };
   async function getContentSize() {
     try {
-      size = await webviewE.executeJavaScript(`
+      size = await executeGuestJavaScript<{ width: number; height: number }>(`
         (function () {
           const body = document.body;
           const root = document.documentElement;
@@ -489,7 +511,7 @@
 
   async function waitForImagesAndResize() {
     try {
-      await webviewE.executeJavaScript(`
+      await executeGuestJavaScript(`
         Promise.all(Array.from(document.images)
           .filter(img => !img.complete)
           .map(img => new Promise(resolve => {

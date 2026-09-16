@@ -1,6 +1,7 @@
 <button on:click on:dblclick on:click={myOnClick} bind:this={buttonEl}
   title={tooltipCalc} class="button {classes}" class:plain
   disabled={!!disabled} class:disabled class:selected
+  aria-label={iconOnly ? tooltipCalc : undefined}
   {tabindex}
   >
   <hbox class="icon">
@@ -119,6 +120,15 @@
     border-radius: 1000px;
     padding: 6px 8px;
   }
+  button {
+    transform-origin: center;
+    transition:
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 180ms ease;
+  }
   .plain {
     background-color: transparent;
     border-radius: 3px;
@@ -131,6 +141,15 @@
   button:hover:not(.disabled) {
     background-color: var(--hover-bg);
     color: var(--hover-fg);
+  }
+  button:hover:not(.disabled) {
+    transform: translateY(var(--button-motion-lift));
+  }
+  button:not(.plain):hover:not(.disabled) {
+    box-shadow: 0 5px 14px rgba(var(--shadow-color), 0.1);
+  }
+  button:active:not(.disabled) {
+    transform: translateY(0) scale(var(--button-motion-press-scale));
   }
   button.button.selected:not(.disabled) {
     background-color: var(--selected-bg);
@@ -168,5 +187,33 @@
   }
   .plain .icon {
     margin-inline-end: 0;
+  }
+  .icon :global(svg),
+  .icon :global(img) {
+    transform-origin: center;
+    transition: transform var(--button-motion-duration) var(--button-motion-ease);
+  }
+  button:hover:not(.disabled) .icon :global(svg),
+  button:hover:not(.disabled) .icon :global(img) {
+    transform: translateY(-1px) scale(1.03);
+  }
+  button:active:not(.disabled) .icon :global(svg),
+  button:active:not(.disabled) .icon :global(img) {
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button,
+    .icon :global(svg),
+    .icon :global(img) {
+      transition: none;
+    }
+    button:hover:not(.disabled),
+    button:active:not(.disabled),
+    button:hover:not(.disabled) .icon :global(svg),
+    button:hover:not(.disabled) .icon :global(img),
+    button:active:not(.disabled) .icon :global(svg),
+    button:active:not(.disabled) .icon :global(img) {
+      transform: none;
+    }
   }
 </style>

@@ -6,7 +6,7 @@
       icon={buttonIcon}
       iconSize={$appGlobal.isMobile ? "24px" : "16px"}
       iconOnly
-      {label}
+      label={label || $t`More`}
       onClick={onMenuToggle}
       plain
       classes="menu-button"
@@ -24,6 +24,7 @@
   import MenuIcon from "lucide-svelte/icons/ellipsis";
   import VerticalMenuIcon from "lucide-svelte/icons/ellipsis-vertical";
   import type { Placement } from "@popperjs/core";
+  import { t } from "../../../l10n/l10n";
 
   /** in/out */
   export let isMenuOpen: boolean = false;

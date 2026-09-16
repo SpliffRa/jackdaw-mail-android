@@ -2,24 +2,28 @@
   <Toolbar>
     <RoundButton
       onClick={onCopyLink}
+      label={$t`Copy link address`}
       icon={LinkIcon}
       classes=""
       disabled={file.canShareLink ? false : $t`Not yet implemented`}
       />
     <RoundButton
       onClick={onShare}
+      label={$t`Sharing`}
       icon={ShareIcon}
       classes=""
       disabled={$t`Not yet implemented`}
       />
     <RoundButton
       onClick={onOpenMoveMenu}
+      label={$t`Move`}
       icon={MoveIcon}
       classes=""
       disabled={$t`Not yet implemented`}
       />
     <RoundButton
       onClick={onDelete}
+      label={$t`Delete`}
       icon={TrashIcon}
       classes="delete danger"
       />

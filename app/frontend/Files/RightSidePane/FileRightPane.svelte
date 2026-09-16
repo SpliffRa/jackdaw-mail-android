@@ -26,6 +26,7 @@
       <hbox class="open-preview buttons">
         <RoundButton
           onClick={() => openPreview(file)}
+          label={$t`Open in app`}
           icon={OpenPreviewIcon}
           />
       </hbox>

@@ -31,6 +31,8 @@ import https from "node:https";
 import { RunOnce } from '../../app/logic/util/flow/RunOnce';
 const { autoUpdater } = electronUpdater;
 
+const kMaxMailImageBytes = 25 * 1024 * 1024;
+
 const kGhOwner = "Uugsx";
 const kGhRepo = "jackdaw-mail";
 
@@ -167,6 +169,7 @@ async function createSharedAppObject() {
     onScreenSharingSelect,
     restartApp,
     getAppVersion,
+    fetchMailImage,
     prepareUpdaterAuth,
     checkForUpdate,
     installUpdate,
@@ -211,6 +214,44 @@ async function createSharedAppObject() {
       dirname: path.dirname,
       join: path.join,
     },
+  };
+}
+
+/** Fetch an email image after an explicit user action, bypassing renderer CORS. */
+async function fetchMailImage(
+  url: string,
+  webContentsID?: number,
+): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  let parsedURL: URL;
+  try {
+    parsedURL = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsedURL.protocol != "http:" && parsedURL.protocol != "https:") {
+    return null;
+  }
+  let sourceSession = webContentsID == null
+    ? session.defaultSession
+    : webContents.fromId(webContentsID)?.session;
+  if (!sourceSession) {
+    return null;
+  }
+  let response = await sourceSession.fetch(parsedURL.toString(), { redirect: "follow" });
+  if (!response.ok) {
+    return null;
+  }
+  let contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > kMaxMailImageBytes) {
+    return null;
+  }
+  let buffer = await response.arrayBuffer();
+  if (buffer.byteLength > kMaxMailImageBytes) {
+    return null;
+  }
+  return {
+    bytes: new Uint8Array(buffer),
+    contentType: response.headers.get("content-type") ?? "",
   };
 }
 

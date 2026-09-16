@@ -474,6 +474,7 @@
                 class="live-email-link"
                 disabled={openingEmailId == row.request.emailId}
                 aria-label={`${$t`Open email`}: ${row.request.subject}`}
+                title={`${$t`Open email`}: ${row.request.subject || $t`(no subject)`}`}
                 on:click={() => void openRequest(row.request)}
               >
                 <MailIcon size="14px" />

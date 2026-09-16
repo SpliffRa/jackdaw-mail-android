@@ -3,6 +3,7 @@
     <Button plain
       classes="screen-sharing"
       icon={ScreenSharingIcon}
+      label={$t`Screen share`}
       disabled={true}
       iconOnly />
   {/if}

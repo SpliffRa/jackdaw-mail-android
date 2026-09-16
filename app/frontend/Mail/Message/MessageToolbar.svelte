@@ -280,8 +280,8 @@
   .buttons {
     justify-content: end;
     align-items: center;
-    gap: 2px;
-    margin-block-end: 2px;
+    gap: 1px;
+    margin-block-end: 0;
   }
   .buttons > * {
     margin-inline-start: 0;
@@ -291,10 +291,15 @@
     flex-shrink: 0;
   }
   .buttons :global(button) {
-    width: 30px;
-    height: 30px;
-    padding: 6px;
+    width: var(--message-toolbar-control-size, 30px);
+    height: var(--message-toolbar-control-size, 30px);
+    padding: var(--message-toolbar-control-padding, 5px);
     color: var(--main-fg);
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform var(--button-motion-duration) var(--button-motion-ease),
+      box-shadow 180ms ease;
   }
   .buttons :global(button.draft-action) {
     width: auto;
@@ -308,6 +313,11 @@
   .buttons :global(button:hover:not(.disabled)) {
     background-color: var(--hover-bg);
     color: var(--hover-fg);
+    transform: translateY(var(--button-motion-lift));
+    box-shadow: 0 4px 12px rgba(var(--shadow-color), 0.09);
+  }
+  .buttons :global(button:active:not(.disabled)) {
+    transform: translateY(0) scale(0.96);
   }
   .buttons :global(svg) {
     stroke-width: 1.3px;
@@ -326,6 +336,14 @@
   @media (max-width: 600px)  {
     .reply, .reply-all, .spam, .trash, .move, .menu {
       display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .buttons :global(button) {
+      transition: background-color 160ms ease, color 160ms ease;
+    }
+    .buttons :global(button:active:not(.disabled)) {
+      transform: none;
     }
   }
 </style>

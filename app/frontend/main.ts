@@ -9,6 +9,9 @@ import { assert } from '../logic/util/util';
 import { catchErrors } from './Util/error';
 import { gt } from '../l10n/l10n';
 import * as Sentry from "@sentry/svelte";
+import { installTooltips } from './Shared/tooltip';
+
+installTooltips(document);
 
 if (production) {
   Sentry.init({
