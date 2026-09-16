@@ -1,4 +1,5 @@
 <vbox flex class="standalone-compose">
+  <NotificationBar notifications={$notifications} />
   {#if loading}
     <vbox flex class="compose-state" aria-live="polite">
       <Spinner size="36px" />
@@ -22,6 +23,8 @@
   import { assert } from "../../../logic/util/util";
   import { deserializeComposeMail } from "./composeWindow";
   import MailComposer from "./MailComposer.svelte";
+  import NotificationBar from "../../MainWindow/NotificationBar.svelte";
+  import { notifications } from "../../MainWindow/Notification";
   import Spinner from "../../Shared/Spinner.svelte";
   import { t } from "../../../l10n/l10n";
 

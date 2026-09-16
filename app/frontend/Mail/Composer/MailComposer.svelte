@@ -98,7 +98,7 @@
         {quoteEditor}
         bind:openLinkDialog
       sendDisabledTooltip={sendDisabledTooltip}
-      sending={sending || loading || !composeContentReady}
+      sending={sending || loading}
       importanceLevel={mail.importanceLevel}
       requestReadReceipt={mail.requestReadReceipt}
       requestDeliveryReceipt={mail.requestDeliveryReceipt}
@@ -712,7 +712,7 @@
     sending = true;
     try {
       if (!await waitForComposeReady()) {
-        return;
+        throw new UserError(gt`The message editor is not ready`);
       }
       syncComposeHtml();
       await commitPendingRecipients();
