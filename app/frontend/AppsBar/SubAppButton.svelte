@@ -3,6 +3,7 @@
   class="sub-app-button"
   class:selected
   class:minimized
+  class:compact
   aria-label={$title}
   aria-pressed={selected}
   on:click
@@ -17,6 +18,7 @@
 
   export let selected = false;
   export let minimized = false;
+  export let compact = false;
   export let app: JackdawApp;
 
   $: title = app.title;
@@ -93,6 +95,12 @@
   }
   .sub-app-button.minimized:not(.selected) .icon {
     transform: scale(0.92);
+  }
+  .sub-app-button.compact {
+    padding: 1px;
+  }
+  .sub-app-button.compact .icon {
+    padding: 1px;
   }
   .sub-app-button.selected .icon :global(.date-calendar-icon) {
     fill: currentColor;

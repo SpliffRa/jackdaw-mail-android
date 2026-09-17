@@ -119,14 +119,13 @@ export class MailIdentity extends Observable {
   }
 
   /**
-   * Finds our user's identity which matches one of the the passed-in email addresses
-   * @param addresses If any identity matches one of these emailAddresses,
-   * select that identity by default.
-   * In decreasing order of preference.
+   * Находит личность текущего почтового аккаунта среди переданных адресов.
+   * @param addresses Если адрес совпал с личностью аккаунта, она выбирается
+   * по умолчанию в порядке приоритета адресов.
    */
   static findIdentity(addresses: Collection<PersonUID>, defaultAccount: MailAccount): { identity: MailIdentity, personUID: PersonUID } | null {
-    let identities = appGlobal.emailAccounts.contents.map(acc => acc.identities.contents).flat();
-    // console.log(`Checking ${addresses.join(", ")} for matches with identities ${identities.map(i => i.emailAddress).join(", ")}`);
+    // Ответ и новое письмо должны оставаться в аккаунте исходного сообщения.
+    let identities = defaultAccount.identities.contents;
     for (let candidate of addresses) {
       for (let identity of identities) {
         // console.log(`Checking whether ${candidate} matches identity ${identity.emailAddress} of account ${identity.account.name}`);

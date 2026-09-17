@@ -35,7 +35,8 @@
         </hbox>
         <hbox flex class="to-row">
           <MailAutocomplete bind:this={toAutocomplete} addresses={mail.to} collapseAfter={3}
-            placeholder={$t`Add recipient`} tabindex={1} autofocus={mail.to.isEmpty && !floating}>
+            placeholder={$t`Add recipient`} tabindex={1} autofocus={mail.to.isEmpty && !floating}
+            searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
               <Button plain label={$t`CC`} onClick={() => onMoveToCC(person)} />
               <Button plain label={$t`BCC`} onClick={() => onMoveToBCC(person)} />
@@ -65,7 +66,8 @@
         {#if showCC}
           <hbox class="label-cell"><span class="label">{$t`Cc`}</span></hbox>
           <MailAutocomplete bind:this={ccAutocomplete} addresses={mail.cc} collapseAfter={3}
-            placeholder={$t`Add CC recipient`} tabindex={1}>
+            placeholder={$t`Add CC recipient`} tabindex={1}
+            searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person={person}>
               <Button plain label={$t`To`} onClick={() => onMoveToTo(person)} />
               <Button plain label={$t`BCC`} onClick={() => onMoveToBCC(person)} />
@@ -75,7 +77,8 @@
         {#if showBCC}
           <hbox class="label-cell"><span class="label">{$t`Bcc`}</span></hbox>
           <MailAutocomplete bind:this={bccAutocomplete} addresses={mail.bcc} collapseAfter={3}
-            placeholder={$t`Add BCC recipient`} tabindex={1}>
+            placeholder={$t`Add BCC recipient`} tabindex={1}
+            searchFunction={searchContactsInOwner}>
             <svelte:fragment slot="person-popup-buttons" let:person>
               <Button plain label={$t`To`} onClick={() => onMoveToTo(person)} />
               <Button plain label={$t`CC`} onClick={() => onMoveToCC(person)} />
@@ -237,6 +240,12 @@
   export let mail: EMail;
   export let floating = false;
   export let standalone = false;
+  /** Detached windows delegate the actual send to the owning renderer. */
+  export let sendInOwner: (() => Promise<void>) | null = null;
+  /** Detached windows use the owner's authenticated directory for lookups. */
+  export let searchContactsInOwner: (
+    (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
+  ) | null = null;
 
   const dispatchEvent = createEventDispatcher<{ close: void }>();
 
@@ -501,7 +510,7 @@
 
   async function onCheckNames() {
     await commitPendingRecipients();
-    await resolveComposeRecipients(mail);
+    await resolveComposeRecipients(mail, searchContactsInOwner ?? undefined);
   }
 
   function insertSignature() {
@@ -716,8 +725,14 @@
       }
       syncComposeHtml();
       await commitPendingRecipients();
-      await resolveComposeRecipients(mail);
-      await mail.compose.send();
+      if (!sendInOwner) {
+        await resolveComposeRecipients(mail);
+      }
+      if (sendInOwner) {
+        await sendInOwner();
+      } else {
+        await mail.compose.send();
+      }
       onClose();
     } finally {
       sending = false;

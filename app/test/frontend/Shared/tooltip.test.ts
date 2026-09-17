@@ -54,6 +54,51 @@ describe("renderer tooltips", () => {
     expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("true");
   });
 
+  test("finds the button when the pointer is over an aria-hidden icon", () => {
+    const button = document.createElement("button");
+    button.title = "Ответить";
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    button.append(icon);
+    document.body.append(button);
+
+    hover(icon);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.textContent).toBe("Ответить");
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("true");
+  });
+
+  test("restores the previous title when moving to another button", () => {
+    const first = document.createElement("button");
+    first.title = "Первый";
+    const second = document.createElement("button");
+    second.title = "Второй";
+    document.body.append(first, second);
+
+    hover(first);
+    vi.advanceTimersByTime(420);
+    second.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, relatedTarget: first }));
+    vi.advanceTimersByTime(420);
+
+    expect(first.getAttribute("title")).toBe("Первый");
+    expect(second.hasAttribute("title")).toBe(false);
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.textContent).toBe("Второй");
+  });
+
+  test("ignores titles on non-interactive mail content", () => {
+    const sender = document.createElement("span");
+    sender.title = "Galkin Nikita SDS\nnikita.galkin@smartds.ru";
+    sender.textContent = "Galkin Nikita SDS";
+    document.body.append(sender);
+
+    hover(sender);
+    vi.advanceTimersByTime(420);
+
+    expect(document.querySelector<HTMLElement>("#jackdaw-tooltip")?.dataset.visible).toBe("false");
+    expect(sender.getAttribute("title")).toBe("Galkin Nikita SDS\nnikita.galkin@smartds.ru");
+  });
+
   test("restores the native title after leaving and hides the tooltip", () => {
     const button = document.createElement("button");
     button.title = "Закрыть";

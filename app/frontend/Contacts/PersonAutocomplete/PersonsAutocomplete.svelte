@@ -40,6 +40,7 @@
       <PersonAutocomplete
         {onAddPerson}
         skipPersons={$persons}
+        searchFunction={searchFunction}
         {placeholder} {tabindex} {autofocus}
         bind:this={autocompleteEl}
         >
@@ -68,6 +69,9 @@
   export let autofocus = false;
   export let disabled = false;
   export let collapseAfter: number | null = null;
+  export let searchFunction: (
+    (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
+  ) | null = null;
   export let onAddPerson: (person: PersonUID) => void | Promise<void> = onAddPersonDefault;
   export let onRemovePerson: (person: PersonUID) => void | Promise<void> = onRemovePersonDefault;
 

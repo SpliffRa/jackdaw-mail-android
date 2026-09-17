@@ -10,7 +10,7 @@
       {#key $message.dbID ?? $message.messageID}
         <RelatedMessages message={$message} />
       {/key}
-      <value class="date font-small" title={$message.sent?.toLocaleString(getDateTimeLocale())}>
+      <value class="date font-small">
         {getDateTimeString($message.sent)}
       </value>
       {#if !$appGlobal.isSmall}
@@ -30,7 +30,7 @@
       <hbox class="identity-row">
         <hbox class="sender">
           {#if $message.outgoing && !$message.folder?.account?.isDependentAccount}
-            <value class="sender-name" title={$message.from.emailAddress}>
+            <value class="sender-name">
               {$t`me *=> myself as sender of the email`}
               {#if $message.from.emailAddress}
                 <span class="sender-email">&lt;{$message.from.emailAddress}&gt;</span>
@@ -124,7 +124,7 @@
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { catchErrors, backgroundError } from "../../Util/error";
   import { getDateTimeString } from "../../Util/date";
-  import { getDateTimeLocale, t } from "../../../l10n/l10n";
+  import { t } from "../../../l10n/l10n";
   import { normalizeUIDensity, uiDensitySetting } from "../../Settings/Global/uiDensity";
   import { onDestroy } from "svelte";
 

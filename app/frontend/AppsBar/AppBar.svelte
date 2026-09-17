@@ -12,7 +12,7 @@
               {app.barLabel ?? app.name}
             </hbox>
           </AppButton>
-          <SubAppsList mainApp={app} bind:selectedApp />
+          <SubAppsList mainApp={app} bind:selectedApp compact={collapsed} />
         {/if}
       {/each}
       <vbox flex class="middle" />

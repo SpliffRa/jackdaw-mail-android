@@ -2,7 +2,7 @@ import type { EMail } from "./EMail";
 import { SpecialFolder } from "./Folder";
 import { Attachment, ContentDisposition } from "../Abstract/Attachment";
 import { PersonUID, findOrCreatePersonUID } from "../Abstract/PersonUID";
-import { MailIdentity, findIdentityForEMailAddress } from "./MailIdentity";
+import { MailIdentity } from "./MailIdentity";
 import { SendEncrypted } from "./Encryption/SendEncrypted";
 import { appName, appVersion, siteRoot } from "../build";
 import { getLocalStorage } from "../../frontend/Util/LocalStorage";
@@ -134,10 +134,18 @@ export class ComposeActions {
 
   protected _addFromAsRecipient(reply: EMail) {
     let to = this.email.replyTo ?? this.email.from;
-    if (findIdentityForEMailAddress(to.emailAddress) && this.email.to.first) {
+    if (this.isAddressOwnedByMessageAccount(to) && this.email.to.first) {
       to = this.email.to.first;
     }
     reply.to.add(to);
+  }
+
+    /** Проверка адреса для ответа должна выполняться только внутри аккаунта письма.
+     * Глобальный поиск путает адреса из других пространств и заменяет автора
+     * ответа исходным получателем письма. */
+  protected isAddressOwnedByMessageAccount(person: PersonUID | null | undefined): boolean {
+    let account = this.email.folder?.account ?? this.email.identity?.account;
+    return !!account && !!person?.emailAddress && account.isMyEMailAddress(person.emailAddress);
   }
 
   replyToAuthor(): EMail {
@@ -172,8 +180,8 @@ export class ComposeActions {
 
   replyAll(): EMail {
     let reply = this.replyToAuthor();
-    reply.to.addAll(this.email.to.contents.filter(pe => !findIdentityForEMailAddress(pe.emailAddress) && pe != reply.to.first));
-    reply.cc.addAll(this.email.cc.contents.filter(pe => !findIdentityForEMailAddress(pe.emailAddress) && pe != reply.to.first));
+    reply.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
+    reply.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != reply.to.first));
     return reply;
   }
 
@@ -220,8 +228,8 @@ export class ComposeActions {
   newToAll(): EMail {
     let mail = this.newMailFromSameIdentity();
     this._addFromAsRecipient(mail);
-    mail.to.addAll(this.email.to.contents.filter(pe => !findIdentityForEMailAddress(pe.emailAddress) && pe != mail.to.first));
-    mail.cc.addAll(this.email.cc.contents.filter(pe => !findIdentityForEMailAddress(pe.emailAddress) && pe != mail.to.first));
+    mail.to.addAll(this.email.to.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
+    mail.cc.addAll(this.email.cc.contents.filter(pe => !this.isAddressOwnedByMessageAccount(pe) && pe != mail.to.first));
     return mail;
   }
 

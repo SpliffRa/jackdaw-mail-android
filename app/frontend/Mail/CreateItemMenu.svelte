@@ -1,7 +1,7 @@
 <hbox class="mail-create-item-menu">
   <ButtonMenu
     label={$t`Create item`}
-    buttonIcon={PlusIcon}
+    buttonIcon={ListPlusIcon}
     placement="bottom-start">
     <MenuItem
       label={$t`Message`}
@@ -30,7 +30,7 @@
   import MailPlusIcon from "lucide-svelte/icons/mail-plus";
   import CalendarIcon from "lucide-svelte/icons/calendar-days";
   import ContactIcon from "lucide-svelte/icons/contact-round";
-  import PlusIcon from "lucide-svelte/icons/plus";
+  import ListPlusIcon from "lucide-svelte/icons/list-plus";
   import { createNewEvent } from "../Calendar/event";
   import { selectedCalendar } from "../Calendar/selected";
   import { selectedPerson } from "../Contacts/Person/Selected";

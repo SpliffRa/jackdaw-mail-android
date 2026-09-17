@@ -169,18 +169,29 @@ export function deserializeComposeMail(payload: ComposeWindowMail, account: Mail
   assert(folder, "Compose window: target folder is missing");
 
   let mail = folder.newEMail();
+  applyComposeMailPayload(mail, payload);
+  mail.composeSource = payload.composeSource ? deserializeSource(folder, payload.composeSource) : null;
+  return mail;
+}
+
+/** Applies edits from the detached composer to the already-owned mail object. */
+export function applyComposeMailPayload(mail: EMail, payload: ComposeWindowMail): void {
+  let account = mail.folder?.account ?? mail.identity?.account;
+  assert(account?.id === payload.accountID, "Compose window: mail account changed");
+
   if (payload.id !== null) {
     mail.id = payload.id;
   }
-  if (payload.dbID !== null) {
-    mail.dbID = payload.dbID;
-  }
   mail.pID = payload.pID;
+  mail.dbID = payload.dbID;
   mail.subject = payload.subject;
   mail.from = deserializePerson(payload.from);
   mail.replyTo = payload.replyTo ? deserializePerson(payload.replyTo) : null;
+  mail.to.clear();
   mail.to.addAll(payload.to.map(deserializePerson));
+  mail.cc.clear();
   mail.cc.addAll(payload.cc.map(deserializePerson));
+  mail.bcc.clear();
   mail.bcc.addAll(payload.bcc.map(deserializePerson));
   mail.sent = deserializeDate(payload.sent);
   mail.received = deserializeDate(payload.received);
@@ -201,14 +212,18 @@ export function deserializeComposeMail(payload: ComposeWindowMail, account: Mail
   mail.wasEncrypted = payload.wasEncrypted;
   mail.signedByKeyID = payload.signedByKeyID;
   mail.hasAttachmentsFlag = payload.hasAttachmentsFlag;
+
+  mail.headers.clear();
   for (let [name, value] of payload.headers) {
     mail.headers.set(name, value);
   }
   if (payload.html !== null) {
     mail.html = payload.html;
-  } else if (payload.text !== null) {
-    mail.text = payload.text;
+  } else {
+    mail.text = payload.text ?? "";
   }
+
+  mail.attachments.clear();
   for (let item of payload.attachments) {
     let attachment = mail.newAttachment();
     attachment.filename = item.filename;
@@ -226,12 +241,9 @@ export function deserializeComposeMail(payload: ComposeWindowMail, account: Mail
     }
     mail.attachments.add(attachment);
   }
+
   mail.identity = account.identities.find(identity => identity.id === payload.identityID)
     ?? account.identities.find(identity => identity.isEMailAddress(payload.from.emailAddress))
     ?? account.identities.first;
-  mail.composeSource = payload.composeSource ? deserializeSource(folder, payload.composeSource) : null;
-  // Сеттеры `html`/`text` намеренно помечают тело как устаревшее. Здесь
-  // payload уже полностью загружен и не должен запускать повторное чтение сети.
   mail.loadedBody = true;
-  return mail;
 }

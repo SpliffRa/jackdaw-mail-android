@@ -6,6 +6,11 @@ import { UserError } from "../util/util";
 import { gt } from "../../l10n/l10n";
 import type { ArrayColl } from "svelte-collections";
 
+type SearchContacts = (
+  searchTerm: string,
+  skip: (person: PersonUID) => boolean,
+) => Promise<PersonUID[]>;
+
 function isValidAddress(emailAddress: string): boolean {
   return !!sanitize.emailAddress(emailAddress, "");
 }
@@ -17,6 +22,7 @@ function needsResolve(person: PersonUID): boolean {
 async function resolvePerson(
   person: PersonUID,
   skip: (candidate: PersonUID) => boolean,
+  search: SearchContacts,
 ): Promise<boolean> {
   if (!needsResolve(person)) {
     return true;
@@ -27,7 +33,7 @@ async function resolvePerson(
   if (!searchTerm) {
     return false;
   }
-  let matches = await searchContacts(searchTerm, candidate =>
+  let matches = await search(searchTerm, candidate =>
     candidate.emailAddress !== person.emailAddress && skip(candidate));
   if (matches.length === 0) {
     return false;
@@ -73,13 +79,14 @@ function pickBestMatch(
 async function resolveList(
   persons: ArrayColl<PersonUID>,
   allRecipients: PersonUID[],
+  search: SearchContacts,
 ): Promise<string[]> {
   let unresolved: string[] = [];
   let skip = (candidate: PersonUID) =>
     allRecipients.some(existing =>
       existing !== candidate && existing.emailAddress === candidate.emailAddress);
   for (let person of [...persons.contents]) {
-    let ok = await resolvePerson(person, skip);
+    let ok = await resolvePerson(person, skip, search);
     if (!ok && needsResolve(person)) {
       unresolved.push(person.name || person.emailAddress);
     }
@@ -88,12 +95,15 @@ async function resolveList(
 }
 
 /** Resolve ambiguous To/Cc/Bcc entries against the directory (Outlook Check Names). */
-export async function resolveComposeRecipients(email: EMail): Promise<void> {
+export async function resolveComposeRecipients(
+  email: EMail,
+  search: SearchContacts = searchContacts,
+): Promise<void> {
   let allRecipients = [...email.to.contents, ...email.cc.contents, ...email.bcc.contents];
   let unresolved = [
-    ...(await resolveList(email.to, allRecipients)),
-    ...(await resolveList(email.cc, allRecipients)),
-    ...(await resolveList(email.bcc, allRecipients)),
+    ...(await resolveList(email.to, allRecipients, search)),
+    ...(await resolveList(email.cc, allRecipients, search)),
+    ...(await resolveList(email.bcc, allRecipients, search)),
   ];
   if (unresolved.length) {
     throw new UserError(gt`Could not resolve: ${unresolved.join(", ")}`);

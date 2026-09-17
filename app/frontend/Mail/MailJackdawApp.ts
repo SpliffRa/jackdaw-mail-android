@@ -10,8 +10,12 @@ import { derived } from "svelte/store";
 import { gt } from "../../l10n/l10n";
 import { openFloatingCompose, shouldOpenComposeInWindow } from "./Composer/composeFloating";
 import { openNativeComposeWindow, supportsNativeComposeWindow } from "./Composer/composeNative";
+import { applyComposeMailPayload } from "./Composer/composeWindow";
+import type { ComposeWindowMail } from "../../logic/Mail/Composer/ComposeWindowProtocol";
+import { resolveComposeRecipients } from "../../logic/Mail/composeResolveRecipients";
 import { get } from "svelte/store";
 import { selectedApp } from "../AppsBar/selectedApp";
+import { assert } from "../../logic/util/util";
 
 export class MailJackdawApp extends JackdawApp {
   id = "mail";
@@ -58,6 +62,18 @@ export function handleNativeComposeWindowClosed(windowID: string): void {
   if (composer) {
     mailApp.subApps.remove(composer);
   }
+}
+
+/** Sends detached-composer edits through the already logged-in main renderer. */
+export async function sendNativeComposeWindow(windowID: string, payload: ComposeWindowMail): Promise<void> {
+  let composer = mailApp.subApps.find(app =>
+    app instanceof WriteMailJackdawApp && app.windowParams?.nativeComposeWindowID === windowID) as WriteMailJackdawApp | undefined;
+  assert(composer, "Compose window is no longer available");
+  let mail = composer.windowParams?.mail as EMail | undefined;
+  assert(mail, "Compose window message is no longer available");
+  applyComposeMailPayload(mail, payload);
+  await resolveComposeRecipients(mail);
+  await mail.compose.send();
 }
 
 export class WriteMailJackdawApp extends JackdawApp {

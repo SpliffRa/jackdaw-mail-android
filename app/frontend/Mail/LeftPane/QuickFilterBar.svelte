@@ -10,11 +10,11 @@
           aria-haspopup="menu"
           aria-expanded={sortMenuOpen}
           aria-pressed={true}
-          title={$t`Sort messages`}
+          title={sortTooltip}
+          aria-label={sortTooltip}
           bind:this={sortAnchor}
           on:click|stopPropagation={onSortClick}>
-          <span class="pill-label">{currentSortLabel}</span>
-          <ChevronDownIcon size="12px" />
+          <ChevronDownIcon size="14px" strokeWidth={2.25} />
         </button>
       {:else}
         <hbox class="filter-pill"
@@ -36,10 +36,10 @@
       {/if}
     {/each}
 
-    <button type="button" class="pill add" title={$t`Add filter`}
+    <button type="button" class="pill add" title={$t`Add filter`} aria-label={$t`Add filter`}
       bind:this={addAnchor}
       on:click|stopPropagation={onAddClick}>
-      +
+      <ListFilterPlusIcon size="16px" strokeWidth={1.9} />
     </button>
 
     <!-- Keep Menu always mounted so the opening click doesn't race with mount+autoClose -->
@@ -102,6 +102,7 @@
   import type { ArrayColl } from "svelte-collections";
   import { t } from "../../../l10n/l10n";
   import ChevronDownIcon from "lucide-svelte/icons/chevron-down";
+  import ListFilterPlusIcon from "lucide-svelte/icons/list-filter-plus";
   import HorizontalScroll from "../../Shared/HorizontalScroll.svelte";
 
   export let folder: Folder;
@@ -124,6 +125,7 @@
   $: anyActive, filterScroll?.refresh();
   $: currentSortDef = sortDefs.find(s => s.sort === $mailListSort) ?? sortDefs[0];
   $: currentSortLabel = currentSortDef?.label() ?? $t`Newest`;
+  $: sortTooltip = `${$t`Sort messages`}: ${currentSortLabel}`;
   $: anyActive =
     $quickSearch.isRead === false ||
     $quickSearch.isStarred === true ||
@@ -318,11 +320,22 @@
   .pill.sort:not(.active) {
     border-style: dashed;
   }
+  .pill.sort,
+  .pill.add {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+    justify-content: center;
+    box-sizing: border-box;
+  }
   .sort-menu-trigger {
     cursor: default;
   }
   .sort-menu-trigger :global(svg) {
     flex-shrink: 0;
+    display: block;
   }
   .pill-label {
     overflow: hidden;
@@ -351,10 +364,6 @@
     opacity: 1 !important;
   }
   .pill.add {
-    min-width: 28px;
-    justify-content: center;
-    padding-inline: 8px;
-    font-size: 14px;
     opacity: 0.7;
   }
   .pill.clear {

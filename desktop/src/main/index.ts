@@ -20,13 +20,34 @@ import {
   composeWindowDataChannel,
   composeWindowFocusChannel,
   composeWindowOpenChannel,
+  composeWindowSendChannel,
+  composeWindowSendRequestChannel,
+  composeWindowSendResponseChannel,
+  composeWindowSearchContactsChannel,
+  composeWindowSearchContactsRequestChannel,
+  composeWindowSearchContactsResponseChannel,
+  isComposeWindowPersonArray,
   isComposeWindowPayload,
+  isComposeWindowSendResult,
   type ComposeWindowMail,
+  type ComposeWindowPerson,
+  type ComposeWindowSendResult,
 } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
 
 let primaryWindow: BrowserWindow | null = null;
 let currentJPCSecret: string | null = null;
 const composeWindows = new Map<string, { window: BrowserWindow; payload: ComposeWindowMail }>();
+const kComposeWindowRequestTimeoutMS = 60_000;
+const kComposeWindowSearchTextMaxLength = 512;
+const pendingComposeWindowSends = new Map<string, {
+  windowID: string;
+  resolve: (result: ComposeWindowSendResult) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
+const pendingComposeWindowSearches = new Map<string, {
+  resolve: (result: ComposeWindowPerson[]) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
 const pendingNativeMenuActions = new WeakMap<BrowserWindow, NativeMenuAction>();
 let currentNativeMenuLabels: NativeMenuLabels = {
   about: 'About Jackdaw Mail',
@@ -113,6 +134,68 @@ function notifyComposeWindowClosed(windowID: string): void {
     window.webContents.send(composeWindowClosedChannel, windowID);
   } catch (ex) {
     console.error("Could not notify the main window about a closed compose window", ex);
+  }
+}
+
+function forwardComposeWindowSend(windowID: string, payload: ComposeWindowMail): Promise<ComposeWindowSendResult> {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) {
+    return Promise.resolve({ ok: false, errorMessage: "Main window is unavailable" });
+  }
+
+  const requestID = crypto.randomUUID();
+  return new Promise(resolve => {
+    const timeout = setTimeout(() => {
+      pendingComposeWindowSends.delete(requestID);
+      resolve({ ok: false, errorMessage: "The main window did not respond" });
+    }, kComposeWindowRequestTimeoutMS);
+    pendingComposeWindowSends.set(requestID, { windowID, resolve, timeout });
+    try {
+      window.webContents.send(composeWindowSendRequestChannel, requestID, windowID, payload);
+    } catch (_ex) {
+      clearTimeout(timeout);
+      pendingComposeWindowSends.delete(requestID);
+      resolve({ ok: false, errorMessage: "The main window is unavailable" });
+    }
+  });
+}
+
+function forwardComposeWindowContactSearch(windowID: string, searchText: string): Promise<ComposeWindowPerson[]> {
+  const window = primaryWindow;
+  if (!window || window.isDestroyed()) {
+    return Promise.resolve([]);
+  }
+
+  const requestID = crypto.randomUUID();
+  return new Promise(resolve => {
+    const timeout = setTimeout(() => {
+      pendingComposeWindowSearches.delete(requestID);
+      resolve([]);
+    }, kComposeWindowRequestTimeoutMS);
+    pendingComposeWindowSearches.set(requestID, { resolve, timeout });
+    try {
+      window.webContents.send(composeWindowSearchContactsRequestChannel, requestID, windowID, searchText);
+    } catch (_ex) {
+      clearTimeout(timeout);
+      pendingComposeWindowSearches.delete(requestID);
+      resolve([]);
+    }
+  });
+}
+
+function failPendingComposeWindowSends(errorMessage: string): void {
+  for (const [requestID, pending] of pendingComposeWindowSends) {
+    clearTimeout(pending.timeout);
+    pendingComposeWindowSends.delete(requestID);
+    pending.resolve({ ok: false, errorMessage });
+  }
+}
+
+function failPendingComposeWindowSearches(): void {
+  for (const [requestID, pending] of pendingComposeWindowSearches) {
+    clearTimeout(pending.timeout);
+    pendingComposeWindowSearches.delete(requestID);
+    pending.resolve([]);
   }
 }
 
@@ -237,6 +320,56 @@ ipcMain.handle(composeWindowDataChannel, (event, windowID: unknown): ComposeWind
   return entry.payload;
 });
 
+ipcMain.handle(composeWindowSendChannel, (event, windowID: unknown, payload: unknown): Promise<ComposeWindowSendResult> => {
+  if (!isComposeWindowID(windowID) || !isComposeWindowPayload(payload) || payload.windowID !== windowID) {
+    return Promise.resolve({ ok: false, errorMessage: "Invalid compose window data" });
+  }
+  const entry = composeWindows.get(windowID);
+  if (!entry || entry.window.isDestroyed() || entry.window.webContents !== event.sender) {
+    return Promise.resolve({ ok: false, errorMessage: "Compose window is unavailable" });
+  }
+  return forwardComposeWindowSend(windowID, payload);
+});
+
+ipcMain.on(composeWindowSendResponseChannel, (event, requestID: unknown, result: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || typeof requestID !== "string" ||
+      !isComposeWindowSendResult(result)) {
+    return;
+  }
+  const pending = pendingComposeWindowSends.get(requestID);
+  if (!pending) {
+    return;
+  }
+  clearTimeout(pending.timeout);
+  pendingComposeWindowSends.delete(requestID);
+  pending.resolve(result);
+});
+
+ipcMain.handle(composeWindowSearchContactsChannel, (event, windowID: unknown, searchText: unknown): Promise<ComposeWindowPerson[]> => {
+  if (!isComposeWindowID(windowID) || typeof searchText !== "string" || searchText.length > kComposeWindowSearchTextMaxLength) {
+    return Promise.resolve([]);
+  }
+  const entry = composeWindows.get(windowID);
+  if (!entry || entry.window.isDestroyed() || entry.window.webContents !== event.sender) {
+    return Promise.resolve([]);
+  }
+  return forwardComposeWindowContactSearch(windowID, searchText);
+});
+
+ipcMain.on(composeWindowSearchContactsResponseChannel, (event, requestID: unknown, result: unknown) => {
+  if (!isPrimaryRenderer(event.sender) || typeof requestID !== "string" ||
+      !isComposeWindowPersonArray(result)) {
+    return;
+  }
+  const pending = pendingComposeWindowSearches.get(requestID);
+  if (!pending) {
+    return;
+  }
+  clearTimeout(pending.timeout);
+  pendingComposeWindowSearches.delete(requestID);
+  pending.resolve(result);
+});
+
 async function createWindow(): Promise<void> {
   try {
     const jpcSecret = createJPCSecret();
@@ -293,6 +426,8 @@ async function createWindow(): Promise<void> {
     }
 
     mainWindow.on('closed', () => {
+      failPendingComposeWindowSends("Main window is unavailable");
+      failPendingComposeWindowSearches();
       closeComposeWindows();
       currentJPCSecret = null;
       shutdownBackend().catch(console.error);

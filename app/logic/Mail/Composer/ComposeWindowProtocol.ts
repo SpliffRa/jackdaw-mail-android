@@ -4,6 +4,38 @@ export const composeWindowFocusChannel = "compose-window:focus";
 export const composeWindowCloseChannel = "compose-window:close";
 export const composeWindowDataChannel = "compose-window:data";
 export const composeWindowClosedChannel = "compose-window:closed";
+export const composeWindowSendChannel = "compose-window:send";
+export const composeWindowSendRequestChannel = "compose-window:send-request";
+export const composeWindowSendResponseChannel = "compose-window:send-response";
+export const composeWindowSearchContactsChannel = "compose-window:search-contacts";
+export const composeWindowSearchContactsRequestChannel = "compose-window:search-contacts-request";
+export const composeWindowSearchContactsResponseChannel = "compose-window:search-contacts-response";
+
+export type ComposeWindowSendResult =
+  | { ok: true }
+  | { ok: false; errorMessage: string };
+
+export function isComposeWindowSendResult(value: unknown): value is ComposeWindowSendResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  let result = value as Record<string, unknown>;
+  return result.ok === true ||
+    (result.ok === false && typeof result.errorMessage === "string" && result.errorMessage.length <= 8_000);
+}
+
+export function isComposeWindowPerson(value: unknown): value is ComposeWindowPerson {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  let person = value as Record<string, unknown>;
+  return typeof person.emailAddress === "string" && person.emailAddress.length <= 320 &&
+    (person.name === null || (typeof person.name === "string" && person.name.length <= 512));
+}
+
+export function isComposeWindowPersonArray(value: unknown): value is ComposeWindowPerson[] {
+  return Array.isArray(value) && value.length <= 100 && value.every(isComposeWindowPerson);
+}
 
 export interface ComposeWindowPerson {
   emailAddress: string;

@@ -95,7 +95,7 @@
   } from "../Mail/CategoryShortcuts";
   import { getLocalStorage } from "../Util/LocalStorage";
   import { loadApps, disableAppsBasedOnFeaturesXML } from "../AppsBar/loadApps";
-  import { handleNativeComposeWindowClosed, mailApp } from "../Mail/MailJackdawApp";
+  import { handleNativeComposeWindowClosed, mailApp, sendNativeComposeWindow } from "../Mail/MailJackdawApp";
   import { meetApp } from "../Meet/MeetJackdawApp";
   import { categoriesLoaded } from "../Settings/SettingsCategories";
   import { applyColors } from "../Settings/Global/AppThemeColors";
@@ -127,6 +127,8 @@
 import { updatePaneFocusFromPointer } from "./paneFocus";
   import { startUpdateNotificationWatcher } from "./UpdateNotification";
   import { assert } from "../../logic/util/util";
+  import { searchContacts } from "../../logic/Contacts/Search";
+  import type { ComposeWindowPerson } from "../../logic/Mail/Composer/ComposeWindowProtocol";
   import { getUILocale, locale, t } from "../../l10n/l10n";
   import { rtlLocales } from "../../l10n/list";
   import { appName } from "../../logic/build";
@@ -172,10 +174,45 @@ import { updatePaneFocusFromPointer } from "./paneFocus";
     const unsubscribeComposeWindow = typeof nativeAPI?.onComposeWindowClosed === "function"
       ? nativeAPI.onComposeWindowClosed(handleNativeComposeWindowClosed)
       : () => {};
+    const unsubscribeComposeWindowSend = typeof nativeAPI?.onComposeWindowSendRequest === "function"
+      ? nativeAPI.onComposeWindowSendRequest((requestID, windowID, payload) => {
+          void (async () => {
+            let result: { ok: true } | { ok: false; errorMessage: string } = { ok: true };
+            try {
+              await sendNativeComposeWindow(windowID, payload);
+            } catch (ex) {
+              result = {
+                ok: false,
+                errorMessage: ex instanceof Error ? ex.message : "Could not send the message",
+              };
+            }
+            nativeAPI.respondToComposeWindowSend(requestID, result);
+          })();
+        })
+      : () => {};
+    const unsubscribeComposeWindowSearch = typeof nativeAPI?.onComposeWindowSearchContactsRequest === "function"
+      ? nativeAPI.onComposeWindowSearchContactsRequest((requestID, _windowID, searchText) => {
+          void (async () => {
+            let result: ComposeWindowPerson[] = [];
+            try {
+              let matches = await searchContacts(searchText, () => false);
+              result = matches.map(person => ({
+                emailAddress: person.emailAddress,
+                name: person.name ?? null,
+              }));
+            } catch (_ex) {
+              // The detached window can continue with local results.
+            }
+            nativeAPI.respondToComposeWindowSearchContacts(requestID, result);
+          })();
+        })
+      : () => {};
     return () => {
       unsubscribeLocale();
       unsubscribeNativeMenu();
       unsubscribeComposeWindow();
+      unsubscribeComposeWindowSend();
+      unsubscribeComposeWindowSearch();
     };
   });
 

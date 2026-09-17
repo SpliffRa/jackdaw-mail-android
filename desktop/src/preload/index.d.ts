@@ -1,6 +1,10 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { NativeMenuLabels } from '../../../app/logic/util/nativeMenu'
-import type { ComposeWindowMail } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
+import type {
+  ComposeWindowMail,
+  ComposeWindowPerson,
+  ComposeWindowSendResult,
+} from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
 
 declare global {
   interface Window {
@@ -12,6 +16,12 @@ declare global {
       focusComposeWindow(windowID: string): void
       closeComposeWindow(windowID: string): void
       getComposeWindowData(windowID: string): Promise<ComposeWindowMail | null>
+      sendComposeWindowMail(windowID: string, payload: ComposeWindowMail): Promise<ComposeWindowSendResult>
+      searchComposeWindowContacts(windowID: string, searchText: string): Promise<ComposeWindowPerson[]>
+      onComposeWindowSendRequest(callback: (requestID: string, windowID: string, payload: ComposeWindowMail) => void): () => void
+      respondToComposeWindowSend(requestID: string, result: ComposeWindowSendResult): void
+      onComposeWindowSearchContactsRequest(callback: (requestID: string, windowID: string, searchText: string) => void): () => void
+      respondToComposeWindowSearchContacts(requestID: string, result: ComposeWindowPerson[]): void
       onComposeWindowClosed(callback: (windowID: string) => void): () => void
     }
   }

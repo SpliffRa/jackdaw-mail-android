@@ -439,6 +439,15 @@
     background-color: var(--toolbar-control-bg);
     font-size: 11px;
   }
+  .mail-toolbar :global(.quick-filters .pill.sort),
+  .mail-toolbar :global(.quick-filters .pill.add) {
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    padding: 0;
+  }
   .mail-toolbar :global(.quick-filters .pill.active) {
     background-color: var(--selected-bg);
     border-color: transparent;
@@ -532,6 +541,15 @@
   .mail-toolbar.toolbar-compact .search-wrap :global(.search) {
     height: 28px;
   }
+  .mail-toolbar.toolbar-compact :global(.quick-filters .pill.sort),
+  .mail-toolbar.toolbar-compact :global(.quick-filters .pill.add) {
+    flex-basis: 28px;
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    min-height: 28px;
+    padding: 0;
+  }
   .mail-toolbar.toolbar-compact :global(.mail-create-item-menu .menu.button) {
     flex-basis: 28px;
     width: 28px;
@@ -572,6 +590,15 @@
   .mail-toolbar.toolbar-large :global(.quick-filters .pill) {
     width: auto;
     padding-inline: 12px;
+  }
+  .mail-toolbar.toolbar-large :global(.quick-filters .pill.sort),
+  .mail-toolbar.toolbar-large :global(.quick-filters .pill.add) {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
   }
 
   .mail-toolbar.toolbar-stacked {

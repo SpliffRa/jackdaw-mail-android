@@ -11,7 +11,18 @@ import {
   composeWindowDataChannel,
   composeWindowFocusChannel,
   composeWindowOpenChannel,
+  composeWindowSendChannel,
+  composeWindowSendRequestChannel,
+  composeWindowSendResponseChannel,
+  composeWindowSearchContactsChannel,
+  composeWindowSearchContactsRequestChannel,
+  composeWindowSearchContactsResponseChannel,
+  isComposeWindowPayload,
+  isComposeWindowSendResult,
+  isComposeWindowPersonArray,
   type ComposeWindowMail,
+  type ComposeWindowPerson,
+  type ComposeWindowSendResult,
 } from '../../../app/logic/Mail/Composer/ComposeWindowProtocol'
 
 // Custom APIs for renderer
@@ -39,6 +50,51 @@ const api = {
   },
   getComposeWindowData: (windowID: string): Promise<ComposeWindowMail | null> => {
     return ipcRenderer.invoke(composeWindowDataChannel, windowID)
+  },
+  sendComposeWindowMail: async (windowID: string, payload: ComposeWindowMail): Promise<ComposeWindowSendResult> => {
+    let result: unknown = await ipcRenderer.invoke(composeWindowSendChannel, windowID, payload)
+    return isComposeWindowSendResult(result)
+      ? result
+      : { ok: false, errorMessage: 'Compose window send failed' }
+  },
+  searchComposeWindowContacts: async (windowID: string, searchText: string): Promise<ComposeWindowPerson[]> => {
+    let result: unknown = await ipcRenderer.invoke(composeWindowSearchContactsChannel, windowID, searchText)
+    return isComposeWindowPersonArray(result) ? result : []
+  },
+  onComposeWindowSendRequest: (callback: (requestID: string, windowID: string, payload: ComposeWindowMail) => void): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      requestID: unknown,
+      windowID: unknown,
+      payload: unknown,
+    ): void => {
+      if (typeof requestID === 'string' && typeof windowID === 'string' && isComposeWindowPayload(payload)) {
+        callback(requestID, windowID, payload)
+      }
+    }
+    ipcRenderer.on(composeWindowSendRequestChannel, listener)
+    return () => ipcRenderer.removeListener(composeWindowSendRequestChannel, listener)
+  },
+  respondToComposeWindowSend: (requestID: string, result: ComposeWindowSendResult): void => {
+    ipcRenderer.send(composeWindowSendResponseChannel, requestID, result)
+  },
+  onComposeWindowSearchContactsRequest: (callback: (requestID: string, windowID: string, searchText: string) => void): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      requestID: unknown,
+      windowID: unknown,
+      searchText: unknown,
+    ): void => {
+      if (typeof requestID === 'string' && typeof windowID === 'string' &&
+          typeof searchText === 'string') {
+        callback(requestID, windowID, searchText)
+      }
+    }
+    ipcRenderer.on(composeWindowSearchContactsRequestChannel, listener)
+    return () => ipcRenderer.removeListener(composeWindowSearchContactsRequestChannel, listener)
+  },
+  respondToComposeWindowSearchContacts: (requestID: string, result: ComposeWindowPerson[]): void => {
+    ipcRenderer.send(composeWindowSearchContactsResponseChannel, requestID, result)
   },
   onComposeWindowClosed: (callback: (windowID: string) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, windowID: unknown): void => {

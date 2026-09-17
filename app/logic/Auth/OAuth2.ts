@@ -127,10 +127,16 @@ export class OAuth2 extends WebBasedAuth {
    * @returns accessToken
    */
   async loginWithUI(): Promise<string> {
-    this.ui = newOAuth2UI(this.uiMethod, this);
-    let authCode = await this.ui.login();
-    this.ui = null;
-    return await this.getAccessTokenFromAuthCode(authCode);
+    let ui = newOAuth2UI(this.uiMethod, this);
+    this.ui = ui;
+    try {
+      let authCode = await ui.login();
+      return await this.getAccessTokenFromAuthCode(authCode);
+    } finally {
+      if (this.ui === ui) {
+        this.ui = null;
+      }
+    }
   }
 
   abort() {

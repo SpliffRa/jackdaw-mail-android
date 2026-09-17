@@ -61,7 +61,7 @@
   import Button from "../../Shared/Button.svelte";
   import { catchErrors } from "../../Util/error";
   import { t } from "../../../l10n/l10n";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
 
   export let account: MailAccount;
   export let startWith: OAuth2UIMethod | null = OAuth2UIMethod.Embed;
@@ -72,6 +72,7 @@
   let oAuth2Running: OAuth2UIMethod | null = null;
   let embed: OAuth2Embed;
   let url: URLString | null = null;
+  let activeUI: OAuth2UI | null = null;
 
   onMount(() => catchErrors(async () => {
     assert(account.oAuth2, "Need OAuth2 config");
@@ -89,22 +90,38 @@
     }
   }, showError));
 
+  onDestroy(() => {
+    activeUI?.abort();
+    activeUI = null;
+    account.oAuth2.abort();
+  });
+
   /** Do not wait for the async function */
   function run(func: () => Promise<void>) {
     func().catch(showError);
   }
 
   async function prepareLogin(method: OAuth2UIMethod) {
+    activeUI?.abort();
+    activeUI = null;
     account.oAuth2.abort();
     oAuth2Running = method;
   }
 
   async function startLogin(ui: OAuth2UI, dailyUI: OAuth2UIMethod) {
-    let authCode = await ui.login();
-    oAuth2Running = null;
-    await account.oAuth2.getAccessTokenFromAuthCode(authCode);
-    account.oAuth2.uiMethod = dailyUI;
-    onContinue();
+    activeUI = ui;
+    try {
+      let authCode = await ui.login();
+      oAuth2Running = null;
+      await account.oAuth2.getAccessTokenFromAuthCode(authCode);
+      account.oAuth2.uiMethod = dailyUI;
+      onContinue();
+    } finally {
+      if (activeUI === ui) {
+        activeUI = null;
+        oAuth2Running = null;
+      }
+    }
   }
 
   async function loginBrowser() {

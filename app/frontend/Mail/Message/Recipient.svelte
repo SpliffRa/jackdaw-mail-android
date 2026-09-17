@@ -4,18 +4,18 @@
     class:is-contact={recipient.findPerson()}
     >
     {#if showFullEmail && recipient.emailAddress}
-      <div class="name" title={recipient.name + "\n" + recipient.emailAddress}>
+      <div class="name">
         {fullDisplayName}
         {#if hasVisibleName}
           <span class="full-email">&lt;{recipient.emailAddress}&gt;</span>
         {/if}
       </div>
     {:else}
-      <div class="name" title={recipient.name + "\n" + recipient.emailAddress}>
+      <div class="name">
         {displayName}{#if hasSeparateDisplayName && showDomainSuffix}&nbsp;{/if}
       </div>
       {#if showDomainSuffix}
-        <div class="domain" title={recipient.emailAddress}>
+        <div class="domain">
           @{domainSuffix}
         </div>
       {:else if !recipient.emailAddress}

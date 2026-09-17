@@ -1,5 +1,5 @@
 <vbox class="html-display" bind:this={displayE}>
-  <WebView html={displayHtml} {headHTML} {bodyClass} allowServerCalls={allowExternalImages} {allowImageOpen} autoSize={fitContent} title={$t`Text`} enableZoomWheel forwardKeysToMail contentZoom={zoom} on:webview on:zoomwheel />
+  <WebView html={displayHtml} {headHTML} {bodyClass} title="" allowServerCalls={allowExternalImages} {allowImageOpen} autoSize={fitContent} enableZoomWheel forwardKeysToMail contentZoom={zoom} on:webview on:zoomwheel />
 </vbox>
 
 <script lang="ts">
@@ -15,7 +15,6 @@
     normalizeMessageViewerBackground,
   } from "./messageViewerAppearance";
   import type { MessageViewerBackground } from "./messageViewerAppearance";
-  import { t } from "../../../l10n/l10n";
   import { onMount } from "svelte";
 
   /** DANGER Attention: You must sanitize the HTML. It comes from untrusted sources.

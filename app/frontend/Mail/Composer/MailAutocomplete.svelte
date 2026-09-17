@@ -1,4 +1,5 @@
 <PersonsAutocomplete persons={addresses} {placeholder} {tabindex} {autofocus}
+  searchFunction={searchFunction}
   {collapseAfter} bind:this={personsEl}>
   <slot name="end" slot="end" />
   <hbox class="addressbooks" slot="person-popup-bottom" let:person class:top-border={person?.person?.emailAddresses.length > 1}>
@@ -22,6 +23,9 @@
   export let tabindex = null;
   export let autofocus = false;
   export let collapseAfter: number | null = null;
+  export let searchFunction: (
+    (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
+  ) | null = null;
 
   let personsEl: PersonsAutocomplete;
 

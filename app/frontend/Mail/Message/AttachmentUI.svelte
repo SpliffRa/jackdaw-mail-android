@@ -8,7 +8,7 @@
         <FileIcon ext={$attachment.ext} localFilePath={$attachment.filepathLocal} size={24} />
       </hbox>
       <vbox class="info">
-        <hbox title={$attachment.filename} class="filename top-row font-small">
+        <hbox class="filename top-row font-small">
           {$attachment.filename}
         </hbox>
         <hbox class="bottom-row font-smallest">

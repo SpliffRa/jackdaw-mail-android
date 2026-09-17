@@ -40,8 +40,8 @@
   import { tick } from 'svelte';
   import { catchErrors, showError } from "../../Util/error";
   import { sanitize } from "../../../../lib/util/sanitizeDatatypes";
-  import { assert } from "../../../logic/util/util";
-  import { t } from "../../../l10n/l10n";
+  import { assert, UserError } from "../../../logic/util/util";
+  import { gt, t } from "../../../l10n/l10n";
 
   export let skipPersons: Collection<PersonUID> = new ArrayColl<PersonUID>();
   export let skipPersonFunc = (person: PersonUID) => !!skipPersons.find(e => e.emailAddress == person.emailAddress);
@@ -50,10 +50,15 @@
   export let autofocus = false;
   export let typedText: string = ""; /* in/out */
   export let onAddPerson: (person: PersonUID) => void | Promise<void>;
+  export let searchFunction: (
+    (searchText: string, skip: (person: PersonUID) => boolean) => Promise<PersonUID[]>
+  ) | null = null;
 
   async function search(inputStr: string) {
     try {
-      return await searchContacts(inputStr, skipPersonFunc);
+      return await (searchFunction
+        ? searchFunction(inputStr, skipPersonFunc)
+        : searchContacts(inputStr, skipPersonFunc));
     } catch (ex) {
       showError(ex);
       return [];
@@ -133,20 +138,22 @@
       onCreate(typedText);
       return true;
     }
-    let matches = await search(typedText.trim());
+    let input = typedText.trim();
+    // Не скрываем ошибку поиска за вводящим в заблуждение уведомлением.
+    let matches = await search(input);
     if (matches.length === 1) {
       await addPerson(matches[0]);
       return true;
     }
     if (matches.length > 1) {
-      let term = typedText.trim().toLowerCase();
+      let term = input.toLowerCase();
       let exact = matches.filter(m => m.name?.toLowerCase() === term);
       if (exact.length === 1) {
         await addPerson(exact[0]);
         return true;
       }
     }
-    return false;
+    throw new UserError(gt`Could not resolve: ${input}`);
   }
 
   export function focus() {

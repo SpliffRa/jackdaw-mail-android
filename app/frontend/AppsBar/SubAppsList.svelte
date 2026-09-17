@@ -1,11 +1,13 @@
 {#if $subApps.hasItems}
   <!-- A list of parts of the app,
     shown in the AppBar underneath the app button -->
-  <hbox class="sub-app-bar" app={mainApp.id}>
+  <hbox class="sub-app-bar" class:compact app={mainApp.id}>
     {#each $subApps.each as app}
       <SubAppButton selected={selectedApp == app} {app} minimized={isComposeMinimized(app, $floatingComposes)}
+        compact={compact}
         on:click={() => catchErrors(() => onSelectApp(app))}>
-        <AppIcon slot="icon" icon={app.icon} size="16px" />
+        <AppIcon slot="icon" icon={app.icon} size={compact ? "12px" : "16px"}
+          strokeWidth={compact ? 1.6 : 1.75} />
       </SubAppButton>
     {/each}
   </hbox>
@@ -33,6 +35,7 @@
   export let mainApp: JackdawApp;
   /* in/out */
   export let selectedApp: JackdawApp | null;
+  export let compact = false;
 
   $: subApps = $mainApp.subApps;
 
@@ -95,5 +98,10 @@
   }
   .sub-app-bar[app="webapps"] {
     margin-block-start: 8px;
+  }
+  .sub-app-bar.compact {
+    margin-inline: 0;
+    margin-block-end: 1px;
+    gap: 1px;
   }
 </style>

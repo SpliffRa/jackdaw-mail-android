@@ -2,16 +2,15 @@ type TooltipTarget = HTMLElement;
 type TooltipTimer = number;
 
 const tooltipId = "jackdaw-tooltip";
-const tooltipTargetSelector = "[data-tooltip], [data-jackdaw-tooltip], [title], [aria-label]";
-const interactiveSelector = "button, a, input, textarea, select, [role=\"button\"], [tabindex]";
+const interactiveSelector = "button, a, select, [role=\"button\"]";
 const showDelayMs = 420;
 const hideAnimationMs = 140;
 const edgeGapPx = 8;
 
 /**
  * Installs one delegated tooltip for the whole renderer window.
- * Native `title` popups are timing- and repaint-dependent in Electron, so
- * the visible tooltip is rendered in `document.body` and positioned as fixed.
+ * Нативные подсказки `title` в Electron зависят от таймингов и перерисовки,
+ * поэтому видимая подсказка рендерится в `document.body` с фиксированной позицией.
  */
 export function installTooltips(doc: Document = document): () => void {
   const body = doc.body;
@@ -69,7 +68,17 @@ export function installTooltips(doc: Document = document): () => void {
     return element.matches(interactiveSelector);
   }
 
-  function getTooltipText(element: TooltipTarget): string | null {
+  function hasExplicitTooltip(element: Element): boolean {
+    return element.hasAttribute("data-tooltip") || element.hasAttribute("data-jackdaw-tooltip");
+  }
+
+  function isTooltipEligible(element: Element): boolean {
+    // Значения title у метаданных и содержимого письма намеренно игнорируются.
+    // Нестандартные элементы управления могут явно включить подсказку через data-*.
+    return isInteractive(element) || hasExplicitTooltip(element);
+  }
+
+  function getTooltipText(element: Element): string | null {
     let text = textValue(element.getAttribute("data-tooltip"));
     if (text) {
       return text;
@@ -89,17 +98,15 @@ export function installTooltips(doc: Document = document): () => void {
     if (!(eventTarget instanceof Element)) {
       return null;
     }
-    const element = eventTarget.closest<TooltipTarget>(tooltipTargetSelector);
-    if (!element || element.getAttribute("aria-hidden") == "true") {
-      return null;
+    let element: Element | null = eventTarget;
+    while (element) {
+      if (element.getAttribute("aria-hidden") != "true" &&
+          isTooltipEligible(element) && getTooltipText(element)) {
+        return element as TooltipTarget;
+      }
+      element = element.parentElement;
     }
-    if (!isInteractive(element) &&
-        !element.hasAttribute("title") &&
-        !element.hasAttribute("data-tooltip") &&
-        !element.hasAttribute("data-jackdaw-tooltip")) {
-      return null;
-    }
-    return getTooltipText(element) ? element : null;
+    return null;
   }
 
   function suppressNativeTitle(target: TooltipTarget, text: string): void {
@@ -207,7 +214,6 @@ export function installTooltips(doc: Document = document): () => void {
     if (!text) {
       return;
     }
-    suppressNativeTitle(target, text);
     if (currentTarget == target && (showTimer != null || tooltip.dataset.visible == "true")) {
       return;
     }
@@ -215,6 +221,7 @@ export function installTooltips(doc: Document = document): () => void {
       hideTooltip();
       currentTarget = target;
     }
+    suppressNativeTitle(target, text);
     clearShowTimer();
     clearHideTimer();
     showTimer = view.setTimeout(() => {
@@ -238,29 +245,40 @@ export function installTooltips(doc: Document = document): () => void {
     if (!target) {
       return;
     }
+    if (event.relatedTarget instanceof Node && target.contains(event.relatedTarget) && hoveredTarget == target) {
+      return;
+    }
+    if (hoveredTarget == target) {
+      return;
+    }
     hoveredTarget = target;
     scheduleTooltip(target);
   }
 
   function onPointerMove(event: PointerEvent): void {
     const target = findTooltipTarget(event.target);
-    if (!target || target == hoveredTarget) {
+    if (target == hoveredTarget) {
       return;
     }
     hoveredTarget = target;
-    scheduleTooltip(target);
+    if (target) {
+      scheduleTooltip(target);
+    } else {
+      maybeHideTooltip();
+    }
   }
 
   function onPointerOut(event: PointerEvent): void {
-    const target = hoveredTarget;
-    if (!target) {
+    const eventTarget = event.target instanceof Element ? event.target : null;
+    const target = findTooltipTarget(event.target) ?? hoveredTarget;
+    if (!target || target != hoveredTarget || !eventTarget || !target.contains(eventTarget)) {
       return;
     }
     const relatedTarget = event.relatedTarget;
-    const relatedTooltipTarget = findTooltipTarget(relatedTarget);
-    if (relatedTooltipTarget == target) {
+    if (relatedTarget instanceof Node && target.contains(relatedTarget)) {
       return;
     }
+    const relatedTooltipTarget = findTooltipTarget(relatedTarget);
     if (relatedTooltipTarget) {
       hoveredTarget = relatedTooltipTarget;
       scheduleTooltip(relatedTooltipTarget);

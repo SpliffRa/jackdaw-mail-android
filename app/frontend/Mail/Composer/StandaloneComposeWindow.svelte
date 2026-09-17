@@ -11,17 +11,21 @@
       <button type="button" on:click={load}>{$t`Retry`}</button>
     </vbox>
   {:else if mail}
-    <MailComposer {mail} standalone on:close={closeWindow} />
+    <MailComposer {mail} standalone
+      sendInOwner={sendInOwner}
+      searchContactsInOwner={searchContactsInOwner}
+      on:close={closeWindow} />
   {/if}
 </vbox>
 
 <script lang="ts">
   import { onMount } from "svelte";
   import type { EMail } from "../../../logic/Mail/EMail";
+  import { PersonUID } from "../../../logic/Abstract/PersonUID";
   import { appGlobal } from "../../../logic/app";
   import { getStartObjects } from "../../../logic/startup";
   import { assert } from "../../../logic/util/util";
-  import { deserializeComposeMail } from "./composeWindow";
+  import { deserializeComposeMail, serializeComposeMail } from "./composeWindow";
   import MailComposer from "./MailComposer.svelte";
   import NotificationBar from "../../MainWindow/NotificationBar.svelte";
   import { notifications } from "../../MainWindow/Notification";
@@ -55,13 +59,39 @@
       }
       let account = appGlobal.emailAccounts.find(candidate => candidate.id === payload.accountID);
       assert(account, "Compose window account is missing");
-      await account.readFromDB();
+      await Promise.all([
+        account.readFromDB(),
+        ...[...appGlobal.addressbooks].map(addressbook => addressbook.readFromDB()),
+      ]);
       mail = deserializeComposeMail(payload, account);
     } catch (ex) {
       errorMessage = ex instanceof Error ? ex.message : $t`Could not load the compose window`;
     } finally {
       loading = false;
     }
+  }
+
+  async function sendInOwner(): Promise<void> {
+    assert(mail, "Compose window message is missing");
+    let nativeAPI = (window as any).api;
+    assert(typeof nativeAPI?.sendComposeWindowMail === "function", "Compose window send is unavailable");
+    let payload = await serializeComposeMail(mail, composeWindowID);
+    let result = await nativeAPI.sendComposeWindowMail(composeWindowID, payload);
+    if (!result?.ok) {
+      throw new Error(result?.errorMessage ?? "Could not send the message");
+    }
+  }
+
+  async function searchContactsInOwner(
+    searchText: string,
+    skip: (person: PersonUID) => boolean,
+  ): Promise<PersonUID[]> {
+    let nativeAPI = (window as any).api;
+    assert(typeof nativeAPI?.searchComposeWindowContacts === "function", "Compose window contact search is unavailable");
+    let results = await nativeAPI.searchComposeWindowContacts(composeWindowID, searchText);
+    return results
+      .map(person => new PersonUID(person.emailAddress, person.name ?? undefined))
+      .filter(person => !skip(person));
   }
 
   function closeWindow(): void {
