@@ -47,7 +47,7 @@ async function serializeAttachment(attachment: Attachment): Promise<ComposeWindo
   } else if (!attachment.filepathLocal) {
     // У пересланных и загруженных вложений обычно есть данные в памяти
     // или локальный путь. Для остальных даём хранилищу одну попытку загрузки.
-    await attachment.load();
+    attachment = await attachment.load();
     if (attachment.content) {
       if (attachment.content.size > composeWindowMaxAttachmentBytes) {
         throw new Error(`Attachment is too large for a separate compose window: ${attachment.filename}`);

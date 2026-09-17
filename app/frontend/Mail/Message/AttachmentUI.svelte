@@ -37,12 +37,9 @@
 
   async function onOpen() {
     if (canOpenFileInternally(attachment.mimeType)) {
-      await attachment.load();
-      await openFileInternallyFromFile(attachment.content);
+      let loadedAttachment = await attachment.load();
+      await openFileInternallyFromFile(loadedAttachment.content);
     } else {
-      if (!attachment.filepathLocal) {
-        await attachment.load();
-      }
       await attachment.openOSApp();
     }
   }

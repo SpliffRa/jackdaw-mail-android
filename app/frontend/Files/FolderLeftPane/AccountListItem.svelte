@@ -1,4 +1,4 @@
-<hbox class="account" title={errorMsg}
+<hbox class="account" title={!$account.isLoggedIn ? errorMsg : ""}
   on:contextmenu={contextMenu.onContextMenu}>
   {#if $account.isLoggedIn}
     <hbox class="icon">

@@ -4,7 +4,7 @@
   role="button"
   tabindex="0"
   aria-expanded={expanded}
-  title={errorMsg}
+  title={!$account.isLoggedIn ? errorMsg : ""}
   on:contextmenu={contextMenu.onContextMenu}
   on:click={onRowClick}
   on:keydown={onRowKeyDown}

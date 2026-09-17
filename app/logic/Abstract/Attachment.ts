@@ -106,11 +106,35 @@ export class Attachment extends Observable {
     return this.filename.split(".").pop();
   }
 
-  async load() {
+  async load(): Promise<Attachment> {
     if (this.content) {
-      return;
+      return this;
     }
     await this.message.loadAttachments?.();
+    if (this.content) {
+      return this;
+    }
+    // Parsing the MIME message can replace the attachment objects in the
+    // collection. Return the replacement so callers don't keep using the
+    // metadata-only object that started the load.
+    return this.message.attachments.find(attachment => {
+      let sameIdentity = this.contentID
+        ? attachment.contentID == this.contentID
+        : attachment.size == this.size;
+      return attachment !== this &&
+        attachment.filename == this.filename &&
+        sameIdentity &&
+        (!!attachment.content || !!attachment.filepathLocal);
+    }) ?? this;
+  }
+
+  /** Load the bytes and make sure native-app actions have a local path. */
+  protected async loadForNativeApp(): Promise<Attachment> {
+    let attachment = await this.load();
+    if (!attachment.filepathLocal && attachment.content) {
+      await attachment.save();
+    }
+    return attachment;
   }
 
   /** The file contents, base64-encoded, to send it to the server */
@@ -124,16 +148,27 @@ export class Attachment extends Observable {
 
   /** Open the native desktop app with this file */
   async openOSApp() {
-    await openOSAppForFile(this.filepathLocal);
+    let attachment = await this.loadForNativeApp();
+    if (!attachment.filepathLocal) {
+      throw new UserError(gt`Attachment file is missing`);
+    }
+    await openOSAppForFile(attachment.filepathLocal);
   }
   /** Open the native file manager with the folder
    * where this file is, and select this file. */
   async openOSFolder() {
-    await appGlobal.remoteApp.showFileInFolder(this.filepathLocal);
+    let attachment = await this.loadForNativeApp();
+    if (!attachment.filepathLocal) {
+      throw new UserError(gt`Attachment file is missing`);
+    }
+    await appGlobal.remoteApp.showFileInFolder(attachment.filepathLocal);
   }
   async saveFile() {
-    await this.load();
-    await saveBlobAsFile(this.content);
+    let attachment = await this.load();
+    if (!attachment.content) {
+      throw new UserError(gt`Attachment file is missing`);
+    }
+    await saveBlobAsFile(attachment.content);
   }
   async deleteFile() {
     await this.storageRunOnce.runOnce(async () => {
@@ -207,7 +242,7 @@ export class AttachmentFile extends FileEntry {
         attachment = message.attachments.find(a => a.contentID == attachment.contentID) ?? attachment;
         this.attachment = attachment;
       }
-      await attachment.load(); // read `content` from disk (or MIME)
+      attachment = await attachment.load(); // read `content` from disk (or MIME)
       if (attachment.content && !attachment.filepathLocal) {
         await attachment.save(); // write to disk, so `openOSApp()` has a file path
       }
