@@ -855,16 +855,9 @@ function allowCrossDomainRequestsFromFrontend() {
 }
 
 function setWindowOpenHandler(webContents: WebContents) {
-  webContents.setWindowOpenHandler(({ url }) => {
-    if (isExternalLinkURL(url)) {
-      shell.openExternal(url).catch(console.error);
-    }
+  webContents.setWindowOpenHandler(() => {
     return { action: 'deny' };
   });
-}
-
-function isExternalLinkURL(url: string | undefined): boolean {
-  return !!url && /^(?:https?|mailto|tel):/i.test(url);
 }
 
 // In this file you can include the rest of your app"s specific main process

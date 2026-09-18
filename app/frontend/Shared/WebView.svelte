@@ -29,6 +29,7 @@
   // import { Menu } from "@svelteuidev/core";
   // #endif
   import { stringToBlobURL } from "../Util/util";
+  import { openExternalURL } from "../../logic/util/os-integration";
   import type { URLString } from "../../logic/util/util";
   import { backgroundError, catchErrors, showError } from "../Util/error";
   import type { ArrayColl } from "svelte-collections";
@@ -207,9 +208,9 @@
           let id = (webviewE as any).getWebContentsId();
           appGlobal.remoteApp.containWebContentsNavigation(id);
         }
-      }
-      if (!containNavigation) {
-        await addLinkListener();
+        if (!containNavigation) {
+          await addLinkListener();
+        }
       }
       if (enableZoomWheel) {
         let webview = webviewE as HTMLElement & { __jackdawZoomWheel?: boolean };
@@ -248,28 +249,33 @@
     if (!webviewE || containNavigation) {
       return;
     }
-    await executeGuestJavaScript(`
-      (() => {
-        if (window.__jackdawExternalLinkListener) {
-          return;
-        }
-        window.__jackdawExternalLinkListener = true;
-        document.addEventListener("click", event => {
-          const target = event.target;
-          if (!(target instanceof Element) || target.closest("img")) {
-            return;
-          }
-          const link = target.closest("a[href]");
-          const url = link?.href || "";
-          if (!/^(?:https?|mailto|tel):/i.test(url)) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          window.open(url, "_blank", "noopener,noreferrer");
-        }, true);
-      })()
-    `);
+    let id = (webviewE as any).getWebContentsId();
+    let url: string;
+    await appGlobal.remoteApp.addEventListenerWebContents(id, "update-target-url", (eventURL) => {
+      url = eventURL;
+    });
+    await appGlobal.remoteApp.addEventListenerWebContents(id, "input-event", async (event) => {
+      if (!url) {
+        return;
+      }
+      if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
+        return;
+      }
+      let onImage = await executeGuestJavaScript(`
+        (function () {
+          const el = document.elementFromPoint(${event.x}, ${event.y});
+          return !!(el && el.closest("img"));
+        })()
+      `);
+      if (onImage || !isExternalLinkURL(url)) {
+        return;
+      }
+      await openExternalURL(url);
+    });
+  }
+
+  function isExternalLinkURL(url: string): boolean {
+    return /^(?:https?|mailto|tel):/i.test(url);
   }
 
   async function addImageOpenListener() {
