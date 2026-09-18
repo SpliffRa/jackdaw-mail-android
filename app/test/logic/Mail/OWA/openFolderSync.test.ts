@@ -307,3 +307,70 @@ test("refreshVisibleMessageMetadata не падает на письме без d
   await expect(folder.refreshVisibleMessageMetadata()).resolves.toBeUndefined();
   expect(message.tags.contents.map(tag => tag.name)).toEqual(["Метка"]);
 });
+
+test("не запускает параллельные обновления metadata видимой папки", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let folder = account.newFolder();
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  folder.messages.add(message);
+
+  let requests = 0;
+  let release!: () => void;
+  let requestGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  (account as any).callOWA = async () => {
+    requests++;
+    await requestGate;
+    return { Items: [] };
+  };
+
+  let first = folder.refreshVisibleMessageMetadata();
+  let second = folder.refreshVisibleMessageMetadata();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(requests).toBe(1);
+
+  release();
+  await Promise.all([first, second]);
+});
+
+test("не блокирует открытие папки на фоновом обновлении metadata", async () => {
+  appGlobal.remoteApp = { OWA: {} };
+  let account = new OWAAccount();
+  account.storage = new DummyMailStorage();
+
+  let folder = account.newFolder();
+  (folder as any).haveReadFolder = true;
+  folder.countTotal = 1;
+  folder.countUnread = 0;
+  let message = folder.newEMail();
+  message.itemID = "message-1";
+  message.isRead = true;
+  message.tags.replaceAll([{ name: "Метка", color: "#00aa00" } as any]);
+  folder.messages.add(message);
+
+  let metadataStarted = false;
+  let metadataFinished = false;
+  let release!: () => void;
+  let requestGate = new Promise<void>(resolve => {
+    release = resolve;
+  });
+  (account as any).callOWA = async (request: any) => {
+    expect(request.action).toBe("GetItem");
+    metadataStarted = true;
+    await requestGate;
+    metadataFinished = true;
+    return { Items: [] };
+  };
+
+  await folder.syncOnFolderOpen();
+  expect(metadataStarted).toBe(true);
+  expect(metadataFinished).toBe(false);
+
+  release();
+  await folder.refreshVisibleMessageMetadata();
+});

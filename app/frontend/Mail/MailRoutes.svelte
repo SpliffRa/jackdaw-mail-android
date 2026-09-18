@@ -176,7 +176,6 @@
   let sharedWatchTimer: ReturnType<typeof setInterval> | null = null;
   let primaryWatchTimer: ReturnType<typeof setInterval> | null = null;
   let metadataWatchTimer: ReturnType<typeof setInterval> | null = null;
-  let metadataWatchInitialTimer: ReturnType<typeof setTimeout> | null = null;
   function clearSharedWatchTimer(): void {
     if (sharedWatchTimer) {
       clearInterval(sharedWatchTimer);
@@ -193,10 +192,6 @@
     if (metadataWatchTimer) {
       clearInterval(metadataWatchTimer);
       metadataWatchTimer = null;
-    }
-    if (metadataWatchInitialTimer) {
-      clearTimeout(metadataWatchInitialTimer);
-      metadataWatchInitialTimer = null;
     }
   }
   async function refreshOpenFolderMetadata(folder: OWAFolder): Promise<void> {
@@ -233,7 +228,6 @@
         primaryWatchTimer = setInterval(tick, 2_000);
       }
       metadataWatchTimer = setInterval(metadataTick, folder.visibleMetadataRefreshIntervalMs());
-      metadataWatchInitialTimer = setTimeout(metadataTick, 2_000);
     }
   }
 

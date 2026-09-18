@@ -73,6 +73,8 @@ export class OWAFolder extends ExchangeFolder {
   protected actionFlagsCheckedIDs = new Set<string>();
   protected actionFlagsBackfillTimer: ReturnType<typeof setTimeout> | null = null;
   protected actionFlagsBackfillRunning = false;
+  /** Не допускать параллельных GetItem для видимой папки. */
+  protected visibleMetadataRefreshPromise: Promise<void> | null = null;
 
   newEMail(): OWAEMail {
     return new OWAEMail(this);
@@ -330,9 +332,11 @@ export class OWAFolder extends ExchangeFolder {
     if (!needsFetch) {
       this.completeInitialSync();
       if (this.recentMessagesNeedCategoryRefresh()) {
-        return this.syncRecentArrivals();
+        let messages = await this.syncRecentArrivals();
+        this.refreshVisibleMessageMetadataInBackground();
+        return messages;
       }
-      await this.refreshVisibleMessageMetadata();
+      this.refreshVisibleMessageMetadataInBackground();
       this.backfillMessageActionFlags();
       return this.messages;
     }
@@ -349,7 +353,7 @@ export class OWAFolder extends ExchangeFolder {
     }
     this.dirty = false;
     this.completeInitialSync();
-    await this.refreshVisibleMessageMetadata();
+    this.refreshVisibleMessageMetadataInBackground();
     this.backfillMessageActionFlags();
     this.notifyObservers();
     return msgs;
@@ -360,14 +364,36 @@ export class OWAFolder extends ExchangeFolder {
    * категории после правки в Outlook (FindItem на shared часто пустой).
    */
   async refreshVisibleMessageMetadata(limit = kRecentCategoryRefreshCount): Promise<void> {
-    let ids = this.messages.contents
-      .slice(0, limit)
-      .map(message => message.pID == null ? "" : String(message.pID))
-      .filter(Boolean);
-    if (!ids.length) {
-      return;
+    if (this.visibleMetadataRefreshPromise) {
+      return this.visibleMetadataRefreshPromise;
     }
-    await this.refreshMessages(ids);
+    let refresh = (async () => {
+      let ids = this.messages.contents
+        .slice(0, limit)
+        .map(message => message.pID == null ? "" : String(message.pID))
+        .filter(Boolean);
+      if (!ids.length) {
+        return;
+      }
+      let lock = await this.listMessagesLock.lock();
+      try {
+        await this.refreshMessages(ids);
+      } finally {
+        lock.release();
+      }
+    })();
+    this.visibleMetadataRefreshPromise = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.visibleMetadataRefreshPromise === refresh) {
+        this.visibleMetadataRefreshPromise = null;
+      }
+    }
+  }
+
+  protected refreshVisibleMessageMetadataInBackground(): void {
+    void this.refreshVisibleMessageMetadata().catch(ex => this.account.errorCallback(ex));
   }
 
   /** Интервал фонового GetItem для открытой папки (shared чаще — слабее push). */
@@ -1123,7 +1149,7 @@ export class OWAFolder extends ExchangeFolder {
   }
 
   protected async runActionFlagsBackfillWhenIdle(): Promise<void> {
-    if (this.actionFlagsBackfillRunning || this.listMessagesLock.haveWaiting) {
+    if (this.actionFlagsBackfillRunning || this.listMessagesLock.haveWaiting || this.visibleMetadataRefreshPromise) {
       this.scheduleActionFlagsBackfill(this.account.isDependentAccount ? 3_000 : 1_500);
       return;
     }
