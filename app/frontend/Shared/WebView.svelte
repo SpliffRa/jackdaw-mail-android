@@ -33,7 +33,6 @@
   import { backgroundError, catchErrors, showError } from "../Util/error";
   import type { ArrayColl } from "svelte-collections";
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-  import { openExternalURL } from "../../logic/util/os-integration";
   import {
     messageZoomFactor,
     messageZoomReflowCss,
@@ -200,8 +199,6 @@
         }
         if (containNavigation) {
           addContainedNavigationListeners();
-        } else {
-          await addLinkListener();
         }
         if (allowImageOpen) {
           await addImageOpenListener();
@@ -210,6 +207,9 @@
           let id = (webviewE as any).getWebContentsId();
           appGlobal.remoteApp.containWebContentsNavigation(id);
         }
+      }
+      if (!containNavigation) {
+        await addLinkListener();
       }
       if (enableZoomWheel) {
         let webview = webviewE as HTMLElement & { __jackdawZoomWheel?: boolean };
@@ -248,43 +248,28 @@
     if (!webviewE || containNavigation) {
       return;
     }
-    let id = (webviewE as any).getWebContentsId();
-    let url: string;
-    await appGlobal.remoteApp.addEventListenerWebContents(id, "update-target-url", (eventURL) => {
-      url = eventURL; // Can also reset `eventURL` to null
-    });
-    await appGlobal.remoteApp.addEventListenerWebContents(id, "input-event", async (event) => {
-      if (!url) {
-        return;
-      }
-      if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
-        return;
-      }
-      let linkTarget = await executeGuestJavaScript<string | null>(`
-        (function () {
-          const el = document.elementFromPoint(${event.x}, ${event.y});
-          const link = el && el.closest("a[href]");
-          return link?.target || null;
-        })()
-      `);
-      if (linkTarget == "_blank" && isExternalLinkURL(url)) {
-        return;
-      }
-      let onImage = await executeGuestJavaScript(`
-        (function () {
-          const el = document.elementFromPoint(${event.x}, ${event.y});
-          return !!(el && el.closest("img"));
-        })()
-      `);
-      if (onImage) {
-        return;
-      }
-      await openExternalURL(url);
-    });
-  }
-
-  function isExternalLinkURL(url: string): boolean {
-    return /^(?:https?|mailto|tel):/i.test(url);
+    await executeGuestJavaScript(`
+      (() => {
+        if (window.__jackdawExternalLinkListener) {
+          return;
+        }
+        window.__jackdawExternalLinkListener = true;
+        document.addEventListener("click", event => {
+          const target = event.target;
+          if (!(target instanceof Element) || target.closest("img")) {
+            return;
+          }
+          const link = target.closest("a[href]");
+          const url = link?.href || "";
+          if (!/^(?:https?|mailto|tel):/i.test(url)) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          window.open(url, "_blank", "noopener,noreferrer");
+        }, true);
+      })()
+    `);
   }
 
   async function addImageOpenListener() {

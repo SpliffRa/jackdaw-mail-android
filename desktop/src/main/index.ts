@@ -856,7 +856,7 @@ function allowCrossDomainRequestsFromFrontend() {
 
 function setWindowOpenHandler(webContents: WebContents) {
   webContents.setWindowOpenHandler(({ url }) => {
-    if (webContents.getType() == "webview" && isExternalLinkURL(url)) {
+    if (isExternalLinkURL(url)) {
       shell.openExternal(url).catch(console.error);
     }
     return { action: 'deny' };
