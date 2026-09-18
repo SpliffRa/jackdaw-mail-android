@@ -22,6 +22,7 @@ export class IMAPFolder extends Folder {
   uidvalidity: number = 0;
   protected poller: ReturnType<typeof setInterval>;
   protected pollInFlight = false;
+  private bulkDeleteInProgress = false;
   protected returnToInboxDebounce = new Debounce(2);
 
   constructor(account: IMAPAccount) {
@@ -187,6 +188,36 @@ export class IMAPFolder extends Folder {
       return newMessages;
     }
     return await this.getNewMessages(true, false);
+  }
+
+  /** Удаляет все сообщения одной IMAP-операцией, чтобы не запускать гонку синхронизаций. */
+  override async deleteAllMessages(): Promise<void> {
+    if (this.specialFolder != SpecialFolder.Trash && this.specialFolder != SpecialFolder.Spam) {
+      await super.deleteAllMessages();
+      return;
+    }
+    await this.readFolder();
+    let localMessages = [...this.messages.contents];
+    this.bulkDeleteInProgress = true;
+    try {
+      let deleted = await this.runCommand(async (conn) =>
+        await conn.messageDelete({ all: true }, { uid: true }));
+      if (!deleted) {
+        await this.refreshStatus();
+        assert(this.countTotal === 0, "IMAP: failed to delete all messages");
+      }
+      for (let message of localMessages) {
+        await message.deleteMessageLocally();
+      }
+      this.countTotal = 0;
+      this.countUnread = 0;
+      this.countNewArrived = 0;
+      if (this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+    } finally {
+      this.bulkDeleteInProgress = false;
+    }
   }
 
   /** Lists all messages in this folder that have not been fetched yet.
@@ -573,6 +604,9 @@ export class IMAPFolder extends Folder {
   /** We received an event from the server that the
    * number of emails in the folder changed */
   async countChanged(newCount: number, oldCount: number): Promise<void> {
+    if (this.bulkDeleteInProgress) {
+      return;
+    }
     let hasChanged = newCount != oldCount || newCount != this.countTotal;
     if (hasChanged) {
       this.account.log(this, null, "notify: new message count:", newCount, "server old:", oldCount, "our old:", this.countTotal);
@@ -585,7 +619,7 @@ export class IMAPFolder extends Folder {
    * unread or flag status of an email changed */
   async messageFlagsChanged(uid: number | null, seq: number, flags: Set<string>, newModSeq?: bigint, connection?: ImapFlow): Promise<void> {
     // console.log("msg flags changed", "uid", uid, "seq", seq, "flags", flags, "modseq", newModSeq);
-    if (this.deletions.has(uid)) {
+    if (this.bulkDeleteInProgress || this.deletions.has(uid)) {
       return;
     }
     let query = uid && this.getEMailByUID(uid)
@@ -600,6 +634,10 @@ export class IMAPFolder extends Folder {
    * message was deleted */
   async messageDeletedNotification(seq: number, connection: ImapFlow): Promise<void> {
     this.account.log(this, connection, "notify: message deleted", "seq", seq);
+
+    if (this.bulkDeleteInProgress) {
+      return;
+    }
 
     // EXPUNGE does not always provide enough sequence context (especially
     // when the first or last message was removed). Reconcile UIDs so both

@@ -32,7 +32,16 @@
     <hbox class="buttons">
       <slot name="buttons" {folder} />
     </hbox>
-    {#if $folder.countUnread}
+    {#if $folder.clearProgress}
+      <hbox
+        class="clear-progress-count mail-folder-count"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        title={$t`Deleting ${$folder.clearProgress.completed} of ${$folder.clearProgress.total}`}>
+        {$folder.clearProgress.completed}/{$folder.clearProgress.total}
+      </hbox>
+    {:else if $folder.countUnread}
       <hbox class="count mail-folder-count">
         {$folder.countUnread}
       </hbox>
@@ -312,6 +321,11 @@
     min-width: 0;
     border: 1px solid transparent;
     border-radius: var(--border-radius);
+  }
+
+  .clear-progress-count {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .folder:hover:not(.selected) {
     background-color: var(--hover-bg);

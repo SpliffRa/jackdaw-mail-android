@@ -9,9 +9,13 @@ export class OWADeleteItemRequest extends OWARequest {
     DeleteType: "MoveToDeletedItems",
   };
 
-  constructor(id: string, attributes?: { [key: string]: string | boolean }) {
+  constructor(ids: string | readonly string[], attributes?: { [key: string]: string | boolean }) {
     super("DeleteItem");
-    this.Body.ItemIds[0].Id = id;
+    let itemIDs = typeof ids == "string" ? [ids] : ids;
+    this.Body.ItemIds = itemIDs.map(id => ({
+      __type: "ItemId:#Exchange",
+      Id: id,
+    }));
     Object.assign(this.Body, attributes);
   }
 }

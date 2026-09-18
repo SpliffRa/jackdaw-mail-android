@@ -7,6 +7,7 @@ import { OWAEMail, owaCategoriesConfirmedAbsent, owaCategoriesPresent } from "./
 import { OWAAccount, kMaxFetchCount } from "./OWAAccount";
 import { OWAError, isUnsupportedOptionError } from "./OWAError";
 import { OWACreateItemRequest } from "./Request/OWACreateItemRequest";
+import { OWADeleteItemRequest } from "./Request/OWADeleteItemRequest";
 import { OWAUpdateItemRequest } from "./Request/OWAUpdateItemRequest";
 import {
   owaCreateNewSubFolderRequest, owaDeleteFolderRequest,
@@ -34,6 +35,8 @@ const kMaxSyncPages = 200;
 /** How long a moved or deleted ItemId stays suppressed, to outlast Exchange's
  * eventually consistent FindItem. Matches the `preserveMovedUntil` window. */
 const kDeletionGracePeriodMs = 180_000;
+/** Exchange принимает несколько ItemIds в одном запросе DeleteItem. */
+const kDeleteItemBatchSize = 50;
 /** Не допускать всплеска запросов флагов, покрывая при этом видимый кеш. */
 const kActionFlagsBackfillLimit = 200;
 /** Общие ящики: только видимая страница, после основной синхронизации. */
@@ -318,6 +321,146 @@ export class OWAFolder extends ExchangeFolder {
 
   async fetchNewMailQuick(): Promise<Collection<OWAEMail>> {
     return this.syncRecentArrivals();
+  }
+
+  /** Удаляет корзину/спам пакетными DeleteItem-запросами Exchange. */
+  override async deleteAllMessages(): Promise<void> {
+    if (this.specialFolder != SpecialFolder.Trash && this.specialFolder != SpecialFolder.Spam) {
+      await super.deleteAllMessages();
+      return;
+    }
+    this.clearProgress = {
+      phase: "preparing",
+      completed: 0,
+      total: Math.max(this.countTotal, this.messages.length),
+    };
+    let messages: OWAEMail[];
+    try {
+      await this.readFolder();
+      if (this.dirty) {
+        await this.refreshCountsFromServer();
+      }
+      // Очистка должна получить все заголовки, а не только локально открытые.
+      // force=true не даёт listMessages() перейти в быстрый режим первой страницы
+      // из-за рассинхрона локального кеша и серверного счётчика.
+      if (this.countTotal != this.messages.length) {
+        await this.listMessages(false, true);
+      }
+      if (this.countTotal > this.messages.length) {
+        throw new OWAError({ message: "Exchange did not return all messages; cleanup was not started" });
+      }
+      messages = [...this.messages.contents];
+    } catch (ex) {
+      this.clearProgress = null;
+      throw ex;
+    }
+    this.clearProgress = {
+      phase: "deleting",
+      completed: 0,
+      total: messages.length,
+    };
+    let itemIDs = [...new Set(messages
+      .map(message => message.itemID)
+      .filter((itemID): itemID is string => !!itemID))];
+    let messagesByItemID = new Map<string, OWAEMail[]>();
+    for (let message of messages) {
+      if (message.itemID) {
+        let items = messagesByItemID.get(message.itemID) ?? [];
+        items.push(message);
+        messagesByItemID.set(message.itemID, items);
+      }
+    }
+    for (let itemID of itemIDs) {
+      this.deletions.add(itemID);
+    }
+    let serverDeleted = new Set<string>();
+    let removedMessages = new Set<OWAEMail>();
+    let removeLocally = async (message: OWAEMail): Promise<void> => {
+      if (removedMessages.has(message)) {
+        return;
+      }
+      removedMessages.add(message);
+      let wasUnread = !message.isRead;
+      let wasNew = message.isNewArrived;
+      await message.deleteMessageLocally();
+      this.countTotal = Math.max(0, this.countTotal - 1);
+      if (wasUnread) {
+        this.countUnread = Math.max(0, this.countUnread - 1);
+      }
+      if (wasNew) {
+        this.countNewArrived = Math.max(0, this.countNewArrived - 1);
+      }
+    };
+    let completed = false;
+    try {
+      for (let i = 0; i < itemIDs.length; i += kDeleteItemBatchSize) {
+        let batchIDs = itemIDs.slice(i, i + kDeleteItemBatchSize);
+        let result = await this.account.callOWA(new OWADeleteItemRequest(batchIDs, {
+          DeleteType: "HardDelete",
+          // Exchange требует этот параметр для элементов календаря. Очистка
+          // почтовой папки не должна отправлять участникам отмену встречи.
+          SendMeetingCancellations: "SendToNone",
+          SuppressReadReceipts: true,
+        }));
+        let responseItems = result?.ResponseMessages?.Items
+          ?? (result?.ResponseClass || result?.ResponseCode ? [result] : null);
+        let responses = responseItems ? ensureArray(responseItems) : [];
+        if (responses.length != batchIDs.length) {
+          throw new OWAError({ message: "Exchange returned an incomplete DeleteItem response" });
+        }
+        let failedResponse: any = null;
+        for (let index = 0; index < batchIDs.length; index++) {
+          let response = responses[index];
+          let isError = response?.ResponseClass == "Error" ||
+            (response?.MessageText && response.ResponseClass != "Success" && response.ResponseCode != "NoError");
+          if (isError) {
+            failedResponse ??= response;
+            continue;
+          }
+          let itemID = batchIDs[index];
+          serverDeleted.add(itemID);
+          this.releaseDeletionAfterGracePeriod(itemID);
+          for (let message of messagesByItemID.get(itemID) ?? []) {
+            await removeLocally(message);
+          }
+        }
+        this.clearProgress = {
+          phase: "deleting",
+          completed: removedMessages.size,
+          total: messages.length,
+        };
+        if (failedResponse) {
+          throw new OWAError({ json: failedResponse });
+        }
+      }
+      // Заголовок без ItemId нельзя отправить в Exchange, но его безопасно
+      // удалить из локального кеша после успешного удаления на сервере.
+      for (let message of messages) {
+        if (!message.itemID) {
+          await removeLocally(message);
+        }
+      }
+      this.countTotal = 0;
+      this.countUnread = 0;
+      this.countNewArrived = 0;
+      this.countTotalDecreased = false;
+      this.dirty = false;
+      completed = true;
+      if (this.dbID) {
+        await this.storage.saveFolderProperties(this);
+      }
+    } finally {
+      for (let itemID of itemIDs) {
+        if (!serverDeleted.has(itemID)) {
+          this.deletions.delete(itemID);
+        }
+      }
+      if (!completed && serverDeleted.size) {
+        this.countTotalDecreased = true;
+        this.dirty = true;
+      }
+      this.clearProgress = null;
+    }
   }
 
   /** User opened the folder — load headers when the cache is empty or badges moved. */

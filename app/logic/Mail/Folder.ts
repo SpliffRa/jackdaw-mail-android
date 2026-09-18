@@ -12,6 +12,12 @@ import { gt } from "../../l10n/l10n";
 
 export type MailTransferProgressCallback = (completed: number) => void;
 
+export type FolderClearProgress = {
+  phase: "preparing" | "deleting";
+  completed: number;
+  total: number;
+};
+
 function compareFolderOrder(a: Folder, b: Folder): number {
   if (a.orderPos < b.orderPos) {
     return -1;
@@ -49,6 +55,9 @@ export class Folder extends Observable implements TreeItem<Folder> {
    * badge, so it has to be cleared by `markViewed()` when the folder opens. */
   @notifyChangedProperty
   countNewArrived = 0;
+  /** Transient progress while a folder is being cleared. */
+  @notifyChangedProperty
+  clearProgress: FolderClearProgress | null = null;
   /**
    * IMAP: modseq from CONDSTORE, as string
    * EWS: Sync state, as string
@@ -511,11 +520,14 @@ export class Folder extends Observable implements TreeItem<Folder> {
 
   /** Move every message to Trash, or permanently delete in Trash/Spam. */
   async clearFolder(): Promise<void> {
-    if (this.messages.isEmpty) {
-      return;
-    }
     if (this.specialFolder == SpecialFolder.Trash || this.specialFolder == SpecialFolder.Spam) {
       await this.deleteAllMessages();
+      return;
+    }
+    if (this.messages.isEmpty && this.countTotal > 0) {
+      await this.listMessages();
+    }
+    if (this.messages.isEmpty && this.countTotal === 0) {
       return;
     }
     let trash = this.account.findSpecialFolder(SpecialFolder.Trash);
@@ -525,6 +537,9 @@ export class Folder extends Observable implements TreeItem<Folder> {
   }
 
   async deleteAllMessages(): Promise<void> {
+    if (this.messages.isEmpty && this.countTotal > 0) {
+      await this.listMessages();
+    }
     let messages = [...this.messages.contents];
     for (let msg of messages) {
       await msg.deleteMessage(DeleteStrategy.DeleteImmediately);

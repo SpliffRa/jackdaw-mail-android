@@ -1,5 +1,13 @@
 <hbox class="msg-count font-smallest">
-  {#if searchMessages}
+  {#if $folder.clearProgress}
+    <hbox role="status" aria-live="polite" aria-busy="true">
+      {#if $folder.clearProgress.phase == "preparing"}
+        {$t`Preparing cleanup…`}
+      {:else}
+        {$t`Deleting ${$folder.clearProgress.completed} of ${$folder.clearProgress.total}`}
+      {/if}
+    </hbox>
+  {:else if searchMessages}
     {#if $searchMessages.hasItems}
       {$t`${$searchMessages.length} of ${$messages.length}`}
     {:else}
@@ -37,5 +45,7 @@
     padding-inline-start: 4px;
     padding-inline-end: 8px;
     opacity: 70%;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 </style>

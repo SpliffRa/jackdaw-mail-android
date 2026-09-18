@@ -113,6 +113,16 @@ test("после EXPUNGE сверяет UID даже для первого пи�
   expect(listMessages).toHaveBeenCalledWith(true);
 });
 
+test("не запускает сверку на каждое EXPUNGE при массовом удалении", async () => {
+  let folder = createFolder();
+  let listMessages = vi.spyOn(folder, "listMessages").mockResolvedValue(new ArrayColl());
+  (folder as any).bulkDeleteInProgress = true;
+
+  await folder.messageDeletedNotification(1, { id: "test-connection" } as any);
+
+  expect(listMessages).not.toHaveBeenCalled();
+});
+
 test("полная сверка после удаления не помечает старые письма новыми", async () => {
   let folder = createFolder();
   let existingMessage = folder.newEMail();

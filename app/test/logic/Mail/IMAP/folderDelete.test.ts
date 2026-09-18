@@ -2,6 +2,7 @@ import "../../../../logic/app";
 import { appGlobal } from "../../../../logic/app";
 import { IMAPAccount } from "../../../../logic/Mail/IMAP/IMAPAccount";
 import { IMAPFolder } from "../../../../logic/Mail/IMAP/IMAPFolder";
+import { SpecialFolder } from "../../../../logic/Mail/Folder";
 import { DeleteStrategy } from "../../../../logic/Mail/MailAccount";
 import { DummyMailStorage } from "../../../../logic/Mail/Store/DummyMailStorage";
 import { expect, test, vi } from "vitest";
@@ -64,4 +65,42 @@ test("уменьшает unread-счётчик при окончательном
   expect(folder.countTotal).toBe(0);
   expect(folder.countUnread).toBe(0);
   expect(folder.countNewArrived).toBe(0);
+});
+
+test("очищает специальную IMAP-папку одной серверной операцией", async () => {
+  let folder = createFolder();
+  folder.specialFolder = SpecialFolder.Trash;
+  folder.countTotal = 2;
+  folder.countUnread = 1;
+  folder.countNewArrived = 1;
+  let firstMessage = folder.newEMail();
+  firstMessage.uid = 7;
+  let secondMessage = folder.newEMail();
+  secondMessage.uid = 8;
+  secondMessage.isRead = true;
+  folder.messages.add(firstMessage);
+  folder.messages.add(secondMessage);
+  let serverDelete = vi.fn(async () => true);
+  (folder as any).runCommand = async (callback: (connection: any) => Promise<unknown>) =>
+    callback({ messageDelete: serverDelete });
+
+  await folder.deleteAllMessages();
+
+  expect(serverDelete).toHaveBeenCalledWith({ all: true }, { uid: true });
+  expect(folder.messages.isEmpty).toBe(true);
+  expect(folder.countTotal).toBe(0);
+  expect(folder.countUnread).toBe(0);
+  expect(folder.countNewArrived).toBe(0);
+});
+
+test("очищает специальную IMAP-папку при пустом локальном списке", async () => {
+  let folder = createFolder();
+  folder.specialFolder = SpecialFolder.Spam;
+  let serverDelete = vi.fn(async () => true);
+  (folder as any).runCommand = async (callback: (connection: any) => Promise<unknown>) =>
+    callback({ messageDelete: serverDelete });
+
+  await folder.clearFolder();
+
+  expect(serverDelete).toHaveBeenCalledWith({ all: true }, { uid: true });
 });
