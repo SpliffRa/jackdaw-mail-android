@@ -206,7 +206,24 @@
   import FileDropTarget from "./Attachments/FileDropTarget.svelte";
   import HTMLEditor from "../../Shared/Editor/HTMLEditor.svelte";
   import ComposeQuoteEditor from "./ComposeQuoteEditor.svelte";
-  import { composeEditorExtensions, composeDefaultFontFamily, composeDefaultFontSize, fontSizeToCSS } from "../../Shared/Editor/composeEditorExtensions";
+  import {
+    applyComposeDefaultBlockFormatting,
+    composeEditorExtensions,
+    composeDefaultFontFamily,
+    composeDefaultFontSize,
+    composeDefaultTextColor,
+    composeDefaultLineHeight,
+    composeDefaultTextAlign,
+    composeDefaultParagraphSpacing,
+    composeDefaultFirstLineIndent,
+    composeFontSizes,
+    composeLineHeights,
+    composeTextAlignments,
+    composeParagraphSpacingValues,
+    composeFirstLineIndentValues,
+    fontSizeToCSS,
+    normalizeComposeTextColor,
+  } from "../../Shared/Editor/composeEditorExtensions";
   import { resolveComposeRecipients } from "../../../logic/Mail/composeResolveRecipients";
   import { addSenderToCC } from "../../../logic/Mail/composeRecipients";
   import { closeFloatingCompose } from "./composeFloating";
@@ -266,6 +283,12 @@
   let spellcheckEnabled = getLocalStorage("mail.send.spellcheck.enabled", false);
   let quoteAttributionSetting = getLocalStorage("mail.send.quote.attribution", false);
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
+  let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
+  let defaultTextColorSetting = getLocalStorage("mail.compose.defaultTextColor", composeDefaultTextColor);
+  let defaultLineHeightSetting = getLocalStorage("mail.compose.defaultLineHeight", composeDefaultLineHeight);
+  let defaultTextAlignSetting = getLocalStorage("mail.compose.defaultTextAlign", composeDefaultTextAlign);
+  let defaultParagraphSpacingSetting = getLocalStorage("mail.compose.defaultParagraphSpacing", composeDefaultParagraphSpacing);
+  let defaultFirstLineIndentSetting = getLocalStorage("mail.compose.defaultFirstLineIndent", composeDefaultFirstLineIndent);
   $: showQuoteAttribution = $quoteAttributionSetting.value;
   $: isReplyQuote = !!(mail.composeSource && mail.inReplyTo);
   let editorZoom = 100;
@@ -487,13 +510,39 @@
       return;
     }
 
+    let defaultFontSize = composeFontSizes.includes(defaultFontSizeSetting.value)
+      ? defaultFontSizeSetting.value
+      : composeDefaultFontSize;
+    let defaultLineHeight = composeLineHeights.some(lineHeight => lineHeight.value == defaultLineHeightSetting.value)
+      ? defaultLineHeightSetting.value
+      : composeDefaultLineHeight;
+    let defaultTextAlign = composeTextAlignments.includes(defaultTextAlignSetting.value as typeof composeTextAlignments[number])
+      ? defaultTextAlignSetting.value as typeof composeTextAlignments[number]
+      : composeDefaultTextAlign;
+    let defaultParagraphSpacing = composeParagraphSpacingValues.includes(defaultParagraphSpacingSetting.value)
+      ? defaultParagraphSpacingSetting.value
+      : composeDefaultParagraphSpacing;
+    let defaultFirstLineIndent = composeFirstLineIndentValues.includes(defaultFirstLineIndentSetting.value)
+      ? defaultFirstLineIndentSetting.value
+      : composeDefaultFirstLineIndent;
+
     let chain = editor.chain().focus().setTextSelection({ from: 1, to: bodyEnd });
     if (defaultFontFamilySetting.value) {
       chain.setFontFamily(defaultFontFamilySetting.value);
     } else {
       chain.unsetFontFamily();
     }
-    if (chain.setFontSize(fontSizeToCSS(composeDefaultFontSize)).run()) {
+    let defaultTextColor = normalizeComposeTextColor(defaultTextColorSetting.value);
+    if (defaultTextColor) {
+      chain.setColor(defaultTextColor);
+    }
+    if (chain.setFontSize(fontSizeToCSS(defaultFontSize)).run()) {
+      applyComposeDefaultBlockFormatting(editor, 1, bodyEnd, {
+        lineHeight: defaultLineHeight,
+        textAlign: defaultTextAlign,
+        paragraphSpacing: defaultParagraphSpacing,
+        firstLineIndent: defaultFirstLineIndent,
+      });
       defaultComposeFormattingApplied = true;
     }
   }

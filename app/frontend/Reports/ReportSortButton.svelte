@@ -16,8 +16,6 @@
   class="table-sort-button"
   class:is-active={direction != null}
   class:align-right={align == "right"}
-  aria-label={label}
-  title={label}
   on:click={() => dispatch("sort")}
 >
   <span>{label}</span>

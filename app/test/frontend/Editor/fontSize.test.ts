@@ -11,6 +11,7 @@ import {
   signatureEditorExtensions,
   textColorForHighlight,
   currentLineHeight,
+  applyComposeDefaultBlockFormatting,
 } from "../../../frontend/Shared/Editor/composeEditorExtensions";
 
 function createEditor(content: string) {
@@ -126,6 +127,31 @@ describe("signature font size", () => {
     expect(editor.commands.setLineHeight("1.5")).toBe(true);
     expect(currentLineHeight(editor)).toBe("1.5");
     expect(editor.getHTML()).toMatch(/line-height:\s*1\.5/);
+    editor.destroy();
+    element.remove();
+  });
+
+  it("applies default block formatting to each editable paragraph", () => {
+    let { editor, element } = createEditor("<p>One</p><p>Two</p>");
+    let bodyEnd = 1;
+    editor.state.doc.forEach((node, position) => {
+      bodyEnd = Math.max(bodyEnd, position + node.nodeSize - 1);
+    });
+
+    expect(applyComposeDefaultBlockFormatting(editor, 1, bodyEnd, {
+      lineHeight: "1.5",
+      textAlign: "center",
+      paragraphSpacing: "8",
+      firstLineIndent: "12",
+    })).toBe(true);
+
+    let paragraphs = [...element.querySelectorAll("p")];
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs.every(paragraph => paragraph.style.lineHeight == "1.5")).toBe(true);
+    expect(paragraphs.every(paragraph => paragraph.style.textAlign == "center")).toBe(true);
+    expect(paragraphs.every(paragraph => paragraph.style.marginBottom == "8pt")).toBe(true);
+    expect(paragraphs.every(paragraph => paragraph.style.textIndent == "12pt")).toBe(true);
+
     editor.destroy();
     element.remove();
   });

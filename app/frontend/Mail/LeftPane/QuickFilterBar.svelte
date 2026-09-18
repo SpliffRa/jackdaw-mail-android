@@ -23,7 +23,6 @@
             class="pill filter-trigger"
             class:active={isActive(filter.id, $quickSearch, $mailListSort)}
             aria-pressed={isActive(filter.id, $quickSearch, $mailListSort)}
-            title={filter.label()}
             on:click={() => catchErrors(() => toggleFilter(filter.id))}>
             <span class="pill-label">{filter.label()}</span>
           </button>

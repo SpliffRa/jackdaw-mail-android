@@ -580,6 +580,85 @@ const composeBlockStyle = Extension.create({
   },
 });
 
+export type ComposeTextAlignment = "left" | "center" | "right" | "justify";
+
+export interface ComposeDefaultBlockFormatting {
+  lineHeight: string;
+  textAlign: ComposeTextAlignment;
+  paragraphSpacing: string;
+  firstLineIndent: string;
+}
+
+/** Apply default paragraph formatting without touching quoted or signature blocks. */
+export function applyComposeDefaultBlockFormatting(
+  editor: import("@tiptap/core").Editor,
+  from: number,
+  to: number,
+  formatting: ComposeDefaultBlockFormatting,
+): boolean {
+  let tr = editor.state.tr;
+  editor.state.doc.nodesBetween(from, to, (node, position) => {
+    if (node.type.name === "footer") {
+      return false;
+    }
+    if (!node.isTextblock || !["paragraph", "heading"].includes(node.type.name)) {
+      return true;
+    }
+
+    let attrs = { ...node.attrs };
+    let changed = false;
+    let nextLineHeight = formatting.lineHeight || null;
+    let nextTextAlign = formatting.textAlign == "left" ? null : formatting.textAlign;
+    if (attrs.lineHeight != nextLineHeight) {
+      attrs.lineHeight = nextLineHeight;
+      changed = true;
+    }
+    if (attrs.textAlign != nextTextAlign) {
+      attrs.textAlign = nextTextAlign;
+      changed = true;
+    }
+
+    let style = typeof(attrs.style) == "string" ? attrs.style : "";
+    style = updateStyleProperty(style, "margin-bottom", formatting.paragraphSpacing && formatting.paragraphSpacing != "0"
+      ? `${formatting.paragraphSpacing}pt`
+      : null);
+    style = updateStyleProperty(style, "text-indent", formatting.firstLineIndent && formatting.firstLineIndent != "0"
+      ? `${formatting.firstLineIndent}pt`
+      : null);
+    let nextStyle = style || null;
+    if (attrs.style != nextStyle) {
+      attrs.style = nextStyle;
+      changed = true;
+    }
+
+    if (changed) {
+      tr.setNodeMarkup(position, node.type, attrs, node.marks);
+    }
+    return true;
+  });
+  if (!tr.docChanged) {
+    return false;
+  }
+  editor.view.dispatch(tr);
+  return true;
+}
+
+function updateStyleProperty(style: string, property: string, value: string | null): string {
+  if (typeof document == "undefined") {
+    return style;
+  }
+  let element = document.createElement("span");
+  if (style) {
+    element.setAttribute("style", style);
+  }
+  if (value) {
+    element.style.setProperty(property, value);
+  } else {
+    element.style.removeProperty(property);
+  }
+  return element.getAttribute("style") || "";
+}
+
 /** Rich-text extensions for the mail compose editor (Outlook-style). */
 export const composeEditorExtensions = [
   TextStyle,
@@ -629,6 +708,11 @@ export const signatureEditorExtensions = [
 /** Outlook-style defaults for new compose messages. */
 export const composeDefaultFontFamily = "Aptos, Calibri, Arial, sans-serif";
 export const composeDefaultFontSize = "11";
+export const composeDefaultTextColor = "";
+export const composeDefaultLineHeight = "";
+export const composeDefaultTextAlign: ComposeTextAlignment = "left";
+export const composeDefaultParagraphSpacing = "0";
+export const composeDefaultFirstLineIndent = "0";
 
 export const composeFontFamilies = [
   { label: () => gt`System`, value: "" },
@@ -654,6 +738,14 @@ export const composeLineHeights = [
   { value: "2.5", label: "2,5" },
   { value: "3", label: "3" },
 ];
+
+export const composeTextAlignments: ComposeTextAlignment[] = ["left", "center", "right", "justify"];
+export const composeParagraphSpacingValues = ["0", "4", "8", "12", "16"];
+export const composeFirstLineIndentValues = ["0", "12", "24", "36"];
+
+export function normalizeComposeTextColor(value: unknown): string {
+  return typeof(value) == "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : "";
+}
 
 /** Display font size like Outlook (7.5 → 7,5 in ru locales). */
 export function formatFontSizeLabel(size: string): string {

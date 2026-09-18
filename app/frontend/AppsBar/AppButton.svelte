@@ -3,8 +3,8 @@
   class="app-button {classes}"
   class:selected
   class:icon-only={iconOnly}
-  aria-label={ariaLabel}
-  title={ariaLabel}
+  aria-label={iconOnly ? ariaLabel : undefined}
+  title={iconOnly ? ariaLabel : undefined}
   class:padding
   aria-pressed={selected}
   on:click>

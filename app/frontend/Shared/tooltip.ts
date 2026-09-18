@@ -69,7 +69,8 @@ export function installTooltips(doc: Document = document): () => void {
   }
 
   function hasExplicitTooltip(element: Element): boolean {
-    return element.hasAttribute("data-tooltip") || element.hasAttribute("data-jackdaw-tooltip");
+    // `data-jackdaw-tooltip` is added internally while a native title is suppressed.
+    return element.hasAttribute("data-tooltip");
   }
 
   function isTooltipEligible(element: Element): boolean {
@@ -92,6 +93,19 @@ export function installTooltips(doc: Document = document): () => void {
       return text;
     }
     return isInteractive(element) ? textValue(element.getAttribute("aria-label")) : null;
+  }
+
+  function normalizedText(value: string | null): string | null {
+    const text = textValue(value);
+    return text ? text.replace(/\s+/g, " ").trim() : null;
+  }
+
+  function isRedundantTooltip(element: Element, text: string): boolean {
+    if (hasExplicitTooltip(element)) {
+      return false;
+    }
+    const visibleText = normalizedText(element.textContent);
+    return visibleText != null && visibleText == normalizedText(text);
   }
 
   function findTooltipTarget(eventTarget: EventTarget | null): TooltipTarget {
@@ -212,6 +226,22 @@ export function installTooltips(doc: Document = document): () => void {
   function scheduleTooltip(target: TooltipTarget, delay = showDelayMs): void {
     const text = getTooltipText(target);
     if (!text) {
+      return;
+    }
+    if (isRedundantTooltip(target, text)) {
+      if (currentTarget) {
+        hideTooltip();
+      }
+      currentTarget = target;
+      clearShowTimer();
+      clearHideTimer();
+      clearTransitionTimer();
+      tooltip.hidden = true;
+      tooltip.dataset.visible = "false";
+      tooltip.textContent = "";
+      // Keep the target tracked so the native title cannot flash while hovered
+      // and nested icons do not restart the tooltip lifecycle.
+      suppressNativeTitle(target, text);
       return;
     }
     if (currentTarget == target && (showTimer != null || tooltip.dataset.visible == "true")) {

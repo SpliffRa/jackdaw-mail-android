@@ -38,6 +38,26 @@ describe("renderer tooltips", () => {
     expect(button.getAttribute("aria-describedby")).toBe("jackdaw-tooltip");
   });
 
+  test("does not show a tooltip when it repeats the visible button label", () => {
+    const button = document.createElement("button");
+    button.title = "Удалить";
+    button.textContent = "Удалить";
+    document.body.append(button);
+
+    hover(button);
+    vi.advanceTimersByTime(420);
+
+    const tooltip = document.querySelector<HTMLElement>("#jackdaw-tooltip");
+    expect(tooltip?.dataset.visible).toBe("false");
+    expect(tooltip?.hidden).toBe(true);
+    expect(button.hasAttribute("title")).toBe(false);
+
+    button.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }));
+    vi.advanceTimersByTime(140);
+
+    expect(button.getAttribute("title")).toBe("Удалить");
+  });
+
   test("does not restart while the pointer moves inside the same button", () => {
     const button = document.createElement("button");
     button.setAttribute("aria-label", "Обновить");

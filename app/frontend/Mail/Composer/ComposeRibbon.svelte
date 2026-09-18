@@ -471,6 +471,7 @@
     composeTextColors,
     composeDefaultFontFamily,
     composeDefaultFontSize,
+    composeDefaultTextColor,
     composeDefaultHighlightColor,
     currentFontFamily,
     currentFontSize,
@@ -568,6 +569,8 @@
   const zoomLevels = [90, 100, 125];
   let formatSetting = getLocalStorage("mail.send.format", "html");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
+  let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
+  let defaultTextColorSetting = getLocalStorage("mail.compose.defaultTextColor", composeDefaultTextColor);
   $: sendAsHtml = formatSetting.value === "html";
   function toggleSendFormat() {
     formatSetting.value = sendAsHtml ? "plaintext" : "html";
@@ -627,14 +630,14 @@
   $: selectedFontFamily = editor ? readEditorStyle(() => currentFontFamily(editor), styleTick) : "";
   $: displayFontFamily = selectedFontFamily || $defaultFontFamilySetting.value;
   $: selectedFontSize = editor ? readEditorStyle(() => currentFontSize(editor), styleTick) : "";
-  $: displayFontSize = selectedFontSize || normalizeFontSizeValue(composeDefaultFontSize);
+  $: displayFontSize = selectedFontSize || normalizeFontSizeValue($defaultFontSizeSetting.value || composeDefaultFontSize);
   $: selectedLineHeight = editor ? readEditorStyle(() => currentLineHeight(editor), styleTick) : "";
   $: displayLineHeight = selectedLineHeight;
   $: lineHeightLabel = formatLineHeightLabel(displayLineHeight);
   $: selectedTextColor = editor
     ? readEditorStyle(() => editor.getAttributes("textStyle").color ?? "", styleTick)
     : "";
-  $: textColorBar = lastTextColor;
+  $: textColorBar = selectedTextColor || $defaultTextColorSetting.value || lastTextColor;
   $: highlightBarColor = lastHighlightColor;
   $: visibleHighlightColors = highlightHighContrastOnly
     ? composeHighlightColorsHighContrast

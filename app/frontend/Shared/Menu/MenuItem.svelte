@@ -2,7 +2,8 @@
   class:disabled class:selected
   on:click on:dblclick
   on:click={myOnClick}
-  title={typeof(disabled) == "string" ? disabled : tooltip}
+  title={tooltipCalc}
+  aria-label={iconOnly ? tooltipCalc : undefined}
   {tabindex}
   >
   <hbox class="icon">
@@ -48,9 +49,8 @@
   export let shortCutInfo: string = null;
   /** What to show when the user hovers with the mouse over the
    * button for ca. 2+ seconds.
-   * Defaults to `label` and `shortCutInfo`. */
-  export let tooltip: string = label +
-    (shortCutInfo ? "\n\n" + $t`Shortcut: ${shortCutInfo}` : '');
+   * Defaults to `label` and `shortCutInfo` for icon-only items. */
+  export let tooltip: string | null = null;
   export let tabindex = 0;
   export let onClick: (event: Event) => void = null;
   export let errorCallback = showError;
@@ -59,6 +59,16 @@
 
   $: hasIcon = !!icon || $$slots.icon;
   $: hasLabel = (!!label || $$slots.label) && !iconOnly;
+  $: tooltipCalc = typeof(disabled) == "string"
+    ? disabled
+    : tooltip
+      ? tooltip
+      : iconOnly && label
+        ? label +
+          (shortCutInfo
+            ? "\n\n" + $t`Shortcut: ${shortCutInfo}`
+            : "")
+        : null;
 
   let onMenuClose = getContext("onMenuClose") as () => void;
   async function myOnClick(event: Event) {

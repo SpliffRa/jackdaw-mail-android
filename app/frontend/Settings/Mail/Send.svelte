@@ -109,14 +109,71 @@
   <hbox slot="header">
     {$t`Composition defaults`}
   </hbox>
-  <hbox class="default-font-setting">
-    <label for="default-font-family">{$t`Default font for new messages and replies`}</label>
-    <select id="default-font-family" bind:value={defaultFontFamilySetting.value}>
-      {#each composeFontFamilies as font}
-        <option value={font.value}>{font.label()}</option>
-      {/each}
-    </select>
-  </hbox>
+  <grid class="default-format-grid">
+    <hbox class="default-format-setting">
+      <label for="default-font-family">{$t`Font`}</label>
+      <select id="default-font-family" bind:value={defaultFontFamilySetting.value}>
+        {#each composeFontFamilies as font}
+          <option value={font.value}>{font.label()}</option>
+        {/each}
+      </select>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-font-size">{$t`Font size`}</label>
+      <select id="default-font-size" bind:value={defaultFontSizeSetting.value}>
+        {#each composeFontSizes as size}
+          <option value={size}>{formatFontSizeLabel(size)} pt</option>
+        {/each}
+      </select>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-text-color">{$t`Font color`}</label>
+      <hbox class="color-setting">
+        <input id="default-text-color" type="color"
+          value={$defaultTextColorSetting.value || composeTextColors[0]}
+          aria-label={$t`Font color`}
+          on:input={onDefaultTextColorInput} />
+        <Button
+          plain
+          label={$t`Automatic`}
+          onClick={clearDefaultTextColor}
+          disabled={!$defaultTextColorSetting.value} />
+      </hbox>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-line-height">{$t`Line spacing`}</label>
+      <select id="default-line-height" bind:value={defaultLineHeightSetting.value}>
+        {#each composeLineHeights as lineHeight}
+          <option value={lineHeight.value}>{lineHeight.label}</option>
+        {/each}
+      </select>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-text-align">{$t`Alignment`}</label>
+      <select id="default-text-align" bind:value={defaultTextAlignSetting.value}>
+        <option value="left">{$t`Align left`}</option>
+        <option value="center">{$t`Align center`}</option>
+        <option value="right">{$t`Align right`}</option>
+        <option value="justify">{$t`Justify`}</option>
+      </select>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-paragraph-spacing">{$t`Paragraph spacing`}</label>
+      <select id="default-paragraph-spacing" bind:value={defaultParagraphSpacingSetting.value}>
+        {#each composeParagraphSpacingValues as spacing}
+          <option value={spacing}>{spacing == "0" ? $t`Default` : `${spacing} pt`}</option>
+        {/each}
+      </select>
+    </hbox>
+    <hbox class="default-format-setting">
+      <label for="default-first-line-indent">{$t`First-line indent`}</label>
+      <select id="default-first-line-indent" bind:value={defaultFirstLineIndentSetting.value}>
+        {#each composeFirstLineIndentValues as indent}
+          <option value={indent}>{indent == "0" ? $t`Default` : `${indent} pt`}</option>
+        {/each}
+      </select>
+    </hbox>
+  </grid>
   <span class="hint">{$t`Used for the text you write in new messages and replies.`}</span>
 </HeaderGroupBox>
 
@@ -152,8 +209,24 @@
   import { getLocalStorage } from "../../Util/LocalStorage";
   import { t } from "../../../l10n/l10n";
   import Paper from "../../Shared/Paper.svelte";
+  import Button from "../../Shared/Button.svelte";
   import { webMail } from "../../../logic/build";
-  import { composeDefaultFontFamily, composeFontFamilies } from "../../Shared/Editor/composeEditorExtensions";
+  import {
+    composeDefaultFontFamily,
+    composeDefaultFontSize,
+    composeDefaultTextColor,
+    composeDefaultLineHeight,
+    composeDefaultTextAlign,
+    composeDefaultParagraphSpacing,
+    composeDefaultFirstLineIndent,
+    composeFontFamilies,
+    composeFontSizes,
+    composeLineHeights,
+    composeParagraphSpacingValues,
+    composeFirstLineIndentValues,
+    composeTextColors,
+    formatFontSizeLabel,
+  } from "../../Shared/Editor/composeEditorExtensions";
 
   let formatSetting = getLocalStorage("mail.send.format", "html");
   let quoteSetting = getLocalStorage("mail.send.quote", "below");
@@ -161,6 +234,20 @@
   let spellcheckEnabledSetting = getLocalStorage("mail.send.spellcheck.enabled", false);
   let presentationSetting = getLocalStorage("mail.compose.presentation", "fullscreen");
   let defaultFontFamilySetting = getLocalStorage("mail.compose.defaultFontFamily", composeDefaultFontFamily);
+  let defaultFontSizeSetting = getLocalStorage("mail.compose.defaultFontSize", composeDefaultFontSize);
+  let defaultTextColorSetting = getLocalStorage("mail.compose.defaultTextColor", composeDefaultTextColor);
+  let defaultLineHeightSetting = getLocalStorage("mail.compose.defaultLineHeight", composeDefaultLineHeight);
+  let defaultTextAlignSetting = getLocalStorage("mail.compose.defaultTextAlign", composeDefaultTextAlign);
+  let defaultParagraphSpacingSetting = getLocalStorage("mail.compose.defaultParagraphSpacing", composeDefaultParagraphSpacing);
+  let defaultFirstLineIndentSetting = getLocalStorage("mail.compose.defaultFirstLineIndent", composeDefaultFirstLineIndent);
+
+  function onDefaultTextColorInput(event: Event) {
+    defaultTextColorSetting.value = (event.currentTarget as HTMLInputElement).value;
+  }
+
+  function clearDefaultTextColor() {
+    defaultTextColorSetting.value = composeDefaultTextColor;
+  }
 </script>
 
 <style>
@@ -186,17 +273,32 @@
   .format img {
     margin: 16px 32px 24px 28px;
   }
-  .default-font-setting {
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
+  .default-format-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    gap: 12px 24px;
     margin-block-start: 4px;
   }
-  .default-font-setting label {
+  .default-format-setting {
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .default-format-setting label {
+    flex: 1 1 auto;
     margin-inline-start: 0;
   }
-  .default-font-setting select {
-    min-width: 12em;
+  .default-format-setting select {
+    min-width: 9em;
+  }
+  .color-setting {
+    align-items: center;
+    gap: 8px;
+  }
+  .color-setting input[type="color"] {
+    width: 32px;
+    height: 28px;
+    padding: 2px;
   }
   .hint {
     display: block;

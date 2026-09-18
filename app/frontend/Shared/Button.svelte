@@ -57,7 +57,7 @@
   export let shortCutInfo: string = null;
   /** What to show when the user hovers with the mouse over the
    * button for ca. 2+ seconds.
-   * Defaults to `label` and `shortCutInfo`. */
+   * Defaults to `label` and `shortCutInfo` for icon-only buttons. */
   export let tooltip: string | null = null;
   export let tabindex = null;
   export let onClick: (event: Event) => void = null;
@@ -73,7 +73,7 @@
     ? disabled
     : tooltip
       ? tooltip
-      : label
+      : iconOnly && label
         ? label +
           (shortCutInfo
             ? "\n\n" + $t`Shortcut: ${shortCutInfo}`
