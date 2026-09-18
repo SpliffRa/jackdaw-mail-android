@@ -53,8 +53,10 @@
   export let message: EMail;
   export let mode: DisplayMode = DisplayMode.HTML;
 
-  let modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
-  $: modeSetting = getMessageContentRenderingSetting(message?.folder?.account);
+  let messageAccount = message?.folder?.account;
+  let modeSetting = getMessageContentRenderingSetting(messageAccount);
+  $: messageAccount = $message?.folder?.account ?? message?.folder?.account;
+  $: modeSetting = getMessageContentRenderingSetting(messageAccount);
   $: mode = normalizeMessageContentRendering($modeSetting.value) as DisplayMode;
 
   function switchTo(newMode: DisplayMode) {

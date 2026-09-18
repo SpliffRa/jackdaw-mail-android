@@ -67,4 +67,25 @@ describe("режим отображения содержимого письма"
     expect(getMessageContentRenderingSetting(account).value).toBe("plaintext");
     vi.unstubAllGlobals();
   });
+
+  test("обновляет унаследованный режим после изменения общей настройки", () => {
+    let values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+
+    let account = { id: "appearance-test-live-default" } as MailAccount;
+    let setting = getMessageContentRenderingSetting(account);
+    let notifications = 0;
+    let unsubscribe = setting.subscribe(() => notifications++);
+
+    getMessageContentRenderingSetting().value = "with-external";
+
+    expect(setting.value).toBe("with-external");
+    expect(notifications).toBeGreaterThan(1);
+
+    unsubscribe();
+    vi.unstubAllGlobals();
+  });
 });

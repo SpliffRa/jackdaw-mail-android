@@ -6,6 +6,7 @@ export type MessageContentRendering = "html" | "with-external" | "plaintext" | "
 
 const kMessageViewerBackgroundSetting = "mail.read.background";
 const kMessageContentRenderingSetting = "mail.contentRendering";
+const accountDefaultSubscriptions = new Map<string, () => void>();
 
 /** Общая настройка фона панели чтения и содержимого письма. */
 export function getMessageViewerBackgroundSetting() {
@@ -28,15 +29,34 @@ export function getMessageContentRenderingSetting(account?: MailAccount | null) 
   if (!account?.id) {
     return getLocalStorage<MessageContentRendering>(kMessageContentRenderingSetting, "html");
   }
-  let legacyValue = getLocalStorage<MessageContentRendering>(kMessageContentRenderingSetting, "html").value;
+  let globalSetting = getLocalStorage<MessageContentRendering>(kMessageContentRenderingSetting, "html");
+  let legacyValue = globalSetting.value;
   let defaultValue = normalizeMessageContentRendering(legacyValue);
+  let accountSettingKey = `${kMessageContentRenderingSetting}.account.${account.id}`;
   let setting = getLocalStorage<MessageContentRendering>(
-    `${kMessageContentRenderingSetting}.account.${account.id}`,
+    accountSettingKey,
     defaultValue,
   );
-  // Keep an account without an explicit override in sync with the global
-  // default even when this observable was created before that setting changed.
+
+  // Если для ящика нет своего значения, изменение общей настройки должно
+  // сразу дойти до уже открытого просмотрщика письма.
   setting.withDefault(defaultValue);
+
+  if (!accountDefaultSubscriptions.has(accountSettingKey)) {
+    let unsubscribe = globalSetting.subscribe(() => {
+      if (localStorage.getItem(accountSettingKey) !== null) {
+        return;
+      }
+
+      let previousValue = setting.value;
+      setting.withDefault(normalizeMessageContentRendering(globalSetting.value));
+      if (setting.value !== previousValue) {
+        setting.notifyObservers();
+      }
+    });
+    accountDefaultSubscriptions.set(accountSettingKey, unsubscribe);
+  }
+
   return setting;
 }
 

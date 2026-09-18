@@ -251,6 +251,7 @@ export class Folder extends Observable implements TreeItem<Folder> {
     let bumpedTargetCount = false;
     let movedUnreadCount = messages.contents.filter(message => !message.isRead).length;
     let movedNewArrivedCount = messages.contents.filter(message => message.isNewArrived).length;
+    let bumpedSourceCount = false;
     let bumpedTargetUnread = false;
     try {
       if (action == "move") {
@@ -270,6 +271,13 @@ export class Folder extends Observable implements TreeItem<Folder> {
         return;
       }
 
+      if (action == "move") {
+        sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - messages.length);
+        sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - movedUnreadCount);
+        sourceFolder.countNewArrived = Math.max(0, sourceFolder.countNewArrived - movedNewArrivedCount);
+        bumpedSourceCount = true;
+      }
+
       this.countTotal += messages.length;
       bumpedTargetCount = true;
       this.countUnread += movedUnreadCount;
@@ -278,9 +286,6 @@ export class Folder extends Observable implements TreeItem<Folder> {
       await this.moveOrCopyMessagesOnServer(action, messages);
 
       if (action == "move") {
-        sourceFolder.countTotal = Math.max(0, sourceFolder.countTotal - messages.length);
-        sourceFolder.countUnread = Math.max(0, sourceFolder.countUnread - movedUnreadCount);
-        sourceFolder.countNewArrived = Math.max(0, sourceFolder.countNewArrived - movedNewArrivedCount);
         for (let sourceMsg of messages) {
           await sourceMsg.deleteMessageLocally();
         }
@@ -293,6 +298,11 @@ export class Folder extends Observable implements TreeItem<Folder> {
       }
       if (bumpedTargetUnread) {
         this.countUnread = Math.max(0, this.countUnread - movedUnreadCount);
+      }
+      if (bumpedSourceCount) {
+        sourceFolder.countTotal += messages.length;
+        sourceFolder.countUnread += movedUnreadCount;
+        sourceFolder.countNewArrived += movedNewArrivedCount;
       }
       if (removedLocally) {
         // Server move failed — put messages back in the source list.
