@@ -260,6 +260,16 @@
       if (event.type != "mouseDown" || event.button != "left" || event.clickCount != 1) {
         return;
       }
+      let linkTarget = await executeGuestJavaScript<string | null>(`
+        (function () {
+          const el = document.elementFromPoint(${event.x}, ${event.y});
+          const link = el && el.closest("a[href]");
+          return link?.target || null;
+        })()
+      `);
+      if (linkTarget == "_blank" && isExternalLinkURL(url)) {
+        return;
+      }
       let onImage = await executeGuestJavaScript(`
         (function () {
           const el = document.elementFromPoint(${event.x}, ${event.y});
@@ -271,6 +281,10 @@
       }
       await openExternalURL(url);
     });
+  }
+
+  function isExternalLinkURL(url: string): boolean {
+    return /^(?:https?|mailto|tel):/i.test(url);
   }
 
   async function addImageOpenListener() {
