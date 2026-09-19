@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -188,25 +189,45 @@ class MailViewModel(
         return repository.getEmailById(emailId)
     }
 
-    fun sendEmail(to: String, subject: String, body: String, attachments: List<Attachment> = emptyList()) {
+    fun sendEmail(
+        to: String,
+        subject: String,
+        body: String,
+        attachments: List<Attachment> = emptyList(),
+        replyToEmailId: String? = null
+    ) {
         val account = _currentAccount.value
-        val newEmail = EmailMessage(
-            id = "msg_${System.currentTimeMillis()}",
-            accountId = account.id,
-            folderId = "outbox",
-            senderName = account.displayName,
-            senderEmail = account.email,
-            toRecipients = listOf(to),
-            subject = subject,
-            snippet = body.take(120),
-            bodyText = body,
-            timestamp = System.currentTimeMillis(),
-            isRead = true,
-            hasAttachments = attachments.isNotEmpty(),
-            attachments = attachments,
-            deliveryStatus = app.jackdaw.client.core.model.DeliveryStatus.QUEUED
-        )
         viewModelScope.launch {
+            var threadId = "thread_${System.currentTimeMillis()}"
+            if (replyToEmailId != null) {
+                // Immediately fulfill SLA on the original incoming email
+                repository.markSlaCompleted(replyToEmailId)
+                try {
+                    val repliedEmail = repository.getEmailById(replyToEmailId).firstOrNull()
+                    val parentThreadId = repliedEmail?.threadId
+                    if (!parentThreadId.isNullOrBlank()) {
+                        threadId = parentThreadId
+                    }
+                } catch (_: Exception) {}
+            }
+
+            val newEmail = EmailMessage(
+                id = "msg_${System.currentTimeMillis()}",
+                accountId = account.id,
+                folderId = "outbox",
+                senderName = account.displayName,
+                senderEmail = account.email,
+                toRecipients = listOf(to),
+                subject = subject,
+                snippet = body.take(120),
+                bodyText = body,
+                timestamp = System.currentTimeMillis(),
+                isRead = true,
+                hasAttachments = attachments.isNotEmpty(),
+                attachments = attachments,
+                threadId = threadId,
+                deliveryStatus = app.jackdaw.client.core.model.DeliveryStatus.QUEUED
+            )
             repository.queueEmailForSending(newEmail)
             try {
                 app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(

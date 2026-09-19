@@ -57,6 +57,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
+import app.jackdaw.client.core.util.DateGroup
+import app.jackdaw.client.core.util.DateGrouping
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
@@ -383,83 +388,68 @@ fun MailListScreen(
             }
 
             if (isSlaFolder) {
-                // Executive SLA KPI summary tiles
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SlaMetricTile(
-                        title = "Срочные",
-                        count = slaUrgentCount,
-                        color = SlaUrgentRed,
-                        bgColor = SlaUrgentContainerDark,
-                        isSelected = selectedSlaFilter == SlaDashboardFilter.URGENT,
-                        onClick = {
-                            selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.URGENT) SlaDashboardFilter.ALL else SlaDashboardFilter.URGENT
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SlaMetricTile(
-                        title = "Внимание",
-                        count = slaWarningCount,
-                        color = SlaWarningAmber,
-                        bgColor = SlaWarningContainerDark,
-                        isSelected = selectedSlaFilter == SlaDashboardFilter.WARNING,
-                        onClick = {
-                            selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.WARNING) SlaDashboardFilter.ALL else SlaDashboardFilter.WARNING
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SlaMetricTile(
-                        title = "В норме",
-                        count = slaNormalCount,
-                        color = SlaGoodGreen,
-                        bgColor = SlaGoodContainerDark,
-                        isSelected = selectedSlaFilter == SlaDashboardFilter.NORMAL,
-                        onClick = {
-                            selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.NORMAL) SlaDashboardFilter.ALL else SlaDashboardFilter.NORMAL
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // SLA Filter chips
+                // Minimalist compact SLA status bar
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(SlaDashboardFilter.values()) { filter ->
-                        val isSelected = filter == selectedSlaFilter
-                        val filterLabel = when (filter) {
-                            SlaDashboardFilter.ALL -> "Все (${emails.size})"
-                            SlaDashboardFilter.URGENT -> "Срочные ($slaUrgentCount)"
-                            SlaDashboardFilter.WARNING -> "Внимание ($slaWarningCount)"
-                            SlaDashboardFilter.NORMAL -> "В норме ($slaNormalCount)"
-                            SlaDashboardFilter.UNREAD -> "Непрочитанные ($unreadCount)"
-                        }
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedSlaFilter = filter },
-                            label = {
-                                Text(
-                                    text = filterLabel,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = JackdawAmber,
-                                selectedLabelColor = Color.Black,
-                                containerColor = JackdawSurfaceElevatedDark,
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            border = null,
-                            shape = RoundedCornerShape(8.dp)
+                    item {
+                        SlaStatusPill(
+                            title = "Все",
+                            count = emails.size,
+                            isSelected = selectedSlaFilter == SlaDashboardFilter.ALL,
+                            accentColor = JackdawAmber,
+                            onClick = { selectedSlaFilter = SlaDashboardFilter.ALL }
                         )
+                    }
+                    item {
+                        SlaStatusPill(
+                            title = "Срочные",
+                            count = slaUrgentCount,
+                            isSelected = selectedSlaFilter == SlaDashboardFilter.URGENT,
+                            accentColor = SlaUrgentRed,
+                            onClick = {
+                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.URGENT) SlaDashboardFilter.ALL else SlaDashboardFilter.URGENT
+                            }
+                        )
+                    }
+                    item {
+                        SlaStatusPill(
+                            title = "Внимание",
+                            count = slaWarningCount,
+                            isSelected = selectedSlaFilter == SlaDashboardFilter.WARNING,
+                            accentColor = SlaWarningAmber,
+                            onClick = {
+                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.WARNING) SlaDashboardFilter.ALL else SlaDashboardFilter.WARNING
+                            }
+                        )
+                    }
+                    item {
+                        SlaStatusPill(
+                            title = "В норме",
+                            count = slaNormalCount,
+                            isSelected = selectedSlaFilter == SlaDashboardFilter.NORMAL,
+                            accentColor = SlaGoodGreen,
+                            onClick = {
+                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.NORMAL) SlaDashboardFilter.ALL else SlaDashboardFilter.NORMAL
+                            }
+                        )
+                    }
+                    if (unreadCount > 0) {
+                        item {
+                            SlaStatusPill(
+                                title = "Новые",
+                                count = unreadCount,
+                                isSelected = selectedSlaFilter == SlaDashboardFilter.UNREAD,
+                                accentColor = Color(0xFF60A5FA),
+                                onClick = {
+                                    selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.UNREAD) SlaDashboardFilter.ALL else SlaDashboardFilter.UNREAD
+                                }
+                            )
+                        }
                     }
                 }
             } else {
@@ -561,6 +551,10 @@ fun MailListScreen(
                     }
                 }
             } else {
+                val groupedEmails = remember(filteredEmails) {
+                    filteredEmails.groupBy { DateGrouping.getGroup(it.timestamp) }
+                }
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -576,14 +570,22 @@ fun MailListScreen(
                             )
                         }
                     } else {
-                        items(filteredEmails, key = { it.id }) { email ->
-                            SwipeableEmailCard(
-                                email = email,
-                                onClick = { onEmailClick(email) },
-                                onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
-                                onSwipeArchive = { onSwipeArchive(email) },
-                                onSwipeDelete = { emailToDeletePending = email }
-                            )
+                        DateGroup.values().forEach { group ->
+                            val emailsInGroup = groupedEmails[group]
+                            if (!emailsInGroup.isNullOrEmpty()) {
+                                item(key = "header_${group.name}") {
+                                    DateSectionHeader(title = group.title, count = emailsInGroup.size)
+                                }
+                                items(emailsInGroup, key = { it.id }) { email ->
+                                    SwipeableEmailCard(
+                                        email = email,
+                                        onClick = { onEmailClick(email) },
+                                        onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
+                                        onSwipeArchive = { onSwipeArchive(email) },
+                                        onSwipeDelete = { emailToDeletePending = email }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -679,46 +681,97 @@ fun MailListScreen(
 }
 
 @Composable
-private fun SlaMetricTile(
+private fun SlaStatusPill(
     title: String,
     count: Int,
-    color: Color,
-    bgColor: Color,
     isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    accentColor: Color,
+    onClick: () -> Unit
 ) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) color.copy(alpha = 0.22f) else bgColor
-        ),
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = if (isSelected) accentColor.copy(alpha = 0.22f) else JackdawSurfaceElevatedDark,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) color else color.copy(alpha = 0.35f)
+            color = if (isSelected) accentColor else Color.White.copy(alpha = 0.08f)
         )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = "$count",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Black,
-                color = color
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(accentColor)
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (isSelected) accentColor else Color.White.copy(alpha = 0.08f))
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DateSectionHeader(title: String, count: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.8.sp,
+                color = JackdawAmber
             )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(JackdawAmber.copy(alpha = 0.15f))
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
+            ) {
+                Text(
+                    text = "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = JackdawAmber
+                )
+            }
         }
+        HorizontalDivider(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+            thickness = 0.5.dp,
+            color = Color.White.copy(alpha = 0.12f)
+        )
     }
 }
 

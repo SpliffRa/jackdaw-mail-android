@@ -23,4 +23,7 @@ interface FolderDao {
 
     @Query("DELETE FROM folders WHERE accountId = :accountId")
     suspend fun deleteFoldersByAccount(accountId: String)
+
+    @Query("SELECT * FROM folders WHERE accountId = :accountId AND type = :type LIMIT 1")
+    suspend fun getFolderByType(accountId: String, type: app.jackdaw.client.core.model.FolderType): FolderEntity?
 }

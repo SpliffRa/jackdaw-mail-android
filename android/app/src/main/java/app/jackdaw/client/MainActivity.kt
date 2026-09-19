@@ -259,8 +259,7 @@ fun JackdawMainApp(
                     } ?: "",
                     onClose = { navController.popBackStack() },
                     onSend = { to, subject, body, attachments ->
-                        viewModel.sendEmail(to, subject, body, attachments)
-                        onToast("Письмо сохранено в исходящие")
+                        viewModel.sendEmail(to, subject, body, attachments, replyToId)
                         navController.popBackStack()
                     }
                 )

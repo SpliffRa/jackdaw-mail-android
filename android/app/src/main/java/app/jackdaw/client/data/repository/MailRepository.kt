@@ -219,8 +219,9 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun queueEmailForSending(email: EmailMessage) {
+        val outboxFolder = folderDao.getFolderByType(email.accountId, FolderType.OUTBOX)?.id ?: "outbox"
         val queuedEmail = email.copy(
-            folderId = "outbox",
+            folderId = outboxFolder,
             deliveryStatus = DeliveryStatus.QUEUED
         )
         val entity = EmailEntity.fromDomain(queuedEmail)
@@ -259,18 +260,20 @@ class OfflineFirstMailRepository(
                 ?: return SyncResult(isSuccess = false, errorMessage = "Account not found")
 
             val account = accountEntity.toDomain()
+            val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "outbox"
+            val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "sent"
 
             // 1. Process pending outgoing emails (Outbox)
             val pendingEmails = emailDao.getPendingOutgoingEmails()
             var sentCount = 0
             for (pending in pendingEmails) {
-                emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENDING, "outbox")
+                emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENDING, outboxFolder)
                 val sendResult = mailProtocolEngine.sendMessage(account, pending.toDomain())
                 if (sendResult.isSuccess) {
-                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENT, "sent")
+                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENT, sentFolder)
                     sentCount++
                 } else {
-                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.FAILED, "outbox")
+                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.FAILED, outboxFolder)
                 }
             }
 
