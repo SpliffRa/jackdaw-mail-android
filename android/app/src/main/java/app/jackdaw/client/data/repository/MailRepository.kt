@@ -61,8 +61,26 @@ class OfflineFirstMailRepository(
     }
 
     override fun getFolders(accountId: String): Flow<List<Folder>> {
-        return folderDao.getFoldersByAccount(accountId).map { entities ->
-            entities.map { it.toDomain() }
+        return combine(
+            folderDao.getFoldersByAccount(accountId),
+            emailDao.getAllEmails(accountId)
+        ) { folders, emails ->
+            folders.map { folderEntity ->
+                val unread = if (folderEntity.type == FolderType.SLA_ALERTS) {
+                    emails.count { it.slaSeverity != SlaSeverity.NONE && !it.isRead }
+                } else {
+                    emails.count { it.folderId == folderEntity.id && !it.isRead }
+                }
+                val total = if (folderEntity.type == FolderType.SLA_ALERTS) {
+                    emails.count { it.slaSeverity != SlaSeverity.NONE }
+                } else {
+                    emails.count { it.folderId == folderEntity.id }
+                }
+                folderEntity.toDomain().copy(
+                    unreadCount = unread,
+                    totalCount = total
+                )
+            }
         }
     }
 
@@ -155,11 +173,23 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun moveToArchive(emailId: String) {
-        emailDao.updateFolder(emailId, "archive")
+        val email = emailDao.getEmailById(emailId).first()
+        val targetFolder = when {
+            email?.accountId == "acc_secondary" -> "sec_archive"
+            email?.accountId != null && email.accountId != "acc_primary" -> "${email.accountId}_archive"
+            else -> "archive"
+        }
+        emailDao.updateFolder(emailId, targetFolder)
     }
 
     override suspend fun moveToTrash(emailId: String) {
-        emailDao.updateFolder(emailId, "trash")
+        val email = emailDao.getEmailById(emailId).first()
+        val targetFolder = when {
+            email?.accountId == "acc_secondary" -> "sec_trash"
+            email?.accountId != null && email.accountId != "acc_primary" -> "${email.accountId}_trash"
+            else -> "trash"
+        }
+        emailDao.updateFolder(emailId, targetFolder)
     }
 
     override suspend fun restoreEmail(emailId: String, originalFolderId: String) {
@@ -290,6 +320,7 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun initializeSampleDataIfEmpty() {
+        if (emailDao.getEmailCount() > 0) return
         accountDao.insertAccounts(SampleData.allAccounts.map { AccountEntity.fromDomain(it) })
         folderDao.insertFolders(SampleData.defaultFolders.map { FolderEntity.fromDomain(it) })
         emailDao.insertEmails(SampleData.sampleEmails.map { EmailEntity.fromDomain(it) })

@@ -163,18 +163,20 @@ fun JackdawMainApp(
                 route = Screen.MailDetail.route,
                 arguments = listOf(navArgument("emailId") { type = NavType.StringType })
             ) { backStackEntry ->
-                val emailId = backStackEntry.arguments?.getString("emailId")
-                val email = emails.find { it.id == emailId }
+                val emailId = backStackEntry.arguments?.getString("emailId") ?: ""
+                val initialEmail = remember(emailId) { emails.find { it.id == emailId } }
+                val detailEmail by viewModel.getEmailById(emailId).collectAsState(initial = initialEmail)
+                val currentEmail = detailEmail ?: initialEmail
 
-                val threadEmails by if (email?.threadId != null) {
-                    viewModel.getEmailsInThread(email.threadId!!).collectAsState(initial = emptyList())
+                val threadEmails by if (currentEmail?.threadId != null) {
+                    viewModel.getEmailsInThread(currentEmail.threadId!!).collectAsState(initial = emptyList())
                 } else {
                     androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(emptyList<app.jackdaw.client.core.model.EmailMessage>()) }
                 }
 
-                if (email != null) {
+                if (currentEmail != null) {
                     MailDetailScreen(
-                        email = email,
+                        email = currentEmail,
                         threadEmails = threadEmails,
                         onBack = { navController.popBackStack() },
                         onReply = { replyToEmail ->
@@ -191,7 +193,10 @@ fun JackdawMainApp(
                             navController.popBackStack()
                         },
                         onToggleStar = { isStarred ->
-                            viewModel.toggleStar(email.id, isStarred)
+                            viewModel.toggleStar(currentEmail.id, isStarred)
+                        },
+                        onToggleRead = { isRead ->
+                            viewModel.markAsRead(currentEmail.id, isRead)
                         }
                     )
                 } else {

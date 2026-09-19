@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,23 +77,37 @@ fun EmailCard(
                 .padding(12.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Unread accent indicator / Avatar
+            // Unread accent indicator / Avatar with dot
             Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (!email.isRead) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                contentAlignment = Alignment.Center
+                modifier = Modifier.size(40.dp)
             ) {
-                val initial = email.senderName.firstOrNull()?.uppercase() ?: "J"
-                Text(
-                    text = initial,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (!email.isRead) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold
-                )
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (!email.isRead) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val initial = email.senderName.firstOrNull()?.uppercase() ?: "J"
+                    Text(
+                        text = initial,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (!email.isRead) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (!email.isRead) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .align(Alignment.TopEnd)
+                            .clip(CircleShape)
+                            .background(JackdawAmber)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
@@ -106,15 +121,28 @@ fun EmailCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = email.senderName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (!email.isRead) FontWeight.Bold else FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
-                    )
+                    ) {
+                        if (!email.isRead) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(end = 6.dp)
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(JackdawAmber)
+                            )
+                        }
+                        Text(
+                            text = email.senderName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (!email.isRead) FontWeight.Bold else FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                     Text(
                         text = formattedTime,
                         style = MaterialTheme.typography.labelSmall,
@@ -258,6 +286,7 @@ fun SwipeableEmailCard(
     modifier: Modifier = Modifier
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
+        positionalThreshold = { totalDistance -> totalDistance * 0.65f },
         confirmValueChange = { dismissValue ->
             when (dismissValue) {
                 SwipeToDismissBoxValue.StartToEnd -> {
@@ -266,7 +295,7 @@ fun SwipeableEmailCard(
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
                     onSwipeDelete()
-                    true
+                    false
                 }
                 SwipeToDismissBoxValue.Settled -> false
             }
@@ -277,38 +306,51 @@ fun SwipeableEmailCard(
         state = dismissState,
         modifier = modifier.clip(RoundedCornerShape(12.dp)),
         backgroundContent = {
-            val isStartToEnd = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
-            val color = when (dismissState.dismissDirection) {
+            val direction = dismissState.dismissDirection
+            val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
+            val color = when (direction) {
                 SwipeToDismissBoxValue.StartToEnd -> Color(0xFF10B981) // Emerald Green
                 SwipeToDismissBoxValue.EndToStart -> Color(0xFFEF4444) // Red
                 SwipeToDismissBoxValue.Settled -> Color.Transparent
             }
 
+            val progress = dismissState.progress
+            val iconScale = (0.75f + progress * 0.4f).coerceIn(0.75f, 1.15f)
+            val bgAlpha = (progress * 1.5f).coerceIn(0.35f, 1f)
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(color)
-                    .padding(horizontal = 20.dp),
+                    .background(color.copy(alpha = bgAlpha))
+                    .padding(horizontal = 24.dp),
                 contentAlignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
             ) {
                 if (isStartToEnd) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                    ) {
                         Icon(
                             imageVector = Icons.Rounded.Archive,
                             contentDescription = "Архив",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Архив", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("В архив", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                    ) {
                         Text("Удалить", color = Color.White, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
                             imageVector = Icons.Rounded.Delete,
                             contentDescription = "Удалить",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }

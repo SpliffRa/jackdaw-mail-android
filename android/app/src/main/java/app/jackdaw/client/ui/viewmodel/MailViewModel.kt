@@ -37,7 +37,7 @@ class MailViewModel(
 ) : ViewModel() {
 
     private val _currentAccount = MutableStateFlow(SampleData.defaultAccount)
-    private val _selectedFolder = MutableStateFlow(SampleData.defaultFolders.first())
+    private val _selectedFolderId = MutableStateFlow(SampleData.defaultFolders.first().id)
     private val _searchQuery = MutableStateFlow("")
     private val _isSyncing = MutableStateFlow(false)
     private val _lastSyncTimestamp = MutableStateFlow(System.currentTimeMillis())
@@ -61,9 +61,17 @@ class MailViewModel(
         initialValue = SampleData.defaultFolders
     )
 
+    val selectedFolder: StateFlow<Folder> = combine(_selectedFolderId, folders) { folderId, folderList ->
+        folderList.find { it.id == folderId } ?: folderList.firstOrNull() ?: SampleData.defaultFolders.first()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = SampleData.defaultFolders.first()
+    )
+
     val emails: StateFlow<List<EmailMessage>> = combine(
         _currentAccount,
-        _selectedFolder,
+        selectedFolder,
         _searchQuery
     ) { account, folder, query ->
         Triple(account, folder, query)
@@ -85,12 +93,11 @@ class MailViewModel(
         }
     }
 
-    val selectedFolder: StateFlow<Folder> = _selectedFolder.asStateFlow()
     val currentAccount: StateFlow<MailAccount> = _currentAccount.asStateFlow()
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     fun selectFolder(folder: Folder) {
-        _selectedFolder.value = folder
+        _selectedFolderId.value = folder.id
         _searchQuery.value = ""
     }
 
@@ -98,7 +105,7 @@ class MailViewModel(
         viewModelScope.launch {
             val accountFolders = repository.getFolders(account.id).first()
             if (accountFolders.isNotEmpty()) {
-                _selectedFolder.value = accountFolders.first()
+                _selectedFolderId.value = accountFolders.first().id
             }
             _currentAccount.value = account
         }
@@ -168,6 +175,10 @@ class MailViewModel(
 
     fun getEmailsInThread(threadId: String): kotlinx.coroutines.flow.Flow<List<EmailMessage>> {
         return repository.getEmailsInThread(threadId)
+    }
+
+    fun getEmailById(emailId: String): kotlinx.coroutines.flow.Flow<EmailMessage?> {
+        return repository.getEmailById(emailId)
     }
 
     fun sendEmail(to: String, subject: String, body: String, attachments: List<Attachment> = emptyList()) {

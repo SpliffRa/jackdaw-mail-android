@@ -31,10 +31,12 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Forward
+import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,6 +50,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -82,10 +85,12 @@ fun MailDetailScreen(
     onDelete: (EmailMessage) -> Unit,
     onArchive: (EmailMessage) -> Unit,
     onToggleStar: (Boolean) -> Unit,
+    onToggleRead: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru"))
     val formattedDate = dateFormat.format(Date(email.timestamp))
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -102,6 +107,13 @@ fun MailDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { onToggleRead(!email.isRead) }) {
+                        Icon(
+                            imageVector = if (email.isRead) Icons.Rounded.MarkEmailUnread else Icons.Rounded.MarkEmailRead,
+                            contentDescription = if (email.isRead) "Отметить как непрочитанное" else "Отметить как прочитанное",
+                            tint = if (email.isRead) MaterialTheme.colorScheme.onSurface else JackdawAmber
+                        )
+                    }
                     IconButton(onClick = { onToggleStar(!email.isStarred) }) {
                         Icon(
                             imageVector = if (email.isStarred) Icons.Rounded.Star else Icons.Rounded.StarOutline,
@@ -116,7 +128,7 @@ fun MailDetailScreen(
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = { onDelete(email) }) {
+                    IconButton(onClick = { showDeleteConfirmDialog = true }) {
                         Icon(
                             imageVector = Icons.Rounded.Delete,
                             contentDescription = "Удалить",
@@ -484,5 +496,48 @@ fun MailDetailScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
         }
+    }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            containerColor = JackdawSurfaceElevatedDark,
+            title = {
+                Text(
+                    text = "Удалить письмо?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Вы действительно хотите переместить письмо «${email.subject}» в корзину?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        onDelete(email)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Удалить", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmDialog = false }
+                ) {
+                    Text("Отмена", color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        )
     }
 }

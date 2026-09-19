@@ -25,6 +25,9 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -36,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -103,6 +107,9 @@ fun MailListScreen(
     var selectedFilter by remember { mutableStateOf(
         if (currentFolder.type == FolderType.SLA_ALERTS) MailFilter.SLA_URGENT else MailFilter.ALL
     ) }
+    var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
+
+    val unreadCount = emails.count { !it.isRead }
 
     val infiniteTransition = rememberInfiniteTransition(label = "sync_rotation")
     val syncRotation by if (isSyncing) {
@@ -159,7 +166,13 @@ fun MailListScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = if (isSyncing) "Синхронизация..." else "${filteredEmails.size} писем",
+                                text = if (isSyncing) {
+                                    "Синхронизация..."
+                                } else if (unreadCount > 0) {
+                                    "${filteredEmails.size} писем • $unreadCount непрочитанных"
+                                } else {
+                                    "${filteredEmails.size} писем"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -167,12 +180,24 @@ fun MailListScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(
-                            imageVector = Icons.Rounded.Menu,
-                            contentDescription = "Меню папок",
-                            tint = MaterialTheme.colorScheme.onSurface
-                        )
+                    Box {
+                        IconButton(onClick = onOpenDrawer) {
+                            Icon(
+                                imageVector = Icons.Rounded.Menu,
+                                contentDescription = "Меню папок",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        if (unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 10.dp, end = 10.dp)
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(JackdawAmber)
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -257,12 +282,17 @@ fun MailListScreen(
             ) {
                 items(MailFilter.values()) { filter ->
                     val isSelected = filter == selectedFilter
+                    val filterLabel = if (filter == MailFilter.UNREAD && unreadCount > 0) {
+                        "${filter.label} ($unreadCount)"
+                    } else {
+                        filter.label
+                    }
                     FilterChip(
                         selected = isSelected,
                         onClick = { selectedFilter = filter },
                         label = {
                             Text(
-                                text = filter.label,
+                                text = filterLabel,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
@@ -305,11 +335,56 @@ fun MailListScreen(
                             onClick = { onEmailClick(email) },
                             onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
                             onSwipeArchive = { onSwipeArchive(email) },
-                            onSwipeDelete = { onSwipeDelete(email) }
+                            onSwipeDelete = { emailToDeletePending = email }
                         )
                     }
                 }
             }
         }
+    }
+
+    if (emailToDeletePending != null) {
+        val email = emailToDeletePending!!
+        AlertDialog(
+            onDismissRequest = { emailToDeletePending = null },
+            containerColor = JackdawSurfaceElevatedDark,
+            title = {
+                Text(
+                    text = "Удалить письмо?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Вы действительно хотите переместить письмо «${email.subject}» в корзину?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = email
+                        emailToDeletePending = null
+                        onSwipeDelete(toDelete)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Удалить", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { emailToDeletePending = null }
+                ) {
+                    Text("Отмена", color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        )
     }
 }
