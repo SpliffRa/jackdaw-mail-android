@@ -37,6 +37,9 @@ import app.jackdaw.client.ui.screens.maildetail.MailDetailScreen
 import app.jackdaw.client.ui.screens.maillist.MailListScreen
 import app.jackdaw.client.ui.screens.settings.SettingsScreen
 import app.jackdaw.client.ui.viewmodel.MailViewModel
+import androidx.compose.foundation.isSystemInDarkTheme
+import app.jackdaw.client.core.designsystem.theme.ThemeMode
+import app.jackdaw.client.core.designsystem.theme.ThemePreferencesManager
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -59,13 +62,23 @@ class MainActivity : ComponentActivity() {
         val repository = OfflineFirstMailRepository(database)
 
         setContent {
-            JackdawTheme(darkTheme = true) {
+            val themeManager = remember { ThemePreferencesManager.getInstance(applicationContext) }
+            val currentThemeMode by themeManager.themeMode.collectAsState()
+            val isDarkTheme = when (currentThemeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+            }
+
+            JackdawTheme(darkTheme = isDarkTheme) {
                 val mailViewModel: MailViewModel = viewModel(
                     factory = MailViewModel.Factory(repository)
                 )
 
                 JackdawMainApp(
                     viewModel = mailViewModel,
+                    currentThemeMode = currentThemeMode,
+                    onThemeModeChange = { mode -> themeManager.setThemeMode(mode) },
                     onToast = { message ->
                         Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
                     }
@@ -78,6 +91,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun JackdawMainApp(
     viewModel: MailViewModel,
+    currentThemeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onToast: (String) -> Unit
 ) {
     val navController = rememberNavController()
@@ -269,6 +284,8 @@ fun JackdawMainApp(
                 SettingsScreen(
                     accounts = accounts,
                     currentAccountId = currentAccount.id,
+                    currentThemeMode = currentThemeMode,
+                    onThemeModeChange = onThemeModeChange,
                     onBack = { navController.popBackStack() },
                     onSelectAccount = { account ->
                         viewModel.selectAccount(account)

@@ -42,10 +42,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.runtime.remember
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.JackdawBorderDark
 import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
 import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
+import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
+import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
+import app.jackdaw.client.core.designsystem.theme.SlaWarningAmber
+import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerDark
+import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.core.model.EmailMessage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -172,17 +182,20 @@ fun EmailCard(
                     lineHeight = 18.sp
                 )
 
+                // 30-min SLA countdown timer under email in Inbox
+                SlaDeadlineTimer(
+                    email = email,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Bottom chips row (SLA, attachments, related emails thread count)
+                // Bottom chips row (attachments, related emails thread count)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    email.slaInfo?.let { sla ->
-                        SlaBadge(slaInfo = sla)
-                    }
 
                     if (email.hasAttachments) {
                         Row(
@@ -365,4 +378,97 @@ fun SwipeableEmailCard(
         }
     )
 }
+
+private data class SlaTimerUi(
+    val bgColor: Color,
+    val textColor: Color,
+    val text: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
+
+@Composable
+fun SlaDeadlineTimer(email: EmailMessage, modifier: Modifier = Modifier) {
+    val sla = email.slaInfo
+    // If explicitly marked NONE, SLA was completed/fulfilled
+    if (sla?.severity == SlaSeverity.NONE) return
+    // Only show if email has SLA or is incoming in inbox (not sent, not trash, not drafts)
+    val isIncomingInbox = email.folderId.contains("inbox", ignoreCase = true)
+    if (sla == null && !isIncomingInbox) return
+
+    val now = remember { System.currentTimeMillis() }
+    val deadline = if (sla != null && sla.deadlineTimestamp > 0L) {
+        sla.deadlineTimestamp
+    } else {
+        email.timestamp + 30 * 60 * 1000L
+    }
+    val remainingMs = deadline - now
+    val deadlineTime = remember(deadline) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(deadline))
+    }
+
+    val timerUi = when {
+        remainingMs <= 0 -> {
+            val overdueMins = (Math.abs(remainingMs) / (60 * 1000L)).coerceAtLeast(1)
+            SlaTimerUi(
+                bgColor = SlaUrgentContainerDark,
+                textColor = SlaUrgentRed,
+                text = "Регламент ответа (30 мин) просрочен на $overdueMins мин",
+                icon = Icons.Rounded.WarningAmber
+            )
+        }
+        remainingMs <= 10 * 60 * 1000L -> {
+            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+            SlaTimerUi(
+                bgColor = SlaUrgentContainerDark,
+                textColor = SlaUrgentRed,
+                text = "Срочно: до конца ответа осталось $mins мин (до $deadlineTime)",
+                icon = Icons.Rounded.WarningAmber
+            )
+        }
+        remainingMs <= 20 * 60 * 1000L -> {
+            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+            SlaTimerUi(
+                bgColor = SlaWarningContainerDark,
+                textColor = SlaWarningAmber,
+                text = "Внимание: до конца ответа осталось $mins мин (до $deadlineTime)",
+                icon = Icons.Rounded.AccessTime
+            )
+        }
+        else -> {
+            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+            SlaTimerUi(
+                bgColor = SlaGoodContainerDark,
+                textColor = SlaGoodGreen,
+                text = "SLA 30 мин: до конца ответа осталось $mins мин (до $deadlineTime)",
+                icon = Icons.Rounded.AccessTime
+            )
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(timerUi.bgColor)
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = timerUi.icon,
+            contentDescription = null,
+            tint = timerUi.textColor,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = timerUi.text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = timerUi.textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 

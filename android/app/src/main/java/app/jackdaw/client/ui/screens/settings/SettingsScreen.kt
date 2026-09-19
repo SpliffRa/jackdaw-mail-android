@@ -44,6 +44,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.SettingsBrightness
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import app.jackdaw.client.core.designsystem.theme.ThemeMode
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -88,6 +94,8 @@ fun SettingsScreen(
     onSelectAccount: (MailAccount) -> Unit = {},
     onAddAccount: (MailAccount) -> Unit,
     onDeleteAccount: (String) -> Unit,
+    currentThemeMode: ThemeMode = ThemeMode.SYSTEM,
+    onThemeModeChange: (ThemeMode) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -263,6 +271,81 @@ fun SettingsScreen(
                                     tint = SlaUrgentRed.copy(alpha = 0.8f)
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // SECTION: APPEARANCE & THEME
+            Text(
+                text = "ОФОРМЛЕНИЕ И ТЕМА",
+                style = MaterialTheme.typography.labelMedium,
+                color = JackdawAmber,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    ThemeMode.values().forEachIndexed { index, mode ->
+                        val isSelected = mode == currentThemeMode
+                        val icon = when (mode) {
+                            ThemeMode.SYSTEM -> Icons.Rounded.SettingsBrightness
+                            ThemeMode.DARK -> Icons.Rounded.DarkMode
+                            ThemeMode.LIGHT -> Icons.Rounded.LightMode
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) JackdawSurfaceElevatedDark else Color.Transparent)
+                                .clickable { onThemeModeChange(mode) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = mode.title,
+                                tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = mode.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onThemeModeChange(mode) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = JackdawAmber,
+                                    unselectedColor = MaterialTheme.colorScheme.outline
+                                )
+                            )
+                        }
+
+                        if (index < ThemeMode.values().size - 1) {
+                            HorizontalDivider(
+                                color = JackdawBorderDark,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }

@@ -73,10 +73,12 @@ class OfflineFirstMailRepository(
                 } else {
                     emails.count { it.folderId == folderEntity.id && !it.isRead }
                 }
-                val total = if (folderEntity.type == FolderType.SLA_ALERTS) {
-                    emails.count { it.slaSeverity != SlaSeverity.NONE }
-                } else {
-                    emails.count { it.folderId == folderEntity.id }
+                val total = when (folderEntity.type) {
+                    FolderType.SLA_ALERTS -> emails.count { it.slaSeverity != SlaSeverity.NONE }
+                    FolderType.OUTBOX -> emails.count {
+                        it.folderId == folderEntity.id || it.folderId.contains("outbox") || it.deliveryStatus != app.jackdaw.client.core.model.DeliveryStatus.SENT
+                    }
+                    else -> emails.count { it.folderId == folderEntity.id }
                 }
                 folderEntity.toDomain().copy(
                     unreadCount = unread,
@@ -87,10 +89,10 @@ class OfflineFirstMailRepository(
     }
 
     override fun getEmailsInFolder(accountId: String, folderId: String): Flow<List<EmailMessage>> {
-        val emailFlow = if (folderId == "sla_alerts") {
-            emailDao.getSlaEmails(accountId)
-        } else {
-            emailDao.getEmailsInFolder(accountId, folderId)
+        val emailFlow = when {
+            folderId == "sla_alerts" -> emailDao.getSlaEmails(accountId)
+            folderId.contains("outbox") -> emailDao.getOutboxEmails(accountId, folderId)
+            else -> emailDao.getEmailsInFolder(accountId, folderId)
         }
 
         return emailFlow.flatMapLatest { emailEntities ->
@@ -239,7 +241,7 @@ class OfflineFirstMailRepository(
         val standardFolders = listOf(
             Folder(id = "${account.id}_inbox", accountId = account.id, name = "Входящие", type = FolderType.INBOX, unreadCount = 0, totalCount = 0),
             Folder(id = "${account.id}_sent", accountId = account.id, name = "Отправленные", type = FolderType.SENT, unreadCount = 0, totalCount = 0),
-            Folder(id = "${account.id}_outbox", accountId = account.id, name = "Исходящие (Outbox)", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
+            Folder(id = "${account.id}_outbox", accountId = account.id, name = "Исходящие", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
             Folder(id = "${account.id}_drafts", accountId = account.id, name = "Черновики", type = FolderType.DRAFTS, unreadCount = 0, totalCount = 0),
             Folder(id = "${account.id}_archive", accountId = account.id, name = "Архив", type = FolderType.ARCHIVE, unreadCount = 0, totalCount = 0),
             Folder(id = "${account.id}_trash", accountId = account.id, name = "Корзина", type = FolderType.TRASH, unreadCount = 0, totalCount = 0)

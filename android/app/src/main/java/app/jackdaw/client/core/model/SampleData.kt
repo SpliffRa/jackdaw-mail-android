@@ -26,7 +26,7 @@ object SampleData {
         Folder(id = "inbox", accountId = "acc_primary", name = "Входящие", type = FolderType.INBOX, unreadCount = 4, totalCount = 28),
         Folder(id = "sla_alerts", accountId = "acc_primary", name = "SLA Контроль", type = FolderType.SLA_ALERTS, unreadCount = 2, totalCount = 5),
         Folder(id = "sent", accountId = "acc_primary", name = "Отправленные", type = FolderType.SENT, unreadCount = 0, totalCount = 14),
-        Folder(id = "outbox", accountId = "acc_primary", name = "Исходящие (Outbox)", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
+        Folder(id = "outbox", accountId = "acc_primary", name = "Исходящие", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
         Folder(id = "drafts", accountId = "acc_primary", name = "Черновики", type = FolderType.DRAFTS, unreadCount = 1, totalCount = 2),
         Folder(id = "archive", accountId = "acc_primary", name = "Архив", type = FolderType.ARCHIVE, unreadCount = 0, totalCount = 120),
         Folder(id = "trash", accountId = "acc_primary", name = "Корзина", type = FolderType.TRASH, unreadCount = 0, totalCount = 8),
@@ -34,6 +34,7 @@ object SampleData {
         // Secondary account folders
         Folder(id = "sec_inbox", accountId = "acc_secondary", name = "Входящие", type = FolderType.INBOX, unreadCount = 2, totalCount = 12),
         Folder(id = "sec_sent", accountId = "acc_secondary", name = "Отправленные", type = FolderType.SENT, unreadCount = 0, totalCount = 6),
+        Folder(id = "sec_outbox", accountId = "acc_secondary", name = "Исходящие", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
         Folder(id = "sec_archive", accountId = "acc_secondary", name = "Архив", type = FolderType.ARCHIVE, unreadCount = 0, totalCount = 45),
         Folder(id = "sec_trash", accountId = "acc_secondary", name = "Корзина", type = FolderType.TRASH, unreadCount = 0, totalCount = 3)
     )

@@ -97,7 +97,6 @@ import androidx.compose.material.icons.rounded.Sync
 enum class MailFilter(val label: String) {
     ALL("Все"),
     UNREAD("Непрочитанные"),
-    ATTACHMENTS("С файлами"),
     STARRED("Избранное")
 }
 
@@ -173,7 +172,6 @@ fun MailListScreen(
             when (selectedFilter) {
                 MailFilter.ALL -> true
                 MailFilter.UNREAD -> !email.isRead
-                MailFilter.ATTACHMENTS -> email.hasAttachments
                 MailFilter.STARRED -> email.isStarred
             }
         }
@@ -453,43 +451,6 @@ fun MailListScreen(
                     }
                 }
             } else {
-                // Quick jump to SLA Monitoring Dashboard if items require attention
-                if (slaUrgentCount > 0 || slaWarningCount > 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (slaUrgentCount > 0) SlaUrgentContainerDark else SlaWarningContainerDark)
-                            .clickable { onNavigateToSlaDashboard() }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Rounded.NotificationImportant,
-                                contentDescription = null,
-                                tint = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (slaUrgentCount > 0) "SLA Мониторинг: $slaUrgentCount срочных дедлайнов!" else "SLA Мониторинг: $slaWarningCount на контроле",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber
-                            )
-                        }
-                        Text(
-                            text = "Открыть дашборд ❯",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber
-                        )
-                    }
-                }
-
                 // Standard Mail filter chips
                 LazyRow(
                     modifier = Modifier
