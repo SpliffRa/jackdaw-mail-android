@@ -43,9 +43,10 @@ Jackdaw Mail is a multi-platform email client with high-performance search, conv
 
 ### Versioning Policy (Android)
 - `versionCode` (integer) increments by 1 with each release.
-- `versionName` follows semantic versioning:
-  - Minor feature updates: `1.2`, `1.3`, `1.4`, etc.
-  - Major architectural updates: `2.0`, `3.0`, etc.
+- `versionName` strictly follows Semantic Versioning (`MAJOR.MINOR.PATCH`):
+  - Patch bugfixes and minor tweaks: `1.3.1`, `1.3.2`, etc.
+  - Minor feature updates: `1.3.0`, `1.4.0`, etc.
+  - Major architectural updates: `2.0.0`, `3.0.0`, etc.
 
 ---
 

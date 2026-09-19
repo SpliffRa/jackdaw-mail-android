@@ -358,12 +358,56 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(imageVector = Icons.Rounded.SystemUpdate, contentDescription = null, tint = JackdawAmber, modifier = Modifier.size(24.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(imageVector = Icons.Rounded.SystemUpdate, contentDescription = null, tint = JackdawAmber, modifier = Modifier.size(26.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Jackdaw Mail v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text("Сборка: ${BuildConfig.VERSION_CODE} • SemVer Release", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF10B981).copy(alpha = 0.15f))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "v${BuildConfig.VERSION_NAME}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Release highlights summary
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(JackdawSurfaceElevatedDark)
+                            .padding(10.dp)
+                    ) {
                         Column {
-                            Text("Jackdaw Mail v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Сборка: ${BuildConfig.VERSION_CODE} (Release OTA Channel)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = "Что нового в v${BuildConfig.VERSION_NAME}:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = JackdawAmber
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("• Мониторинг SLA: строгий 30-мин дедлайн ответа", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• В корзине: кнопка полной очистки с диалогом", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• Исправлены открытие и передача вложений", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 

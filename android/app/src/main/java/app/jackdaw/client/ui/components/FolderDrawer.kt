@@ -321,13 +321,38 @@ fun FolderDrawer(
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Jackdaw Mail v${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.padding(start = 12.dp)
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // App version badge (SemVer)
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(JackdawSurfaceDark)
+                    .clickable { onOpenSettings() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF10B981))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Jackdaw Mail v${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "build ${BuildConfig.VERSION_CODE}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
         }
     }
 }
