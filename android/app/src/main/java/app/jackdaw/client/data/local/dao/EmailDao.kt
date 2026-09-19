@@ -28,7 +28,7 @@ interface EmailDao {
     @Query("SELECT emails.* FROM emails JOIN emails_fts ON emails.rowid = emails_fts.rowid WHERE emails_fts MATCH :query ORDER BY emails.timestamp DESC")
     fun searchEmails(query: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE threadId = :threadId ORDER BY timestamp DESC")
+    @Query("SELECT * FROM emails WHERE threadId = :threadId ORDER BY timestamp DESC, id DESC")
     fun getEmailsInThread(threadId: String): Flow<List<EmailEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

@@ -211,18 +211,24 @@ class MailViewModel(
         val account = _currentAccount.value
         viewModelScope.launch {
             var threadId = "thread_${System.currentTimeMillis()}"
+            var parentTimestamp = 0L
             if (replyToEmailId != null) {
                 // Immediately fulfill SLA on the original incoming email
                 repository.markSlaCompleted(replyToEmailId)
                 repository.markAsRead(replyToEmailId, true)
                 try {
                     val repliedEmail = repository.getEmailById(replyToEmailId).firstOrNull()
-                    val parentThreadId = repliedEmail?.threadId
-                    if (!parentThreadId.isNullOrBlank()) {
-                        threadId = parentThreadId
+                    if (repliedEmail != null) {
+                        if (!repliedEmail.threadId.isNullOrBlank()) {
+                            threadId = repliedEmail.threadId!!
+                        }
+                        parentTimestamp = repliedEmail.timestamp
                     }
                 } catch (_: Exception) {}
             }
+
+            val currentNow = System.currentTimeMillis()
+            val replyTimestamp = if (currentNow <= parentTimestamp) parentTimestamp + 2000L else currentNow
 
             val newEmail = EmailMessage(
                 id = "msg_${System.currentTimeMillis()}",
@@ -234,7 +240,7 @@ class MailViewModel(
                 subject = subject,
                 snippet = body.take(120),
                 bodyText = body,
-                timestamp = System.currentTimeMillis(),
+                timestamp = replyTimestamp,
                 isRead = true,
                 hasAttachments = attachments.isNotEmpty(),
                 attachments = attachments,

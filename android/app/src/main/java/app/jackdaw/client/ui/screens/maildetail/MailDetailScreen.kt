@@ -456,8 +456,8 @@ fun MailDetailScreen(
                 }
             }
 
-            // Related Emails Thread Section
-            val otherThreadEmails = threadEmails.filter { it.id != email.id }.sortedByDescending { it.timestamp }
+            val otherThreadEmails = threadEmails.filter { it.id != email.id }
+                .sortedWith(compareByDescending<EmailMessage> { it.timestamp }.thenByDescending { it.id })
             if (otherThreadEmails.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
