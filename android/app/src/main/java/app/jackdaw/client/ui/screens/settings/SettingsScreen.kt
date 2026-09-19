@@ -42,7 +42,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import app.jackdaw.client.core.signature.SignatureManager
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -110,6 +112,16 @@ fun SettingsScreen(
     var slaSound by remember { mutableStateOf(soundManager.isSlaSoundEnabled) }
     var notificationsEnabled by remember { mutableStateOf(soundManager.isNotificationsEnabled) }
     var soundVolume by remember { mutableFloatStateOf(soundManager.soundVolume) }
+
+    // Signature settings
+    val signatureManager = remember { SignatureManager.getInstance(context) }
+    val currentAccountObj = remember(accounts, currentAccountId) {
+        accounts.find { it.id == currentAccountId } ?: accounts.firstOrNull() ?: MailAccount("default", "user@jackdaw.email", "Пользователь")
+    }
+    var isSignatureEnabled by remember { mutableStateOf(signatureManager.isSignatureEnabled) }
+    var signatureText by remember(currentAccountObj.id) {
+        mutableStateOf(signatureManager.getSignature(currentAccountObj))
+    }
 
     // Update state
     var isCheckingUpdates by remember { mutableStateOf(false) }
@@ -583,6 +595,99 @@ fun SettingsScreen(
                                 colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
                             )
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // SECTION: SIGNATURE & OUTLOOK TEMPLATE
+            Text(
+                text = "ПОДПИСЬ ПИСЕМ (ШАБЛОН OUTLOOK)",
+                style = MaterialTheme.typography.labelSmall,
+                color = JackdawAmber,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Добавлять подпись в письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("В новых письмах и над цитатой в ответах", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isSignatureEnabled,
+                            onCheckedChange = {
+                                isSignatureEnabled = it
+                                signatureManager.isSignatureEnabled = it
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                        )
+                    }
+
+                    if (isSignatureEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = dividerColor)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Шаблон для ${currentAccountObj.displayName}:",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            TextButton(
+                                onClick = {
+                                    val reset = signatureManager.resetToOutlookTemplate(currentAccountObj)
+                                    signatureText = reset
+                                    Toast.makeText(context, "Шаблон Outlook восстановлен", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text("Сброс к Outlook", style = MaterialTheme.typography.labelSmall, color = JackdawAmber)
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = signatureText,
+                            onValueChange = {
+                                signatureText = it
+                                signatureManager.setSignature(currentAccountObj, it)
+                            },
+                            placeholder = { Text("Текст подписи...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp),
+                            textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = JackdawAmber,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "По стандарту Outlook подпись размещается над блоком цитирования «-----Исходное сообщение-----» при ответе на входящие письма.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

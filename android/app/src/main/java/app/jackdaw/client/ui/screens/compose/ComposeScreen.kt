@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
+import app.jackdaw.client.core.signature.SignatureManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,14 +64,16 @@ fun ComposeScreen(
     currentAccount: MailAccount,
     initialTo: String = "",
     initialSubject: String = "",
+    initialBody: String = "",
     onClose: () -> Unit,
     onSend: (to: String, subject: String, body: String, attachments: List<Attachment>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val signatureManager = remember { SignatureManager.getInstance(context) }
     var toText by remember { mutableStateOf(initialTo) }
     var subjectText by remember { mutableStateOf(initialSubject) }
-    var bodyText by remember { mutableStateOf("") }
+    var bodyText by remember { mutableStateOf(initialBody) }
     var attachments by remember { mutableStateOf<List<Attachment>>(emptyList()) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -143,6 +147,22 @@ fun ComposeScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            val sig = signatureManager.getSignature(currentAccount)
+                            if (sig.isNotBlank()) {
+                                if (!bodyText.contains(sig)) {
+                                    bodyText = if (bodyText.isBlank()) sig else "$bodyText\n\n$sig"
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Вставить подпись",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                         Icon(
                             imageVector = Icons.Rounded.AttachFile,

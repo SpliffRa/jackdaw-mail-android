@@ -298,12 +298,25 @@ fun JackdawMainApp(
                 }
                 val replyToEmail = replyEmailFromDb ?: emails.find { it.id == replyToId }
 
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val signatureManager = androidx.compose.runtime.remember {
+                    app.jackdaw.client.core.signature.SignatureManager.getInstance(context)
+                }
+                val initialBody = androidx.compose.runtime.remember(replyToEmail?.id, currentAccount.id) {
+                    if (replyToEmail != null) {
+                        signatureManager.buildReplyBody(currentAccount, replyToEmail)
+                    } else {
+                        signatureManager.buildNewEmailBody(currentAccount)
+                    }
+                }
+
                 ComposeScreen(
                     currentAccount = currentAccount,
                     initialTo = replyToEmail?.senderEmail ?: "",
                     initialSubject = replyToEmail?.let {
                         if (it.subject.startsWith("Re:", ignoreCase = true)) it.subject else "Re: ${it.subject}"
                     } ?: "",
+                    initialBody = initialBody,
                     onClose = { navController.popBackStack() },
                     onSend = { to, subject, body, attachments ->
                         viewModel.sendEmail(to, subject, body, attachments, replyToId)
