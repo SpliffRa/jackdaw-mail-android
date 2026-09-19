@@ -76,7 +76,7 @@ class OfflineFirstMailRepository(
                 val total = when (folderEntity.type) {
                     FolderType.SLA_ALERTS -> emails.count { it.slaSeverity != SlaSeverity.NONE }
                     FolderType.OUTBOX -> emails.count {
-                        it.folderId == folderEntity.id || it.folderId.contains("outbox") || it.deliveryStatus != app.jackdaw.client.core.model.DeliveryStatus.SENT
+                        it.deliveryStatus != app.jackdaw.client.core.model.DeliveryStatus.SENT && (it.folderId == folderEntity.id || it.folderId.contains("outbox"))
                     }
                     else -> emails.count { it.folderId == folderEntity.id }
                 }

@@ -13,7 +13,7 @@ interface EmailDao {
     @Query("SELECT * FROM emails WHERE accountId = :accountId AND folderId = :folderId ORDER BY timestamp DESC")
     fun getEmailsInFolder(accountId: String, folderId: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING') OR (folderId LIKE '%sent%' AND senderEmail = (SELECT email FROM accounts WHERE id = :accountId LIMIT 1))) ORDER BY timestamp DESC")
+    @Query("SELECT * FROM emails WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED')) ORDER BY timestamp DESC")
     fun getOutboxEmails(accountId: String, folderId: String): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC")

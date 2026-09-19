@@ -53,9 +53,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.model.Attachment
 import app.jackdaw.client.core.model.MailAccount
 
@@ -173,11 +170,11 @@ fun ComposeScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = JackdawBackgroundDark
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
-        containerColor = JackdawBackgroundDark,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
         Column(
@@ -299,7 +296,7 @@ fun ComposeScreen(
                             modifier = Modifier
                                 .padding(end = 8.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(JackdawSurfaceElevatedDark)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
                             Icon(

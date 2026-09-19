@@ -42,10 +42,6 @@ import androidx.compose.ui.unit.dp
 import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.JackdawAmberLight
-import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
-import app.jackdaw.client.core.designsystem.theme.JackdawBorderDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.FolderType
@@ -77,7 +73,7 @@ fun FolderDrawer(
         modifier = modifier
             .width(310.dp)
             .fillMaxHeight(),
-        drawerContainerColor = JackdawBackgroundDark
+        drawerContainerColor = MaterialTheme.colorScheme.background
     ) {
         Column(
             modifier = Modifier
@@ -89,7 +85,7 @@ fun FolderDrawer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(JackdawSurfaceElevatedDark)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -141,7 +137,7 @@ fun FolderDrawer(
 
                 // Expanded account list
                 if (isAccountsExpanded) {
-                    HorizontalDivider(color = JackdawBorderDark)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                     Column(modifier = Modifier.padding(8.dp)) {
                         accounts.forEach { account ->
                             val isCurrent = account.id == currentAccount.id
@@ -149,7 +145,7 @@ fun FolderDrawer(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isCurrent) JackdawSurfaceDark else Color.Transparent)
+                                    .background(if (isCurrent) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                                     .clickable {
                                         onSelectAccount(account)
                                         isAccountsExpanded = false
@@ -245,7 +241,7 @@ fun FolderDrawer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSlaSelected) JackdawSurfaceElevatedDark else Color.Transparent)
+                        .background(if (isSlaSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                         .clickable { onSelectFolder(slaFolder) }
                         .padding(horizontal = 12.dp, vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -302,7 +298,7 @@ fun FolderDrawer(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(
-                            if (isSelected) JackdawSurfaceElevatedDark else Color.Transparent
+                            if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
                         )
                         .clickable { onSelectFolder(folder) }
                         .padding(horizontal = 12.dp, vertical = 11.dp),
@@ -383,7 +379,7 @@ fun FolderDrawer(
                 modifier = Modifier
                     .padding(horizontal = 4.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(JackdawSurfaceDark)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable { onOpenSettings() }
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically

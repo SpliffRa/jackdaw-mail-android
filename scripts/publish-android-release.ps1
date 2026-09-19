@@ -46,11 +46,24 @@ try {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases/tags/$Tag" -Headers $headers -Method Get
     Write-Host "Found existing release $Tag (ID: $($release.id))" -ForegroundColor Green
 } catch {
-    Write-Host "Creating new GitHub Release $Tag..." -ForegroundColor Yellow
+    $releaseNotes = @"
+## Что нового в ${Tag}:
+- ✉️ **Кнопка ответа**: Убрана надпись «Выполнить SLA», теперь строго «Ответить».
+- 📱 **Компактный вид писем в стиле Outlook**:
+  - Карточки писем оптимизированы (компактные отступы, 1 строка превью, аватар 36dp).
+  - Динамический таймер дедлайна SLA 30 мин аккуратно встроен в нижний ряд чипов.
+- 📤 **Папка «Исходящие»**: Только неотправленные / в очереди / со сбоем письма.
+- ⚙️ **Компактные сгруппированные настройки**:
+  - Аккуратные карточки, компактный 3-позиционный выбор тем, быстрый доступ без долгого скроллинга.
+- ☀️ **Светлая тема**:
+  - Все экраны полностью поддерживают Светлую тему без остаточных черных контейнеров.
+- 🔔 **Звук уведомления «тихий чпок»**:
+  - Системные звуки отключены на каналах, воспроизводится мягкий тихий чпок с микро-вибрацией.
+"@
     $payload = @{
         tag_name = $Tag
         name = "Jackdaw Mail $Tag"
-        body = "Release $Tag for Jackdaw Mail Android"
+        body = $releaseNotes
         draft = $false
         prerelease = $false
     } | ConvertTo-Json

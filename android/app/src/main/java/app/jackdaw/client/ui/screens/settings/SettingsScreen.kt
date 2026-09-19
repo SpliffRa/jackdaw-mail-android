@@ -22,12 +22,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -41,15 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material.icons.rounded.DarkMode
-import androidx.compose.material.icons.rounded.LightMode
-import androidx.compose.material.icons.rounded.SettingsBrightness
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import app.jackdaw.client.core.designsystem.theme.ThemeMode
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -73,13 +66,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
-import app.jackdaw.client.core.designsystem.theme.JackdawBorderDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
+import app.jackdaw.client.core.designsystem.theme.ThemeMode
 import app.jackdaw.client.core.model.AccountProtocol
 import app.jackdaw.client.core.model.MailAccount
+import app.jackdaw.client.core.notification.SoundNotificationManager
 import app.jackdaw.client.core.update.AppUpdateInfo
 import app.jackdaw.client.core.update.UpdateManager
 import kotlinx.coroutines.launch
@@ -101,6 +92,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updateManager = remember { UpdateManager(context) }
+    val soundManager = remember { SoundNotificationManager.getInstance(context) }
 
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var accountToDelete by remember { mutableStateOf<MailAccount?>(null) }
@@ -110,6 +102,12 @@ fun SettingsScreen(
     var wifiOnlyEnabled by remember { mutableStateOf(false) }
     var slaAlertsEnabled by remember { mutableStateOf(true) }
 
+    // Sound settings
+    var incomingSound by remember { mutableStateOf(soundManager.isIncomingSoundEnabled) }
+    var sentSound by remember { mutableStateOf(soundManager.isSentSoundEnabled) }
+    var slaSound by remember { mutableStateOf(soundManager.isSlaSoundEnabled) }
+    var notificationsEnabled by remember { mutableStateOf(soundManager.isNotificationsEnabled) }
+
     // Update state
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var isDownloadingUpdate by remember { mutableStateOf(false) }
@@ -118,14 +116,16 @@ fun SettingsScreen(
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     var updateStatusMessage by remember { mutableStateOf<String?>(null) }
 
+    val dividerColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+
     Scaffold(
         topBar = {
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
                 title = {
                     Text(
-                        text = "Настройки и аккаунты",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = "Настройки",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -140,11 +140,11 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = JackdawBackgroundDark
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
-        containerColor = JackdawBackgroundDark,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
         Column(
@@ -152,149 +152,29 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
-            // SECTION 1: ACCOUNTS
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "УЧЕТНЫЕ ЗАПИСИ",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = JackdawAmber,
-                    fontWeight = FontWeight.Bold
-                )
-                Button(
-                    onClick = { showAddAccountDialog = true },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = JackdawSurfaceElevatedDark,
-                        contentColor = JackdawAmber
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Icon(imageVector = Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Добавить", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Account cards
-            accounts.forEach { account ->
-                val isCurrent = account.id == currentAccountId
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable(enabled = !isCurrent) { onSelectAccount(account) }
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color(account.avatarColorHex)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = account.displayName.firstOrNull()?.uppercase() ?: "A",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = account.displayName,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (isCurrent) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(JackdawAmber.copy(alpha = 0.2f))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "Активен",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = JackdawAmber,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = account.email,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(JackdawSurfaceElevatedDark)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = account.protocol.name,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        if (accounts.size > 1) {
-                            IconButton(onClick = { accountToDelete = account }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Delete,
-                                    contentDescription = "Удалить аккаунт",
-                                    tint = SlaUrgentRed.copy(alpha = 0.8f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // SECTION: APPEARANCE & THEME
+            // SECTION: THEME (Compact 3-way Segmented Control)
             Text(
-                text = "ОФОРМЛЕНИЕ И ТЕМА",
-                style = MaterialTheme.typography.labelMedium,
+                text = "ТЕМА ОФОРМЛЕНИЯ",
+                style = MaterialTheme.typography.labelSmall,
                 color = JackdawAmber,
                 fontWeight = FontWeight.Bold
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(8.dp)) {
-                    ThemeMode.values().forEachIndexed { index, mode ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    ThemeMode.values().forEach { mode ->
                         val isSelected = mode == currentThemeMode
                         val icon = when (mode) {
                             ThemeMode.SYSTEM -> Icons.Rounded.SettingsBrightness
@@ -302,81 +182,179 @@ fun SettingsScreen(
                             ThemeMode.LIGHT -> Icons.Rounded.LightMode
                         }
 
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) JackdawSurfaceElevatedDark else Color.Transparent)
+                                .background(
+                                    if (isSelected) JackdawAmber.copy(alpha = 0.22f) else Color.Transparent
+                                )
                                 .clickable { onThemeModeChange(mode) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = mode.title,
-                                tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = mode.title,
+                                    tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = mode.title,
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.labelMedium,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Text(
-                                    text = mode.description,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
                             }
-                            RadioButton(
-                                selected = isSelected,
-                                onClick = { onThemeModeChange(mode) },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = JackdawAmber,
-                                    unselectedColor = MaterialTheme.colorScheme.outline
-                                )
-                            )
-                        }
-
-                        if (index < ThemeMode.values().size - 1) {
-                            HorizontalDivider(
-                                color = JackdawBorderDark,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // SECTION 2: SYNCHRONIZATION & SLA
+            // SECTION: ACCOUNTS
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "УЧЕТНЫЕ ЗАПИСИ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = JackdawAmber,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(
+                    onClick = { showAddAccountDialog = true },
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Icon(imageVector = Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = JackdawAmber)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Добавить", style = MaterialTheme.typography.labelSmall, color = JackdawAmber, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    accounts.forEachIndexed { index, account ->
+                        val isCurrent = account.id == currentAccountId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isCurrent) { onSelectAccount(account) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(account.avatarColorHex)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = account.displayName.firstOrNull()?.uppercase() ?: "A",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = account.displayName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (isCurrent) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(JackdawAmber.copy(alpha = 0.2f))
+                                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = "Активен",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = JackdawAmber,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "${account.email} • ${account.protocol.name}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            if (accounts.size > 1) {
+                                IconButton(
+                                    onClick = { accountToDelete = account },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = "Удалить",
+                                        tint = SlaUrgentRed.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        if (index < accounts.size - 1) {
+                            HorizontalDivider(color = dividerColor, modifier = Modifier.padding(horizontal = 12.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // SECTION: SYNC & SLA
             Text(
                 text = "СИНХРОНИЗАЦИЯ И SLA",
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = JackdawAmber,
                 fontWeight = FontWeight.Bold
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Фоновая синхронизация", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Периодическая проверка WorkManager (каждые 15 мин)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Фоновая синхронизация", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Каждые 15 минут через WorkManager", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = backgroundSyncEnabled,
@@ -385,16 +363,18 @@ fun SettingsScreen(
                         )
                     }
 
-                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = dividerColor)
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Только по Wi-Fi", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Экономия мобильного интернет-трафика", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Только по Wi-Fi", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Экономия мобильного интернета", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = wifiOnlyEnabled,
@@ -403,16 +383,18 @@ fun SettingsScreen(
                         )
                     }
 
-                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = dividerColor)
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Контроль срока ответа (SLA)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Автоматический подсчет дедлайнов и цветовые метки", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Контроль SLA (30 минут)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Дедлайн ответа и цветовые маркеры", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = slaAlertsEnabled,
@@ -423,38 +405,33 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // SECTION 3: NOTIFICATIONS & SOUNDS (UUgsx Idea)
-            val soundManager = remember { app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(context) }
-            var incomingSound by remember { mutableStateOf(soundManager.isIncomingSoundEnabled) }
-            var sentSound by remember { mutableStateOf(soundManager.isSentSoundEnabled) }
-            var slaSound by remember { mutableStateOf(soundManager.isSlaSoundEnabled) }
-            var notificationsEnabled by remember { mutableStateOf(soundManager.isNotificationsEnabled) }
-
+            // SECTION: NOTIFICATIONS & SOUNDS
             Text(
                 text = "УВЕДОМЛЕНИЯ И ЗВУКИ",
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
                 color = JackdawAmber,
                 fontWeight = FontWeight.Bold
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Системные уведомления", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Push-уведомления в шторке Android при новых письмах", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Системные уведомления", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Push-уведомления в шторке Android", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = notificationsEnabled,
@@ -466,28 +443,25 @@ fun SettingsScreen(
                         )
                     }
 
-                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = dividerColor)
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Звук входящего письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Сигнал и вибрация при получении почты", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Входящее письмо (тихий чпок)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Мягкий сигнал и виброотклик", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { soundManager.playIncomingMailSound() },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = "Тест",
-                                    tint = JackdawAmber,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Прослушать", tint = JackdawAmber, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                             Switch(
@@ -501,28 +475,25 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = dividerColor)
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Звук отправки письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Приятный отклик об успешной отправке", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Звук отправки письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Тактильный отклик об отправке", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { soundManager.playSentMailSound() },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = "Тест",
-                                    tint = JackdawAmber,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Прослушать", tint = JackdawAmber, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                             Switch(
@@ -536,28 +507,25 @@ fun SettingsScreen(
                         }
                     }
 
-                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+                    HorizontalDivider(color = dividerColor)
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Звуковые алерты SLA", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Предупреждение при приближении 30-минутного дедлайна", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Звуковые алерты SLA", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Оповещение о дедлайне 30 мин", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = { soundManager.playSlaAlertSound() },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Refresh,
-                                    contentDescription = "Тест",
-                                    tint = SlaUrgentRed,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                Icon(Icons.Rounded.PlayArrow, contentDescription = "Прослушать", tint = SlaUrgentRed, modifier = Modifier.size(18.dp))
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                             Switch(
@@ -573,102 +541,47 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // SECTION 4: OTA UPDATES
+            // SECTION: ABOUT & UPDATES
             Text(
-                text = "ОБНОВЛЕНИЯ ПРИЛОЖЕНИЯ (OTA)",
-                style = MaterialTheme.typography.labelMedium,
+                text = "О ПРИЛОЖЕНИИ И ОБНОВЛЕНИЯ",
+                style = MaterialTheme.typography.labelSmall,
                 color = JackdawAmber,
                 fontWeight = FontWeight.Bold
             )
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(imageVector = Icons.Rounded.SystemUpdate, contentDescription = null, tint = JackdawAmber, modifier = Modifier.size(26.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text("Jackdaw Mail v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                                Text("Сборка: ${BuildConfig.VERSION_CODE} • SemVer Release", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF10B981).copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF10B981)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Release highlights summary
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(JackdawSurfaceElevatedDark)
-                            .padding(10.dp)
-                    ) {
                         Column {
                             Text(
-                                text = "Что нового в v${BuildConfig.VERSION_NAME}:",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "Jackdaw Mail v${BuildConfig.VERSION_NAME}",
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = JackdawAmber
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("• Уведомления и звуки (UUgsx): входящие, отправка и SLA алерты", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("• Исправлено автоисчезновение плашки «Письмо перемещено в корзину»", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("• SLA Дашборд четко отделен от папок, удаление отключено, окно строго 30 мин", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = "Сборка: ${BuildConfig.VERSION_CODE} • GitHub Release",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (updateStatusMessage != null) {
-                        Text(text = updateStatusMessage!!, style = MaterialTheme.typography.bodySmall, color = JackdawAmber)
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    if (isDownloadingUpdate) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text("Загрузка обновления: ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth(), color = JackdawAmber)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
                         Button(
                             onClick = {
                                 scope.launch {
                                     isCheckingUpdates = true
-                                    updateStatusMessage = "Проверка обновлений на GitHub..."
+                                    updateStatusMessage = "Проверка обновлений..."
                                     val result = updateManager.checkForUpdates()
                                     isCheckingUpdates = false
                                     result.onSuccess { info ->
@@ -676,71 +589,84 @@ fun SettingsScreen(
                                         if (info.isUpdateAvailable) {
                                             updateStatusMessage = "Доступна новая версия: ${info.versionName}"
                                         } else {
-                                            updateStatusMessage = info.releaseNotes.ifBlank { "Установлена актуальная версия (v${BuildConfig.VERSION_NAME})" }
+                                            updateStatusMessage = "Установлена актуальная версия"
                                         }
                                     }.onFailure { err ->
-                                        updateStatusMessage = "Ошибка проверки: ${err.message ?: "Сбой соединения"}"
+                                        updateStatusMessage = "Ошибка: ${err.message ?: "Сбой соединения"}"
                                     }
                                 }
                             },
                             enabled = !isCheckingUpdates && !isDownloadingUpdate,
-                            colors = ButtonDefaults.buttonColors(containerColor = JackdawSurfaceElevatedDark, contentColor = JackdawAmber),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = JackdawAmber
+                            ),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.height(34.dp)
                         ) {
                             if (isCheckingUpdates) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = JackdawAmber, strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Проверка...")
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = JackdawAmber, strokeWidth = 2.dp)
                             } else {
-                                Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Проверить")
+                                Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Проверить", style = MaterialTheme.typography.labelSmall)
                             }
                         }
+                    }
 
-                        if (downloadedApkFile != null) {
-                            Button(
-                                onClick = {
-                                    updateManager.installApk(downloadedApkFile!!)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = JackdawAmber, contentColor = Color.Black),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Установить", fontWeight = FontWeight.Bold)
-                            }
-                        } else if (updateInfo?.isUpdateAvailable == true) {
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        isDownloadingUpdate = true
-                                        val dlResult = updateManager.downloadUpdate(updateInfo!!.downloadUrl) { progress ->
-                                            downloadProgress = progress
-                                        }
-                                        isDownloadingUpdate = false
-                                        dlResult.onSuccess { file ->
-                                            downloadedApkFile = file
-                                            updateStatusMessage = "Пакет готов к установке"
-                                            updateManager.installApk(file)
-                                        }.onFailure {
-                                            updateStatusMessage = "Ошибка загрузки файла"
-                                        }
+                    if (updateStatusMessage != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(text = updateStatusMessage!!, style = MaterialTheme.typography.labelSmall, color = JackdawAmber)
+                    }
+
+                    if (isDownloadingUpdate) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Загрузка: ${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth(), color = JackdawAmber)
+                    }
+
+                    if (downloadedApkFile != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { updateManager.installApk(downloadedApkFile!!) },
+                            colors = ButtonDefaults.buttonColors(containerColor = JackdawAmber, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Text("Установить обновление", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        }
+                    } else if (updateInfo?.isUpdateAvailable == true) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isDownloadingUpdate = true
+                                    val dlResult = updateManager.downloadUpdate(updateInfo!!.downloadUrl) { progress ->
+                                        downloadProgress = progress
                                     }
-                                },
-                                enabled = !isDownloadingUpdate,
-                                colors = ButtonDefaults.buttonColors(containerColor = JackdawAmber, contentColor = Color.Black),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Скачать v${updateInfo!!.versionName}", fontWeight = FontWeight.Bold)
-                            }
+                                    isDownloadingUpdate = false
+                                    dlResult.onSuccess { file ->
+                                        downloadedApkFile = file
+                                        updateStatusMessage = "Пакет готов к установке"
+                                        updateManager.installApk(file)
+                                    }.onFailure {
+                                        updateStatusMessage = "Ошибка загрузки файла"
+                                    }
+                                }
+                            },
+                            enabled = !isDownloadingUpdate,
+                            colors = ButtonDefaults.buttonColors(containerColor = JackdawAmber, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(36.dp)
+                        ) {
+                            Text("Скачать v${updateInfo!!.versionName}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(30.dp))
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 
@@ -786,7 +712,7 @@ fun SettingsScreen(
                         Button(
                             onClick = { newProtocol = AccountProtocol.EXCHANGE_EWS },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (newProtocol == AccountProtocol.EXCHANGE_EWS) JackdawAmber else JackdawSurfaceElevatedDark,
+                                containerColor = if (newProtocol == AccountProtocol.EXCHANGE_EWS) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = if (newProtocol == AccountProtocol.EXCHANGE_EWS) Color.Black else MaterialTheme.colorScheme.onSurface
                             ),
                             shape = RoundedCornerShape(8.dp),
@@ -797,7 +723,7 @@ fun SettingsScreen(
                         Button(
                             onClick = { newProtocol = AccountProtocol.IMAP },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (newProtocol == AccountProtocol.IMAP) JackdawAmber else JackdawSurfaceElevatedDark,
+                                containerColor = if (newProtocol == AccountProtocol.IMAP) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = if (newProtocol == AccountProtocol.IMAP) Color.Black else MaterialTheme.colorScheme.onSurface
                             ),
                             shape = RoundedCornerShape(8.dp),
@@ -836,7 +762,7 @@ fun SettingsScreen(
                     Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            containerColor = JackdawSurfaceDark
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 
@@ -869,7 +795,7 @@ fun SettingsScreen(
                     Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            containerColor = JackdawSurfaceDark
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 }

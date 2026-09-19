@@ -38,8 +38,8 @@ class NotificationHelper(private val context: Context) {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Уведомления о поступлении новых входящих писем"
-                enableVibration(true)
-                setSound(defaultSoundUri, audioAttributes)
+                enableVibration(false)
+                setSound(null, null)
             }
 
             // 2. SLA Alerts Channel
@@ -50,7 +50,7 @@ class NotificationHelper(private val context: Context) {
             ).apply {
                 description = "Критические оповещения об истечении 30-минутного регламента ответа"
                 enableVibration(true)
-                setSound(defaultSoundUri, audioAttributes)
+                setSound(null, null)
             }
 
             notificationManager.createNotificationChannel(incomingChannel)

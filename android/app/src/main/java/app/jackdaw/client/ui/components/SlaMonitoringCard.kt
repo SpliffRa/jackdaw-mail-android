@@ -33,8 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
@@ -78,7 +76,7 @@ fun SlaMonitoringCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (!email.isRead) JackdawSurfaceElevatedDark else JackdawSurfaceDark
+            containerColor = if (!email.isRead) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
         )
     ) {
         Column(

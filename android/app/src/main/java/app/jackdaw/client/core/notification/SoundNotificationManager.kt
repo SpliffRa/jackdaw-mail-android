@@ -2,8 +2,10 @@ package app.jackdaw.client.core.notification
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.AudioManager
-import android.media.RingtoneManager
 import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
@@ -44,19 +46,56 @@ class SoundNotificationManager(private val context: Context) {
     fun playIncomingMailSound() {
         if (!isIncomingSoundEnabled) return
         try {
-            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val ringtone = RingtoneManager.getRingtone(context, uri)
-            if (ringtone != null) {
-                ringtone.play()
-            } else {
-                toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
+            val sampleRate = 44100
+            val durationMs = 38
+            val numSamples = (sampleRate * durationMs) / 1000
+            val buffer = ShortArray(numSamples)
+            for (i in 0 until numSamples) {
+                val progress = i.toDouble() / numSamples
+                // Pop effect: frequency sweeps down from 520Hz to 160Hz with fast exponential damping
+                val freq = 520.0 - 360.0 * progress
+                val t = i.toDouble() / sampleRate
+                val envelope = Math.exp(-7.5 * progress) * Math.sin(Math.PI * Math.min(1.0, progress * 6.0))
+                val sample = (Math.sin(2.0 * Math.PI * freq * t) * envelope * 8500).toInt()
+                buffer[i] = sample.toShort()
             }
+
+            val audioTrack = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(sampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(buffer.size * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+
+            audioTrack.write(buffer, 0, buffer.size)
+            audioTrack.setNotificationMarkerPosition(buffer.size)
+            audioTrack.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+                override fun onPeriodicNotification(track: AudioTrack?) {}
+                override fun onMarkerReached(track: AudioTrack?) {
+                    try {
+                        track?.stop()
+                        track?.release()
+                    } catch (_: Exception) {}
+                }
+            })
+            audioTrack.play()
         } catch (_: Exception) {
             try {
-                toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 180)
+                toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 70)
             } catch (_: Exception) {}
         }
-        vibrate(shortVibe)
+        vibrate(subtleVibe)
     }
 
     fun playSentMailSound() {

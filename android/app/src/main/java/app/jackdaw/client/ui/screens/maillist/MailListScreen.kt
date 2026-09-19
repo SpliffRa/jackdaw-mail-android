@@ -65,9 +65,6 @@ import app.jackdaw.client.core.util.DateGrouping
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
@@ -197,8 +194,8 @@ fun MailListScreen(
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = JackdawAmber,
                                 unfocusedBorderColor = Color.Transparent,
-                                focusedContainerColor = JackdawSurfaceElevatedDark,
-                                unfocusedContainerColor = JackdawSurfaceElevatedDark
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
                             ),
                             shape = RoundedCornerShape(24.dp),
                             modifier = Modifier.fillMaxWidth().height(48.dp)
@@ -295,7 +292,7 @@ fun MailListScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = JackdawBackgroundDark
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
@@ -324,7 +321,7 @@ fun MailListScreen(
                 }
             }
         },
-        containerColor = JackdawBackgroundDark,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
         Column(
@@ -337,7 +334,7 @@ fun MailListScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp),
-                    colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Row(
@@ -478,7 +475,7 @@ fun MailListScreen(
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = JackdawAmber,
                                 selectedLabelColor = Color.Black,
-                                containerColor = JackdawSurfaceElevatedDark,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                 labelColor = MaterialTheme.colorScheme.onSurface
                             ),
                             border = null,
@@ -558,7 +555,7 @@ fun MailListScreen(
         val email = emailToDeletePending!!
         AlertDialog(
             onDismissRequest = { emailToDeletePending = null },
-            containerColor = JackdawSurfaceElevatedDark,
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Text(
                     text = "Удалить письмо?",
@@ -602,7 +599,7 @@ fun MailListScreen(
     if (showEmptyTrashDialog) {
         AlertDialog(
             onDismissRequest = { showEmptyTrashDialog = false },
-            containerColor = JackdawSurfaceElevatedDark,
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Text(
                     text = "Очистить корзину?",
@@ -652,7 +649,7 @@ private fun SlaStatusPill(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(20.dp),
-        color = if (isSelected) accentColor.copy(alpha = 0.22f) else JackdawSurfaceElevatedDark,
+        color = if (isSelected) accentColor.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
             color = if (isSelected) accentColor else Color.White.copy(alpha = 0.08f)

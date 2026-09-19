@@ -64,8 +64,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
@@ -152,13 +150,13 @@ fun MailDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = JackdawBackgroundDark
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         },
         bottomBar = {
             Surface(
-                color = JackdawSurfaceElevatedDark,
+                color = MaterialTheme.colorScheme.surface,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -183,7 +181,7 @@ fun MailDetailScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (email.slaInfo != null) "Выполнить SLA (Ответить)" else "Ответить",
+                            text = "Ответить",
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -205,7 +203,7 @@ fun MailDetailScreen(
                 }
             }
         },
-        containerColor = JackdawBackgroundDark,
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
         Column(
@@ -448,7 +446,7 @@ fun MailDetailScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { openAttachment(context, attachment) },
-                            colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(
@@ -527,7 +525,7 @@ fun MailDetailScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable { isExpanded = !isExpanded },
-                            colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark)
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(
@@ -597,7 +595,7 @@ fun MailDetailScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
@@ -624,7 +622,7 @@ fun MailDetailScreen(
     if (showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            containerColor = JackdawSurfaceElevatedDark,
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Text(
                     text = "Удалить письмо?",

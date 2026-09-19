@@ -46,16 +46,6 @@ import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.runtime.remember
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawBorderDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceDark
-import app.jackdaw.client.core.designsystem.theme.JackdawSurfaceElevatedDark
-import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
-import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
-import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
-import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
-import app.jackdaw.client.core.designsystem.theme.SlaWarningAmber
-import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerDark
-import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.core.model.EmailMessage
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,25 +65,29 @@ fun EmailCard(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (!email.isRead) JackdawSurfaceElevatedDark else JackdawSurfaceDark
+            containerColor = if (!email.isRead) {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (!email.isRead) 2.dp else 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.Top
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             // Unread accent indicator / Avatar with dot
             Box(
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(36.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(
                             if (!email.isRead) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant
@@ -112,7 +106,7 @@ fun EmailCard(
                 if (!email.isRead) {
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(9.dp)
                             .align(Alignment.TopEnd)
                             .clip(CircleShape)
                             .background(JackdawAmber)
@@ -120,7 +114,7 @@ fun EmailCard(
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(
                 modifier = Modifier
@@ -139,14 +133,14 @@ fun EmailCard(
                             Box(
                                 modifier = Modifier
                                     .padding(end = 6.dp)
-                                    .size(7.dp)
+                                    .size(6.dp)
                                     .clip(CircleShape)
                                     .background(JackdawAmber)
                             )
                         }
                         Text(
                             text = email.senderName,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = if (!email.isRead) FontWeight.Bold else FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -160,7 +154,7 @@ fun EmailCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(1.dp))
 
                 Text(
                     text = email.subject,
@@ -171,31 +165,24 @@ fun EmailCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(3.dp))
-
                 Text(
                     text = email.snippet,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 18.sp
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                // 30-min SLA countdown timer under email in Inbox
-                SlaDeadlineTimer(
-                    email = email,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
+                Spacer(modifier = Modifier.height(4.dp))
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Bottom chips row (attachments, related emails thread count)
+                // Bottom chips row (SLA pill, attachments, related emails thread count, delivery status, star)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // Inline compact SLA pill (e.g. 🕒 SLA: 25 мин)
+                    SlaBadge(email = email)
 
                     if (email.hasAttachments) {
                         Row(
@@ -203,15 +190,15 @@ fun EmailCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.AttachFile,
                                 contentDescription = "Вложения",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(13.dp)
+                                modifier = Modifier.size(12.dp)
                             )
-                            Spacer(modifier = Modifier.width(3.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
                             Text(
                                 text = "${email.attachments.size}",
                                 style = MaterialTheme.typography.labelSmall,
@@ -226,15 +213,15 @@ fun EmailCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Forum,
                                 contentDescription = "Связанная цепочка",
                                 tint = JackdawAmber,
-                                modifier = Modifier.size(13.dp)
+                                modifier = Modifier.size(12.dp)
                             )
-                            Spacer(modifier = Modifier.width(3.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
                             Text(
                                 text = "${email.relatedEmailsCount + 1}",
                                 style = MaterialTheme.typography.labelSmall,
@@ -258,7 +245,7 @@ fun EmailCard(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(statusBg)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = statusText,
@@ -273,13 +260,13 @@ fun EmailCard(
 
                     IconButton(
                         onClick = { onToggleStar(!email.isStarred) },
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     ) {
                         Icon(
                             imageVector = if (email.isStarred) Icons.Rounded.Star else Icons.Rounded.StarOutline,
                             contentDescription = "Избранное",
                             tint = if (email.isStarred) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -317,7 +304,7 @@ fun SwipeableEmailCard(
 
     SwipeToDismissBox(
         state = dismissState,
-        modifier = modifier.clip(RoundedCornerShape(12.dp)),
+        modifier = modifier.clip(RoundedCornerShape(8.dp)),
         backgroundContent = {
             val direction = dismissState.dismissDirection
             val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
@@ -377,98 +364,6 @@ fun SwipeableEmailCard(
             )
         }
     )
-}
-
-private data class SlaTimerUi(
-    val bgColor: Color,
-    val textColor: Color,
-    val text: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
-)
-
-@Composable
-fun SlaDeadlineTimer(email: EmailMessage, modifier: Modifier = Modifier) {
-    val sla = email.slaInfo
-    // If explicitly marked NONE, SLA was completed/fulfilled
-    if (sla?.severity == SlaSeverity.NONE) return
-    // Only show if email has SLA or is incoming in inbox (not sent, not trash, not drafts)
-    val isIncomingInbox = email.folderId.contains("inbox", ignoreCase = true)
-    if (sla == null && !isIncomingInbox) return
-
-    val now = remember { System.currentTimeMillis() }
-    val deadline = if (sla != null && sla.deadlineTimestamp > 0L) {
-        sla.deadlineTimestamp
-    } else {
-        email.timestamp + 30 * 60 * 1000L
-    }
-    val remainingMs = deadline - now
-    val deadlineTime = remember(deadline) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(deadline))
-    }
-
-    val timerUi = when {
-        remainingMs <= 0 -> {
-            val overdueMins = (Math.abs(remainingMs) / (60 * 1000L)).coerceAtLeast(1)
-            SlaTimerUi(
-                bgColor = SlaUrgentContainerDark,
-                textColor = SlaUrgentRed,
-                text = "Регламент ответа (30 мин) просрочен на $overdueMins мин",
-                icon = Icons.Rounded.WarningAmber
-            )
-        }
-        remainingMs <= 10 * 60 * 1000L -> {
-            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
-            SlaTimerUi(
-                bgColor = SlaUrgentContainerDark,
-                textColor = SlaUrgentRed,
-                text = "Срочно: до конца ответа осталось $mins мин (до $deadlineTime)",
-                icon = Icons.Rounded.WarningAmber
-            )
-        }
-        remainingMs <= 20 * 60 * 1000L -> {
-            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
-            SlaTimerUi(
-                bgColor = SlaWarningContainerDark,
-                textColor = SlaWarningAmber,
-                text = "Внимание: до конца ответа осталось $mins мин (до $deadlineTime)",
-                icon = Icons.Rounded.AccessTime
-            )
-        }
-        else -> {
-            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
-            SlaTimerUi(
-                bgColor = SlaGoodContainerDark,
-                textColor = SlaGoodGreen,
-                text = "SLA 30 мин: до конца ответа осталось $mins мин (до $deadlineTime)",
-                icon = Icons.Rounded.AccessTime
-            )
-        }
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(timerUi.bgColor)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Icon(
-            imageVector = timerUi.icon,
-            contentDescription = null,
-            tint = timerUi.textColor,
-            modifier = Modifier.size(14.dp)
-        )
-        Text(
-            text = timerUi.text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = timerUi.textColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }
 
 
