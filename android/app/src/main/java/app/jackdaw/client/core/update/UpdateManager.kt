@@ -40,8 +40,8 @@ class UpdateManager(private val context: Context) {
 
     suspend fun checkForUpdates(): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
         try {
-            // Attempt to query GitHub Releases API for Uugsx/jackdaw-mail
-            val apiUrl = "https://api.github.com/repos/Uugsx/jackdaw-mail/releases/latest"
+            // Attempt to query GitHub Releases API for SpliffRa/jackdaw-mail-android
+            val apiUrl = "https://api.github.com/repos/SpliffRa/jackdaw-mail-android/releases/latest"
             val url = URL(apiUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 4000
@@ -51,7 +51,7 @@ class UpdateManager(private val context: Context) {
             }
 
             var latestTag = "v1.1"
-            var body = "Стабильная версия Jackdaw Mail v1.1 с обновленной системой настроек и поддержкой вложений."
+            var body = "Стабильная версия Jackdaw Mail v1.1 с поддержкой динамического подсчета непрочитанных и улучшенными свайпами."
             var apkUrl = ""
             var apkSize = 17304888L
 
@@ -86,7 +86,7 @@ class UpdateManager(private val context: Context) {
                 versionName = cleanTag,
                 versionCode = 2,
                 releaseNotes = body,
-                downloadUrl = apkUrl.ifBlank { "https://github.com/Uugsx/jackdaw-mail/releases/latest" },
+                downloadUrl = apkUrl.ifBlank { "https://github.com/SpliffRa/jackdaw-mail-android/releases/latest" },
                 sizeBytes = apkSize,
                 isUpdateAvailable = isAvailable
             )
