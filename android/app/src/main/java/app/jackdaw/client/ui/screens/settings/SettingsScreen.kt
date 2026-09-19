@@ -46,6 +46,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import app.jackdaw.client.core.signature.SignatureManager
+import app.jackdaw.client.core.readstatus.ReadStatusManager
+import app.jackdaw.client.core.readstatus.MarkAsReadMode
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -57,6 +61,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -123,6 +128,11 @@ fun SettingsScreen(
     var signatureText by remember(currentAccountObj.id) {
         mutableStateOf(signatureManager.getSignature(currentAccountObj))
     }
+
+    // Read status settings (Outlook style)
+    val readStatusManager = remember { ReadStatusManager.getInstance(context) }
+    var currentMarkAsReadMode by remember { mutableStateOf(readStatusManager.mode) }
+    var markAsReadDelay by remember { mutableIntStateOf(readStatusManager.delaySeconds) }
 
     // Update state
     var isCheckingUpdates by remember { mutableStateOf(false) }
@@ -760,10 +770,117 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            "В ответах шаблон подгружается над строкой «-----Исходное сообщение-----» по стандарту Outlook.",
+                            "Подпись размещается внизу ваших сообщений без лишних цитат и заголовков.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // SECTION: MARK AS READ (OUTLOOK STYLE)
+            Text(
+                text = "ПОМЕТКА ПРОЧИТАННЫХ ПИСЕМ (КАК В OUTLOOK)",
+                style = MaterialTheme.typography.labelSmall,
+                color = JackdawAmber,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    MarkAsReadMode.entries.forEachIndexed { index, mode ->
+                        val isSelected = currentMarkAsReadMode == mode
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    currentMarkAsReadMode = mode
+                                    readStatusManager.mode = mode
+                                    Toast.makeText(context, "Режим: ${mode.title}", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    currentMarkAsReadMode = mode
+                                    readStatusManager.mode = mode
+                                    Toast.makeText(context, "Режим: ${mode.title}", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = JackdawAmber,
+                                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = mode.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (mode == MarkAsReadMode.AFTER_DELAY && isSelected) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 34.dp, end = 8.dp, bottom = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Задержка перед пометкой:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        "$markAsReadDelay сек",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = JackdawAmber
+                                    )
+                                }
+                                Slider(
+                                    value = markAsReadDelay.toFloat(),
+                                    onValueChange = {
+                                        markAsReadDelay = it.toInt()
+                                        readStatusManager.delaySeconds = it.toInt()
+                                    },
+                                    valueRange = 1f..15f,
+                                    steps = 13,
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = JackdawAmber,
+                                        activeTrackColor = JackdawAmber,
+                                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        if (index < MarkAsReadMode.entries.size - 1) {
+                            HorizontalDivider(color = dividerColor)
+                        }
                     }
                 }
             }

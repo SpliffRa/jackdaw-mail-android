@@ -113,6 +113,13 @@ fun MailDetailScreen(
     val context = LocalContext.current
     val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru"))
     val formattedDate = dateFormat.format(Date(email.timestamp))
+    val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
+    androidx.compose.runtime.LaunchedEffect(email.id) {
+        if (!email.isRead && readStatusManager.mode == app.jackdaw.client.core.readstatus.MarkAsReadMode.AFTER_DELAY) {
+            kotlinx.coroutines.delay(readStatusManager.delaySeconds * 1000L)
+            onToggleRead(true)
+        }
+    }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     Scaffold(

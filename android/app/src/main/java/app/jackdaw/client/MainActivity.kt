@@ -107,6 +107,8 @@ fun JackdawMainApp(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -219,7 +221,9 @@ fun JackdawMainApp(
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     onEmailClick = { clickedEmail ->
-                        viewModel.markAsRead(clickedEmail.id, true)
+                        if (readStatusManager.mode == app.jackdaw.client.core.readstatus.MarkAsReadMode.IMMEDIATELY) {
+                            viewModel.markAsRead(clickedEmail.id, true)
+                        }
                         navController.navigate(Screen.MailDetail.createRoute(clickedEmail.id))
                     },
                     onComposeClick = {

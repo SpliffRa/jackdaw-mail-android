@@ -214,7 +214,7 @@ fun ComposeScreen(
                                     },
                                     onClick = {
                                         val rendered = signatureManager.resolveTemplate(template.pattern, currentAccount)
-                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, rendered)
+                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, rendered, currentAccount)
                                         showSignatureMenu = false
                                         Toast.makeText(context, "Подгружен шаблон: «${template.name}»", Toast.LENGTH_SHORT).show()
                                     }
@@ -232,7 +232,7 @@ fun ComposeScreen(
                                 onClick = {
                                     val sig = signatureManager.getSignature(currentAccount)
                                     if (sig.isNotBlank()) {
-                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, sig)
+                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, sig, currentAccount)
                                         Toast.makeText(context, "Подгружена сохраненная подпись", Toast.LENGTH_SHORT).show()
                                     }
                                     showSignatureMenu = false
@@ -247,12 +247,7 @@ fun ComposeScreen(
                                     )
                                 },
                                 onClick = {
-                                    if (bodyText.contains(SignatureManager.OUTLOOK_QUOTE_SEPARATOR)) {
-                                        val parts = bodyText.split(SignatureManager.OUTLOOK_QUOTE_SEPARATOR, limit = 2)
-                                        bodyText = "\n\n${SignatureManager.OUTLOOK_QUOTE_SEPARATOR}${parts.getOrNull(1) ?: ""}"
-                                    } else {
-                                        bodyText = ""
-                                    }
+                                    bodyText = signatureManager.removeSignature(bodyText, currentAccount)
                                     showSignatureMenu = false
                                     Toast.makeText(context, "Подпись удалена из сообщения", Toast.LENGTH_SHORT).show()
                                 }

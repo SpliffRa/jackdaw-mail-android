@@ -4,9 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.MailAccount
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 data class SignatureTemplate(
     val id: String,
@@ -31,7 +28,7 @@ class SignatureManager(private val context: Context) {
 
     fun getSelectedTemplateId(account: MailAccount): String {
         val key = KEY_TEMPLATE_ID_PREFIX + account.id
-        return prefs.getString(key, TEMPLATE_OUTLOOK_CORPORATE) ?: TEMPLATE_OUTLOOK_CORPORATE
+        return prefs.getString(key, TEMPLATE_REPLY_PROVIDED) ?: TEMPLATE_REPLY_PROVIDED
     }
 
     fun setSelectedTemplateId(account: MailAccount, templateId: String) {
@@ -51,8 +48,6 @@ class SignatureManager(private val context: Context) {
 
     /**
      * Retrieves the active signature text for the given account.
-     * If user explicitly edited the text, returns saved text (with resolved variables).
-     * Otherwise returns resolved selected template.
      */
     fun getSignature(account: MailAccount): String {
         val customKey = KEY_SIGNATURE_TEXT_PREFIX + account.id
@@ -83,115 +78,109 @@ class SignatureManager(private val context: Context) {
     }
 
     fun resetToOutlookTemplate(account: MailAccount): String {
-        return applyTemplate(account, TEMPLATE_OUTLOOK_CORPORATE)
+        return applyTemplate(account, TEMPLATE_REPLY_PROVIDED)
     }
 
     fun getDefaultOutlookTemplate(account: MailAccount): String {
-        return resolveTemplate(PRESET_TEMPLATES.first { it.id == TEMPLATE_OUTLOOK_CORPORATE }.pattern, account)
+        return resolveTemplate(PRESET_TEMPLATES.first { it.id == TEMPLATE_REPLY_PROVIDED }.pattern, account)
     }
 
     /**
-     * Injects or replaces signature in an email body while respecting Outlook quote format.
+     * Injects or cleanly replaces the signature at the bottom of the email body.
+     * No quoting headers or separator clutters.
      */
-    fun injectOrReplaceSignature(currentBody: String, newSignature: String): String {
-        if (!currentBody.contains(OUTLOOK_QUOTE_SEPARATOR)) {
-            // New email or plain body
-            val trimmed = currentBody.trimEnd()
-            return if (trimmed.isBlank()) {
-                newSignature
-            } else {
-                "$trimmed\n\n$newSignature"
+    fun injectOrReplaceSignature(
+        currentBody: String,
+        newSignature: String,
+        currentAccount: MailAccount? = null
+    ): String {
+        var text = currentBody.trimEnd()
+
+        // Strip previous signature at the bottom if present
+        val existingSignatures = mutableListOf<String>()
+        if (currentAccount != null) {
+            existingSignatures.add(getSignature(currentAccount).trim())
+            for (tmpl in PRESET_TEMPLATES) {
+                existingSignatures.add(resolveTemplate(tmpl.pattern, currentAccount).trim())
+            }
+        }
+        for (tmpl in PRESET_TEMPLATES) {
+            existingSignatures.add(tmpl.pattern.trim())
+        }
+
+        for (existing in existingSignatures) {
+            if (existing.isNotBlank() && text.endsWith(existing)) {
+                text = text.substring(0, text.length - existing.length).trimEnd()
+                break
             }
         }
 
-        // Email with quoted reply
-        val parts = currentBody.split(OUTLOOK_QUOTE_SEPARATOR, limit = 2)
-        val userContent = parts[0].trimEnd()
-        val quoteContent = parts.getOrNull(1) ?: ""
-
-        val updatedUserPart = if (userContent.isBlank()) {
-            newSignature
+        return if (text.isBlank()) {
+            if (newSignature.isNotBlank()) "\n\n\n$newSignature" else ""
         } else {
-            "$userContent\n\n$newSignature"
-        }
-
-        return buildString {
-            append(updatedUserPart)
-            append("\n\n")
-            append(OUTLOOK_QUOTE_SEPARATOR)
-            append(quoteContent)
+            if (newSignature.isNotBlank()) "$text\n\n$newSignature" else text
         }
     }
 
+    fun removeSignature(currentBody: String, currentAccount: MailAccount): String {
+        return injectOrReplaceSignature(currentBody, "", currentAccount)
+    }
+
     /**
-     * Constructs the standard Outlook reply body:
-     * 1. Signature (if enabled)
-     * 2. Outlook standard separator: -----Исходное сообщение-----
-     * 3. Header block (От, Отправлено, Кому, Тема)
-     * 4. Original email body
+     * Constructs reply body: clean space for user's reply, with the signature placed at the bottom.
+     * No '-----Исходное сообщение-----' quote block.
      */
     fun buildReplyBody(account: MailAccount, replyToEmail: EmailMessage, templateText: String? = null): String {
         val signature = templateText ?: (if (isSignatureEnabled) getSignature(account) else "")
-        val dateFormat = SimpleDateFormat("d MMMM yyyy г. HH:mm", Locale("ru"))
-        val sentDateStr = dateFormat.format(Date(replyToEmail.timestamp))
-
-        return buildString {
-            if (signature.isNotBlank()) {
-                append("\n\n")
-                append(signature)
-                append("\n\n")
-            } else {
-                append("\n\n")
-            }
-            append(OUTLOOK_QUOTE_SEPARATOR)
-            append("\n")
-            append("От: ${replyToEmail.senderName.ifBlank { replyToEmail.senderEmail }} <${replyToEmail.senderEmail}>\n")
-            append("Отправлено: $sentDateStr\n")
-            if (replyToEmail.toRecipients.isNotEmpty()) {
-                append("Кому: ${replyToEmail.toRecipients.joinToString(", ")}\n")
-            }
-            append("Тема: ${replyToEmail.subject}\n\n")
-            append(replyToEmail.bodyText)
+        return if (signature.isNotBlank()) {
+            "\n\n\n$signature"
+        } else {
+            ""
         }
     }
 
     fun buildNewEmailBody(account: MailAccount, templateText: String? = null): String {
         if (!isSignatureEnabled && templateText == null) return ""
         val signature = templateText ?: getSignature(account)
-        return if (signature.isNotBlank()) "\n\n$signature" else ""
+        return if (signature.isNotBlank()) "\n\n\n$signature" else ""
     }
 
     companion object {
-        const val OUTLOOK_QUOTE_SEPARATOR = "-----Исходное сообщение-----"
-
-        const val TEMPLATE_OUTLOOK_MOBILE = "outlook_mobile"
+        const val TEMPLATE_REPLY_PROVIDED = "template_reply_provided"
         const val TEMPLATE_OUTLOOK_BUSINESS = "outlook_business"
+        const val TEMPLATE_OUTLOOK_MOBILE = "outlook_mobile"
         const val TEMPLATE_OUTLOOK_CORPORATE = "outlook_corporate"
         const val TEMPLATE_OUTLOOK_SHORT = "outlook_short"
 
         val PRESET_TEMPLATES = listOf(
             SignatureTemplate(
-                id = TEMPLATE_OUTLOOK_MOBILE,
-                name = "Outlook для Android",
-                description = "Мобильный стандарт Microsoft",
-                pattern = "Отправлено из Outlook для Android"
+                id = TEMPLATE_REPLY_PROVIDED,
+                name = "Ответ предоставил",
+                description = "Ответ предоставил(а): {name} <{email}>",
+                pattern = "Ответ предоставил(а): {name} <{email}>"
             ),
             SignatureTemplate(
                 id = TEMPLATE_OUTLOOK_BUSINESS,
-                name = "Деловой Outlook",
-                description = "С уважением, Имя и адрес почты",
+                name = "Деловой ответ",
+                description = "С уважением, {name}",
                 pattern = "С уважением,\n{name}\n{email}"
             ),
             SignatureTemplate(
+                id = TEMPLATE_OUTLOOK_MOBILE,
+                name = "Outlook для Android",
+                description = "Классическая мобильная строка",
+                pattern = "Отправлено из Outlook для Android"
+            ),
+            SignatureTemplate(
                 id = TEMPLATE_OUTLOOK_CORPORATE,
-                name = "Корпоративный Outlook",
-                description = "Деловая подпись с указанием клиента",
+                name = "Корпоративная",
+                description = "С уважением, {name} • Jackdaw Mail",
                 pattern = "С уважением,\n{name}\n{email}\nJackdaw Mail для Android"
             ),
             SignatureTemplate(
                 id = TEMPLATE_OUTLOOK_SHORT,
-                name = "Краткий шаблон",
-                description = "Компактная строка в одну строку",
+                name = "Краткая",
+                description = "Имя и email в одну строку",
                 pattern = "{name} • {email}"
             )
         )

@@ -214,6 +214,7 @@ class MailViewModel(
             if (replyToEmailId != null) {
                 // Immediately fulfill SLA on the original incoming email
                 repository.markSlaCompleted(replyToEmailId)
+                repository.markAsRead(replyToEmailId, true)
                 try {
                     val repliedEmail = repository.getEmailById(replyToEmailId).firstOrNull()
                     val parentThreadId = repliedEmail?.threadId
