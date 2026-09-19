@@ -62,6 +62,10 @@ class SoundNotificationManager(private val context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, value).apply()
 
+    var soundVolume: Float
+        get() = prefs.getFloat(KEY_SOUND_VOLUME, 0.85f)
+        set(value) = prefs.edit().putFloat(KEY_SOUND_VOLUME, value.coerceIn(0.05f, 1.0f)).apply()
+
     @Volatile
     private var lastSoundTimestamp = 0L
 
@@ -71,7 +75,7 @@ class SoundNotificationManager(private val context: Context) {
         if (now - lastSoundTimestamp < 250L) return
         lastSoundTimestamp = now
 
-        playSound(volume = 0.9f, rate = 1.0f)
+        playSound(volume = soundVolume, rate = 1.0f)
         vibrate(subtleVibe)
     }
 
@@ -81,7 +85,7 @@ class SoundNotificationManager(private val context: Context) {
         if (now - lastSoundTimestamp < 250L) return
         lastSoundTimestamp = now
 
-        playSound(volume = 0.65f, rate = 1.25f)
+        playSound(volume = (soundVolume * 0.75f).coerceIn(0.05f, 1.0f), rate = 1.25f)
         vibrate(subtleVibe)
     }
 
@@ -91,8 +95,12 @@ class SoundNotificationManager(private val context: Context) {
         if (now - lastSoundTimestamp < 300L) return
         lastSoundTimestamp = now
 
-        playSound(volume = 1.0f, rate = 0.9f)
+        playSound(volume = (soundVolume * 1.1f).coerceIn(0.05f, 1.0f), rate = 0.9f)
         vibrate(urgentVibe)
+    }
+
+    fun playPreviewSound(volume: Float = soundVolume) {
+        playSound(volume = volume.coerceIn(0.05f, 1.0f), rate = 1.0f)
     }
 
     private fun playSound(volume: Float, rate: Float) {
@@ -140,6 +148,7 @@ class SoundNotificationManager(private val context: Context) {
         private const val KEY_SENT_SOUND = "sent_sound_enabled"
         private const val KEY_SLA_SOUND = "sla_sound_enabled"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+        private const val KEY_SOUND_VOLUME = "notification_sound_volume"
 
         private val subtleVibe = longArrayOf(0, 30)
         private val shortVibe = longArrayOf(0, 50, 40, 60)

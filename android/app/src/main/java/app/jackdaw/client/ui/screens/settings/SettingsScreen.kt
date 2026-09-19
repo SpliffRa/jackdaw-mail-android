@@ -43,6 +43,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -107,6 +109,7 @@ fun SettingsScreen(
     var sentSound by remember { mutableStateOf(soundManager.isSentSoundEnabled) }
     var slaSound by remember { mutableStateOf(soundManager.isSlaSoundEnabled) }
     var notificationsEnabled by remember { mutableStateOf(soundManager.isNotificationsEnabled) }
+    var soundVolume by remember { mutableFloatStateOf(soundManager.soundVolume) }
 
     // Update state
     var isCheckingUpdates by remember { mutableStateOf(false) }
@@ -473,6 +476,49 @@ fun SettingsScreen(
                                 colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
                             )
                         }
+                    }
+
+                    // Регулятор громкости уведомлений
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Громкость звука уведомлений",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "${(soundVolume * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = JackdawAmber
+                            )
+                        }
+                        Slider(
+                            value = soundVolume,
+                            onValueChange = {
+                                soundVolume = it
+                                soundManager.soundVolume = it
+                            },
+                            onValueChangeFinished = {
+                                soundManager.playPreviewSound(soundVolume)
+                            },
+                            valueRange = 0.05f..1.0f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = JackdawAmber,
+                                activeTrackColor = JackdawAmber,
+                                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
 
                     HorizontalDivider(color = dividerColor)
