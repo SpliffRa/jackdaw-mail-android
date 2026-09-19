@@ -125,6 +125,13 @@ class MailViewModel(
             _lastSyncTimestamp.value = System.currentTimeMillis()
 
             val msg = if (result.isSuccess) {
+                if (result.newMessagesCount > 0) {
+                    try {
+                        app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
+                            app.jackdaw.client.JackdawApp.instance
+                        ).playIncomingMailSound()
+                    } catch (_: Exception) {}
+                }
                 when {
                     result.newMessagesCount > 0 && result.sentMessagesCount > 0 ->
                         "Синхронизировано: +${result.newMessagesCount} новых, ${result.sentMessagesCount} отправлено"
@@ -201,6 +208,11 @@ class MailViewModel(
         )
         viewModelScope.launch {
             repository.queueEmailForSending(newEmail)
+            try {
+                app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
+                    app.jackdaw.client.JackdawApp.instance
+                ).playSentMailSound()
+            } catch (_: Exception) {}
             // Trigger sync to attempt sending immediately
             triggerSync()
         }

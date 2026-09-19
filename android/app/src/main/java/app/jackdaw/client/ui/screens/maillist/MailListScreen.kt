@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.NotificationImportant
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -90,7 +91,6 @@ import androidx.compose.material.icons.rounded.Sync
 
 enum class MailFilter(val label: String) {
     ALL("Все"),
-    SLA_URGENT("SLA контроль"),
     UNREAD("Непрочитанные"),
     ATTACHMENTS("С файлами"),
     STARRED("Избранное")
@@ -121,6 +121,7 @@ fun MailListScreen(
     onSwipeArchive: (EmailMessage) -> Unit = {},
     onSwipeDelete: (EmailMessage) -> Unit = {},
     onEmptyTrash: () -> Unit = {},
+    onNavigateToSlaDashboard: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
@@ -166,7 +167,6 @@ fun MailListScreen(
         emails.filter { email ->
             when (selectedFilter) {
                 MailFilter.ALL -> true
-                MailFilter.SLA_URGENT -> email.slaInfo?.severity in listOf(SlaSeverity.URGENT, SlaSeverity.WARNING, SlaSeverity.BREACHED)
                 MailFilter.UNREAD -> !email.isRead
                 MailFilter.ATTACHMENTS -> email.hasAttachments
                 MailFilter.STARRED -> email.isStarred
@@ -463,6 +463,43 @@ fun MailListScreen(
                     }
                 }
             } else {
+                // Quick jump to SLA Monitoring Dashboard if items require attention
+                if (slaUrgentCount > 0 || slaWarningCount > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (slaUrgentCount > 0) SlaUrgentContainerDark else SlaWarningContainerDark)
+                            .clickable { onNavigateToSlaDashboard() }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.NotificationImportant,
+                                contentDescription = null,
+                                tint = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (slaUrgentCount > 0) "SLA Мониторинг: $slaUrgentCount срочных дедлайнов!" else "SLA Мониторинг: $slaWarningCount на контроле",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber
+                            )
+                        }
+                        Text(
+                            text = "Открыть дашборд ❯",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (slaUrgentCount > 0) SlaUrgentRed else SlaWarningAmber
+                        )
+                    }
+                }
+
                 // Standard Mail filter chips
                 LazyRow(
                     modifier = Modifier

@@ -22,6 +22,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import app.jackdaw.client.core.designsystem.theme.JackdawTheme
 import app.jackdaw.client.data.local.JackdawDatabase
 import app.jackdaw.client.data.repository.OfflineFirstMailRepository
@@ -35,9 +40,20 @@ import app.jackdaw.client.ui.viewmodel.MailViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
 
         val database = JackdawDatabase.getInstance(applicationContext)
         val repository = OfflineFirstMailRepository(database)
@@ -124,7 +140,9 @@ fun JackdawMainApp(
                         scope.launch {
                             val result = snackbarHostState.showSnackbar(
                                 message = "Письмо архивировано",
-                                actionLabel = "Отменить"
+                                actionLabel = "Отменить",
+                                withDismissAction = true,
+                                duration = androidx.compose.material3.SnackbarDuration.Short
                             )
                             if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                                 viewModel.restoreEmail(emailToArchive.id, originalFolder)
@@ -137,7 +155,9 @@ fun JackdawMainApp(
                         scope.launch {
                             val result = snackbarHostState.showSnackbar(
                                 message = "Письмо перемещено в корзину",
-                                actionLabel = "Отменить"
+                                actionLabel = "Отменить",
+                                withDismissAction = true,
+                                duration = androidx.compose.material3.SnackbarDuration.Short
                             )
                             if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                                 viewModel.restoreEmail(emailToDelete.id, originalFolder)
@@ -147,8 +167,17 @@ fun JackdawMainApp(
                     onEmptyTrash = {
                         viewModel.emptyTrash {
                             scope.launch {
-                                snackbarHostState.showSnackbar("Корзина очищена")
+                                snackbarHostState.showSnackbar(
+                                    message = "Корзина очищена",
+                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                )
                             }
+                        }
+                    },
+                    onNavigateToSlaDashboard = {
+                        val sla = folders.firstOrNull { it.type == app.jackdaw.client.core.model.FolderType.SLA_ALERTS }
+                        if (sla != null) {
+                            viewModel.selectFolder(sla)
                         }
                     },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },

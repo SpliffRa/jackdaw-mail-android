@@ -342,7 +342,157 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // SECTION 3: OTA UPDATES
+            // SECTION 3: NOTIFICATIONS & SOUNDS (UUgsx Idea)
+            val soundManager = remember { app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(context) }
+            var incomingSound by remember { mutableStateOf(soundManager.isIncomingSoundEnabled) }
+            var sentSound by remember { mutableStateOf(soundManager.isSentSoundEnabled) }
+            var slaSound by remember { mutableStateOf(soundManager.isSlaSoundEnabled) }
+            var notificationsEnabled by remember { mutableStateOf(soundManager.isNotificationsEnabled) }
+
+            Text(
+                text = "УВЕДОМЛЕНИЯ И ЗВУКИ",
+                style = MaterialTheme.typography.labelMedium,
+                color = JackdawAmber,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Системные уведомления", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Push-уведомления в шторке Android при новых письмах", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = notificationsEnabled,
+                            onCheckedChange = {
+                                notificationsEnabled = it
+                                soundManager.isNotificationsEnabled = it
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                        )
+                    }
+
+                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Звук входящего письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Сигнал и вибрация при получении почты", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { soundManager.playIncomingMailSound() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Тест",
+                                    tint = JackdawAmber,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Switch(
+                                checked = incomingSound,
+                                onCheckedChange = {
+                                    incomingSound = it
+                                    soundManager.isIncomingSoundEnabled = it
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Звук отправки письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Приятный отклик об успешной отправке", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { soundManager.playSentMailSound() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Тест",
+                                    tint = JackdawAmber,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Switch(
+                                checked = sentSound,
+                                onCheckedChange = {
+                                    sentSound = it
+                                    soundManager.isSentSoundEnabled = it
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = JackdawBorderDark, modifier = Modifier.padding(vertical = 12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Звуковые алерты SLA", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Предупреждение при приближении 30-минутного дедлайна", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { soundManager.playSlaAlertSound() },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Refresh,
+                                    contentDescription = "Тест",
+                                    tint = SlaUrgentRed,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Switch(
+                                checked = slaSound,
+                                onCheckedChange = {
+                                    slaSound = it
+                                    soundManager.isSlaSoundEnabled = it
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // SECTION 4: OTA UPDATES
             Text(
                 text = "ОБНОВЛЕНИЯ ПРИЛОЖЕНИЯ (OTA)",
                 style = MaterialTheme.typography.labelMedium,
@@ -405,9 +555,9 @@ fun SettingsScreen(
                                 color = JackdawAmber
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("• Мониторинг SLA: строгий 30-мин дедлайн ответа", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("• В корзине: кнопка полной очистки с диалогом", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("• Исправлены открытие и передача вложений", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• Уведомления и звуки (UUgsx): входящие, отправка и SLA алерты", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• Исправлено автоисчезновение плашки «Письмо перемещено в корзину»", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("• SLA Дашборд четко отделен от папок, удаление отключено, окно строго 30 мин", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 

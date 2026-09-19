@@ -292,25 +292,27 @@ class OfflineFirstMailRepository(
             val now = System.currentTimeMillis()
             val allEmails = emailDao.getAllEmails(accountId).first()
             for (item in allEmails) {
-                if (item.slaDeadlineTimestamp > 0L) {
-                    val remainingMs = item.slaDeadlineTimestamp - now
+                if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE) {
+                    // Strictly enforce 30-minute SLA window from receipt timestamp
+                    val effectiveDeadline = minOf(item.slaDeadlineTimestamp, item.timestamp + 30 * 60 * 1000L)
+                    val remainingMs = effectiveDeadline - now
                     val (newSeverity, newLabel) = when {
                         remainingMs <= 0 -> SlaSeverity.BREACHED to "Просрочено"
                         remainingMs <= 10 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
                             SlaSeverity.URGENT to "$mins мин"
                         }
                         remainingMs <= 20 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
                             SlaSeverity.WARNING to "$mins мин"
                         }
                         else -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
                             SlaSeverity.NORMAL to "$mins мин"
                         }
                     }
-                    if (newSeverity != item.slaSeverity || newLabel != item.slaRemainingLabel) {
-                        emailDao.updateSlaInfo(item.id, newSeverity, item.slaDeadlineTimestamp, newLabel)
+                    if (newSeverity != item.slaSeverity || newLabel != item.slaRemainingLabel || effectiveDeadline != item.slaDeadlineTimestamp) {
+                        emailDao.updateSlaInfo(item.id, newSeverity, effectiveDeadline, newLabel)
                     }
                 }
             }

@@ -66,4 +66,7 @@ interface EmailDao {
 
     @Query("SELECT * FROM emails WHERE slaSeverity = 'URGENT' OR slaSeverity = 'WARNING'")
     suspend fun getUrgentSlaEmails(): List<EmailEntity>
+
+    @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecentEmails(accountId: String, limit: Int): List<EmailEntity>
 }
