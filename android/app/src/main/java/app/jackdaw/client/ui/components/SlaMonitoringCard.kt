@@ -32,13 +32,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.luminance
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerLight
 import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerLight
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
 import app.jackdaw.client.core.designsystem.theme.SlaWarningAmber
 import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerLight
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.SlaSeverity
 import java.text.SimpleDateFormat
@@ -55,11 +59,24 @@ fun SlaMonitoringCard(
     val sla = email.slaInfo
     val severity = sla?.severity ?: SlaSeverity.NORMAL
 
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
     val (statusColor, statusBg, statusDotColor) = when (severity) {
-        SlaSeverity.BREACHED -> Triple(SlaUrgentRed, SlaUrgentContainerDark, SlaUrgentRed)
-        SlaSeverity.URGENT -> Triple(SlaUrgentRed, SlaUrgentContainerDark, SlaUrgentRed)
-        SlaSeverity.WARNING -> Triple(SlaWarningAmber, SlaWarningContainerDark, SlaWarningAmber)
-        SlaSeverity.NORMAL -> Triple(SlaGoodGreen, SlaGoodContainerDark, SlaGoodGreen)
+        SlaSeverity.BREACHED, SlaSeverity.URGENT -> Triple(
+            if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
+            if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+            if (isDark) SlaUrgentRed else Color(0xFFDC2626)
+        )
+        SlaSeverity.WARNING -> Triple(
+            if (isDark) SlaWarningAmber else Color(0xFFB45309),
+            if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
+            if (isDark) SlaWarningAmber else Color(0xFFD97706)
+        )
+        SlaSeverity.NORMAL -> Triple(
+            if (isDark) SlaGoodGreen else Color(0xFF047857),
+            if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
+            if (isDark) SlaGoodGreen else Color(0xFF16A34A)
+        )
         SlaSeverity.NONE -> Triple(Color.Gray, MaterialTheme.colorScheme.surfaceVariant, Color.Gray)
     }
 

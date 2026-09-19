@@ -35,6 +35,7 @@ interface MailRepository {
     suspend fun moveToArchive(emailId: String)
     suspend fun unarchiveEmail(emailId: String)
     suspend fun moveToTrash(emailId: String)
+    suspend fun permanentlyDeleteEmail(emailId: String)
     suspend fun emptyTrash(accountId: String, folderId: String)
     suspend fun markSlaCompleted(emailId: String)
     suspend fun restoreEmail(emailId: String, originalFolderId: String)
@@ -205,6 +206,11 @@ class OfflineFirstMailRepository(
             else -> "trash"
         }
         emailDao.updateFolder(emailId, targetFolder)
+    }
+
+    override suspend fun permanentlyDeleteEmail(emailId: String) {
+        attachmentDao.deleteAttachmentsForEmail(emailId)
+        emailDao.deleteEmail(emailId)
     }
 
     override suspend fun emptyTrash(accountId: String, folderId: String) {

@@ -553,12 +553,13 @@ fun MailListScreen(
 
     if (emailToDeletePending != null) {
         val email = emailToDeletePending!!
+        val isInTrash = isTrashFolder || email.folderId.contains("trash", ignoreCase = true)
         AlertDialog(
             onDismissRequest = { emailToDeletePending = null },
             containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Text(
-                    text = "Удалить письмо?",
+                    text = if (isInTrash) "Удалить навсегда?" else "Удалить письмо?",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -566,7 +567,11 @@ fun MailListScreen(
             },
             text = {
                 Text(
-                    text = "Вы действительно хотите переместить письмо «${email.subject}» в корзину?",
+                    text = if (isInTrash) {
+                        "Письмо «${email.subject}» будет удалено навсегда без возможности восстановления."
+                    } else {
+                        "Вы действительно хотите переместить письмо «${email.subject}» в корзину?"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -583,7 +588,7 @@ fun MailListScreen(
                         contentColor = Color.White
                     )
                 ) {
-                    Text("Удалить", fontWeight = FontWeight.Bold)
+                    Text(if (isInTrash) "Удалить навсегда" else "Удалить", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

@@ -182,16 +182,27 @@ fun JackdawMainApp(
                     },
                     onSwipeDelete = { emailToDelete ->
                         val originalFolder = emailToDelete.folderId
-                        viewModel.moveToTrash(emailToDelete.id)
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Письмо перемещено в корзину",
-                                actionLabel = "Отменить",
-                                withDismissAction = true,
-                                duration = androidx.compose.material3.SnackbarDuration.Short
-                            )
-                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                viewModel.restoreEmail(emailToDelete.id, originalFolder)
+                        val isInTrash = originalFolder.contains("trash", ignoreCase = true)
+                        if (isInTrash) {
+                            viewModel.permanentlyDeleteEmail(emailToDelete.id)
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = "Письмо удалено навсегда",
+                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                )
+                            }
+                        } else {
+                            viewModel.moveToTrash(emailToDelete.id)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "Письмо перемещено в корзину",
+                                    actionLabel = "Отменить",
+                                    withDismissAction = true,
+                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                )
+                                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                    viewModel.restoreEmail(emailToDelete.id, originalFolder)
+                                }
                             }
                         }
                     },
@@ -250,8 +261,14 @@ fun JackdawMainApp(
                             navController.navigate(Screen.Compose.createRoute(replyToEmail.id))
                         },
                         onDelete = { toDelete ->
-                            viewModel.moveToTrash(toDelete.id)
-                            onToast("Письмо перемещено в корзину")
+                            val isInTrash = toDelete.folderId.contains("trash", ignoreCase = true)
+                            if (isInTrash) {
+                                viewModel.permanentlyDeleteEmail(toDelete.id)
+                                onToast("Письмо удалено навсегда")
+                            } else {
+                                viewModel.moveToTrash(toDelete.id)
+                                onToast("Письмо перемещено в корзину")
+                            }
                             navController.popBackStack()
                         },
                         onArchive = { toArchive ->

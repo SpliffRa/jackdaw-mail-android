@@ -63,13 +63,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.luminance
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerLight
 import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaUrgentContainerLight
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
 import app.jackdaw.client.core.designsystem.theme.SlaWarningAmber
 import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerDark
+import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerLight
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.ui.components.SlaBadge
@@ -84,6 +88,13 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class SlaPanelVisuals(
+    val label: String,
+    val color: Color,
+    val bg: Color,
+    val textColor: Color
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -213,152 +224,6 @@ fun MailDetailScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // SLA monitoring executive panel if applicable
-            email.slaInfo?.let { sla ->
-                val isBreached = sla.severity == SlaSeverity.BREACHED
-                val isUrgent = sla.severity == SlaSeverity.URGENT || isBreached
-                val isWarning = sla.severity == SlaSeverity.WARNING
-
-                val (statusLabel, statusColor, statusBg) = when {
-                    isBreached -> Triple("ПРОСРОЧЕНО (РЕГЛАМЕНТ НАРУШЕН)", SlaUrgentRed, SlaUrgentContainerDark)
-                    isUrgent -> Triple("КРИТИЧЕСКИЙ СРОК SLA", SlaUrgentRed, SlaUrgentContainerDark)
-                    isWarning -> Triple("ТРЕБУЕТ ВНИМАНИЯ (СКОРО ДЕДЛАЙН)", SlaWarningAmber, SlaWarningContainerDark)
-                    else -> Triple("В РЕГЛАМЕНТЕ (ПОД КОНТРОЛЕМ)", SlaGoodGreen, SlaGoodContainerDark)
-                }
-
-                val deadlineFormatted = if (sla.deadlineTimestamp > 0) {
-                    SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru")).format(Date(sla.deadlineTimestamp))
-                } else {
-                    "Срок не определен"
-                }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = statusBg),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.2.dp, statusColor.copy(alpha = 0.5f))
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (isUrgent) Icons.Rounded.WarningAmber else Icons.Rounded.AccessTime,
-                                    contentDescription = null,
-                                    tint = statusColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "МОНИТОРИНГ SLA",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Black,
-                                    color = statusColor,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(statusColor.copy(alpha = 0.2f))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AccessTime,
-                                    contentDescription = null,
-                                    tint = statusColor,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = sla.remainingLabel,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = statusColor
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = statusLabel,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        HorizontalDivider(
-                            color = statusColor.copy(alpha = 0.25f),
-                            thickness = 1.dp
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Регламент ответа: ",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "30 минут с момента получения",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Крайний дедлайн: ",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = deadlineFormatted,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Контрагент: ",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "${email.senderName} (${email.senderEmail})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            Text(
-                                text = "Для соблюдения регламента необходимо направить ответ контрагенту в течение 30 минут с момента получения письма.",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                                lineHeight = 14.sp
-                            )
-                        }
-                    }
-                }
-            }
-
             // Email Subject
             Text(
                 text = email.subject,
@@ -428,6 +293,174 @@ fun MailDetailScreen(
                 color = MaterialTheme.colorScheme.onSurface,
                 lineHeight = 24.sp
             )
+
+            // SLA monitoring executive panel below email body
+            email.slaInfo?.let { sla ->
+                val isBreached = sla.severity == SlaSeverity.BREACHED
+                val isUrgent = sla.severity == SlaSeverity.URGENT || isBreached
+                val isWarning = sla.severity == SlaSeverity.WARNING
+
+                val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+                val (statusLabel, statusColor, statusBg, statusTextColor) = when {
+                    isBreached -> SlaPanelVisuals(
+                        "ПРОСРОЧЕНО (РЕГЛАМЕНТ НАРУШЕН)",
+                        if (isDark) SlaUrgentRed else Color(0xFFDC2626),
+                        if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                        if (isDark) SlaUrgentRed else Color(0xFFB91C1C)
+                    )
+                    isUrgent -> SlaPanelVisuals(
+                        "КРИТИЧЕСКИЙ СРОК SLA",
+                        if (isDark) SlaUrgentRed else Color(0xFFDC2626),
+                        if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                        if (isDark) SlaUrgentRed else Color(0xFFB91C1C)
+                    )
+                    isWarning -> SlaPanelVisuals(
+                        "ТРЕБУЕТ ВНИМАНИЯ (СКОРО ДЕДЛАЙН)",
+                        if (isDark) SlaWarningAmber else Color(0xFFD97706),
+                        if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
+                        if (isDark) SlaWarningAmber else Color(0xFFB45309)
+                    )
+                    else -> SlaPanelVisuals(
+                        "В РЕГЛАМЕНТЕ (ПОД КОНТРОЛЕМ)",
+                        if (isDark) SlaGoodGreen else Color(0xFF16A34A),
+                        if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
+                        if (isDark) SlaGoodGreen else Color(0xFF047857)
+                    )
+                }
+
+                val deadlineFormatted = if (sla.deadlineTimestamp > 0) {
+                    SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru")).format(Date(sla.deadlineTimestamp))
+                } else {
+                    "Срок не определен"
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = statusBg),
+                    shape = RoundedCornerShape(14.dp),
+                    border = BorderStroke(1.2.dp, statusColor.copy(alpha = if (isDark) 0.5f else 0.35f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isUrgent) Icons.Rounded.WarningAmber else Icons.Rounded.AccessTime,
+                                    contentDescription = null,
+                                    tint = statusTextColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "МОНИТОРИНГ SLA",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = statusTextColor,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(statusTextColor.copy(alpha = if (isDark) 0.2f else 0.12f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.AccessTime,
+                                    contentDescription = null,
+                                    tint = statusTextColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = sla.remainingLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = statusTextColor
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = statusLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = statusTextColor
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        HorizontalDivider(
+                            color = statusColor.copy(alpha = if (isDark) 0.25f else 0.18f),
+                            thickness = 1.dp
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Регламент ответа: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "30 минут с момента получения",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Крайний дедлайн: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = deadlineFormatted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Контрагент: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${email.senderName} (${email.senderEmail})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Text(
+                                text = "Для соблюдения регламента необходимо направить ответ контрагенту в течение 30 минут с момента получения письма.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
 
             // Attachments
             if (email.attachments.isNotEmpty()) {
@@ -619,13 +652,14 @@ fun MailDetailScreen(
         }
     }
 
+    val isInTrash = email.folderId.contains("trash", ignoreCase = true)
     if (showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Text(
-                    text = "Удалить письмо?",
+                    text = if (isInTrash) "Удалить навсегда?" else "Удалить письмо?",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -633,7 +667,11 @@ fun MailDetailScreen(
             },
             text = {
                 Text(
-                    text = "Вы действительно хотите переместить письмо «${email.subject}» в корзину?",
+                    text = if (isInTrash) {
+                        "Письмо «${email.subject}» будет удалено навсегда без возможности восстановления."
+                    } else {
+                        "Вы действительно хотите переместить письмо «${email.subject}» в корзину?"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -649,7 +687,7 @@ fun MailDetailScreen(
                         contentColor = Color.White
                     )
                 ) {
-                    Text("Удалить", fontWeight = FontWeight.Bold)
+                    Text(if (isInTrash) "Удалить навсегда" else "Удалить", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

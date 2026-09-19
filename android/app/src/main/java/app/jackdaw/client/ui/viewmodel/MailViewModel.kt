@@ -181,6 +181,12 @@ class MailViewModel(
         }
     }
 
+    fun permanentlyDeleteEmail(emailId: String) {
+        viewModelScope.launch {
+            repository.permanentlyDeleteEmail(emailId)
+        }
+    }
+
     fun restoreEmail(emailId: String, originalFolderId: String) {
         viewModelScope.launch {
             repository.restoreEmail(emailId, originalFolderId)

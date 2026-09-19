@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
@@ -347,15 +348,20 @@ fun SwipeableEmailCard(
                         )
                     }
                 } else {
+                    val isInTrash = email.folderId.contains("trash", ignoreCase = true)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
                     ) {
-                        Text("Удалить", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (isInTrash) "Удалить навсегда" else "Удалить",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = "Удалить",
+                            imageVector = if (isInTrash) Icons.Rounded.DeleteForever else Icons.Rounded.Delete,
+                            contentDescription = if (isInTrash) "Удалить навсегда" else "Удалить",
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
