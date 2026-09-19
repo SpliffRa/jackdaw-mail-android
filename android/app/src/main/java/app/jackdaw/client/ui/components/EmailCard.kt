@@ -37,9 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,18 +65,30 @@ fun EmailCard(
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val formattedTime = timeFormat.format(Date(email.timestamp))
 
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    // 100% opaque solid card background so swipe background never bleeds through
+    val cardBgColor = if (isDark) {
+        if (!email.isRead) Color(0xFF19202A) else Color(0xFF131820)
+    } else {
+        if (!email.isRead) Color(0xFFFFFFFF) else Color(0xFFFAFAFB)
+    }
+
+    val cardBorder = if (!email.isRead) {
+        BorderStroke(1.2.dp, JackdawAmber.copy(alpha = 0.55f))
+    } else {
+        BorderStroke(1.dp, if (isDark) Color(0xFF222B36) else Color(0xFFE2E8F0))
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (!email.isRead) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
+            containerColor = cardBgColor
         ),
+        border = cardBorder,
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
@@ -311,60 +325,65 @@ fun SwipeableEmailCard(
         modifier = modifier.clip(RoundedCornerShape(8.dp)),
         backgroundContent = {
             val direction = dismissState.dismissDirection
-            val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
-            val color = when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> if (isInArchive) Color(0xFF3B82F6) else Color(0xFF10B981) // Blue for unarchive, Emerald Green for archive
-                SwipeToDismissBoxValue.EndToStart -> Color(0xFFEF4444) // Red
-                SwipeToDismissBoxValue.Settled -> Color.Transparent
-            }
-
-            val progress = dismissState.progress
-            val iconScale = (0.75f + progress * 0.4f).coerceIn(0.75f, 1.15f)
-            val bgAlpha = (progress * 1.5f).coerceIn(0.35f, 1f)
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(color.copy(alpha = bgAlpha))
-                    .padding(horizontal = 24.dp),
-                contentAlignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
-            ) {
-                if (isStartToEnd) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                    ) {
-                        Icon(
-                            imageVector = if (isInArchive) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
-                            contentDescription = if (isInArchive) "Из архива" else "В архив",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isInArchive) "Из архива" else "В архив",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+            if (direction == SwipeToDismissBoxValue.Settled) {
+                // When settled (not swiping), render completely empty container so no text/icons ever bleed through
+                Box(modifier = Modifier.fillMaxSize())
+            } else {
+                val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
+                val color = if (isStartToEnd) {
+                    if (isInArchive) Color(0xFF3B82F6) else Color(0xFF10B981)
                 } else {
-                    val isInTrash = email.folderId.contains("trash", ignoreCase = true)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                    ) {
-                        Text(
-                            text = if (isInTrash) "Удалить навсегда" else "Удалить",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            imageVector = if (isInTrash) Icons.Rounded.DeleteForever else Icons.Rounded.Delete,
-                            contentDescription = if (isInTrash) "Удалить навсегда" else "Удалить",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
+                    Color(0xFFEF4444)
+                }
+
+                val progress = dismissState.progress
+                val iconScale = (0.75f + progress * 0.4f).coerceIn(0.75f, 1.15f)
+                val bgAlpha = (progress * 1.5f).coerceIn(0.35f, 1f)
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(color.copy(alpha = bgAlpha))
+                        .padding(horizontal = 24.dp),
+                    contentAlignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                ) {
+                    if (isStartToEnd) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                        ) {
+                            Icon(
+                                imageVector = if (isInArchive) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                                contentDescription = if (isInArchive) "Из архива" else "В архив",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isInArchive) "Из архива" else "В архив",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        val isInTrash = email.folderId.contains("trash", ignoreCase = true)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                        ) {
+                            Text(
+                                text = if (isInTrash) "Удалить навсегда" else "Удалить",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = if (isInTrash) Icons.Rounded.DeleteForever else Icons.Rounded.Delete,
+                                contentDescription = if (isInTrash) "Удалить навсегда" else "Удалить",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }
