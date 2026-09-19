@@ -33,6 +33,7 @@ interface MailRepository {
     suspend fun markAsRead(emailId: String, isRead: Boolean)
     suspend fun toggleStar(emailId: String, isStarred: Boolean)
     suspend fun moveToArchive(emailId: String)
+    suspend fun unarchiveEmail(emailId: String)
     suspend fun moveToTrash(emailId: String)
     suspend fun emptyTrash(accountId: String, folderId: String)
     suspend fun markSlaCompleted(emailId: String)
@@ -182,6 +183,16 @@ class OfflineFirstMailRepository(
             email?.accountId == "acc_secondary" -> "sec_archive"
             email?.accountId != null && email.accountId != "acc_primary" -> "${email.accountId}_archive"
             else -> "archive"
+        }
+        emailDao.updateFolder(emailId, targetFolder)
+    }
+
+    override suspend fun unarchiveEmail(emailId: String) {
+        val email = emailDao.getEmailById(emailId).first()
+        val targetFolder = when {
+            email?.accountId == "acc_secondary" -> "sec_inbox"
+            email?.accountId != null && email.accountId != "acc_primary" -> "${email.accountId}_inbox"
+            else -> "inbox"
         }
         emailDao.updateFolder(emailId, targetFolder)
     }

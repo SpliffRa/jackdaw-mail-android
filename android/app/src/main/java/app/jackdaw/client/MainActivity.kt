@@ -151,16 +151,32 @@ fun JackdawMainApp(
                     },
                     onSwipeArchive = { emailToArchive ->
                         val originalFolder = emailToArchive.folderId
-                        viewModel.moveToArchive(emailToArchive.id)
-                        scope.launch {
-                            val result = snackbarHostState.showSnackbar(
-                                message = "Письмо архивировано",
-                                actionLabel = "Отменить",
-                                withDismissAction = true,
-                                duration = androidx.compose.material3.SnackbarDuration.Short
-                            )
-                            if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
-                                viewModel.restoreEmail(emailToArchive.id, originalFolder)
+                        val isInArchive = originalFolder.contains("archive", ignoreCase = true)
+                        if (isInArchive) {
+                            viewModel.unarchiveEmail(emailToArchive.id)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "Письмо возвращено во входящие",
+                                    actionLabel = "Отменить",
+                                    withDismissAction = true,
+                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                )
+                                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                    viewModel.moveToArchive(emailToArchive.id)
+                                }
+                            }
+                        } else {
+                            viewModel.moveToArchive(emailToArchive.id)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "Письмо архивировано",
+                                    actionLabel = "Отменить",
+                                    withDismissAction = true,
+                                    duration = androidx.compose.material3.SnackbarDuration.Short
+                                )
+                                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                    viewModel.restoreEmail(emailToArchive.id, originalFolder)
+                                }
                             }
                         }
                     },

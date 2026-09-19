@@ -169,6 +169,12 @@ class MailViewModel(
         }
     }
 
+    fun unarchiveEmail(emailId: String) {
+        viewModelScope.launch {
+            repository.unarchiveEmail(emailId)
+        }
+    }
+
     fun moveToTrash(emailId: String) {
         viewModelScope.launch {
             repository.moveToTrash(emailId)

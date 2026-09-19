@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Unarchive
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Forum
@@ -302,6 +303,8 @@ fun SwipeableEmailCard(
         }
     )
 
+    val isInArchive = email.folderId.contains("archive", ignoreCase = true)
+
     SwipeToDismissBox(
         state = dismissState,
         modifier = modifier.clip(RoundedCornerShape(8.dp)),
@@ -309,7 +312,7 @@ fun SwipeableEmailCard(
             val direction = dismissState.dismissDirection
             val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
             val color = when (direction) {
-                SwipeToDismissBoxValue.StartToEnd -> Color(0xFF10B981) // Emerald Green
+                SwipeToDismissBoxValue.StartToEnd -> if (isInArchive) Color(0xFF3B82F6) else Color(0xFF10B981) // Blue for unarchive, Emerald Green for archive
                 SwipeToDismissBoxValue.EndToStart -> Color(0xFFEF4444) // Red
                 SwipeToDismissBoxValue.Settled -> Color.Transparent
             }
@@ -331,13 +334,17 @@ fun SwipeableEmailCard(
                         modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Archive,
-                            contentDescription = "Архив",
+                            imageVector = if (isInArchive) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                            contentDescription = if (isInArchive) "Из архива" else "В архив",
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("В архив", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = if (isInArchive) "Из архива" else "В архив",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 } else {
                     Row(
