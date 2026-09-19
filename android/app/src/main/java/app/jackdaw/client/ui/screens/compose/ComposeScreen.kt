@@ -83,7 +83,6 @@ fun ComposeScreen(
     var subjectText by remember(initialSubject) { mutableStateOf(initialSubject) }
     var bodyText by remember(initialBody) { mutableStateOf(initialBody) }
     var attachments by remember { mutableStateOf<List<Attachment>>(emptyList()) }
-    var showSignatureMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(initialTo) {
         if (toText.isBlank() && initialTo.isNotBlank()) toText = initialTo
@@ -169,92 +168,6 @@ fun ComposeScreen(
                     }
                 },
                 actions = {
-                    // Signature Template Menu
-                    Box {
-                        IconButton(onClick = { showSignatureMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Rounded.EditNote,
-                                contentDescription = "Шаблоны подписи",
-                                tint = JackdawAmber
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showSignatureMenu,
-                            onDismissRequest = { showSignatureMenu = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "ПОДГРУЗИТЬ ШАБЛОН",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = JackdawAmber
-                                    )
-                                },
-                                onClick = {},
-                                enabled = false
-                            )
-                            signatureManager.getTemplates().forEach { template ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(
-                                                text = template.name,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = template.description,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        val rendered = signatureManager.resolveTemplate(template.pattern, currentAccount)
-                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, rendered, currentAccount)
-                                        showSignatureMenu = false
-                                        Toast.makeText(context, "Подгружен шаблон: «${template.name}»", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "Моя подпись из настроек",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = {
-                                    val sig = signatureManager.getSignature(currentAccount)
-                                    if (sig.isNotBlank()) {
-                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, sig, currentAccount)
-                                        Toast.makeText(context, "Подгружена сохраненная подпись", Toast.LENGTH_SHORT).show()
-                                    }
-                                    showSignatureMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "Очистить подпись",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                },
-                                onClick = {
-                                    bodyText = signatureManager.removeSignature(bodyText, currentAccount)
-                                    showSignatureMenu = false
-                                    Toast.makeText(context, "Подпись удалена из сообщения", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                        }
-                    }
-
                     // Attach File Button
                     IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                         Icon(
@@ -396,36 +309,6 @@ fun ComposeScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-            // Signature template indicator & switch action
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Подпись: ${signatureManager.getTemplateById(signatureManager.getSelectedTemplateId(currentAccount))?.name ?: "Outlook"}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(
-                    onClick = { showSignatureMenu = true },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                    modifier = Modifier.height(26.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SwapHoriz,
-                        contentDescription = null,
-                        modifier = Modifier.size(13.dp),
-                        tint = JackdawAmber
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Сменить шаблон", fontSize = 11.sp, color = JackdawAmber, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
             // Attachments list (if any selected)
             if (attachments.isNotEmpty()) {
