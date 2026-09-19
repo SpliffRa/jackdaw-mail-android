@@ -224,62 +224,7 @@ fun FolderDrawer(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            val slaFolder = folders.firstOrNull { it.type == FolderType.SLA_ALERTS }
             val regularFolders = folders.filter { it.type != FolderType.SLA_ALERTS }
-
-            if (slaFolder != null) {
-                Text(
-                    text = "МОНИТОРИНГ И ДАШБОРДЫ",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = JackdawAmber,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-
-                val isSlaSelected = slaFolder.id == selectedFolderId
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSlaSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                        .clickable { onSelectFolder(slaFolder) }
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.NotificationImportant,
-                        contentDescription = "SLA Мониторинг",
-                        tint = SlaUrgentRed,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text(
-                        text = "SLA Мониторинг",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isSlaSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSlaSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (slaFolder.unreadCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SlaUrgentRed)
-                                .padding(horizontal = 7.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${slaFolder.unreadCount} на контроле",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-            }
 
             Text(
                 text = "ПОЧТОВЫЕ ПАПКИ",

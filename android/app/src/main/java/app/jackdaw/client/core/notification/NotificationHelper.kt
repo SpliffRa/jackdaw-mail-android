@@ -25,13 +25,17 @@ class NotificationHelper(private val context: Context) {
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val audioAttributes = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                .build()
+            // Delete legacy channels that might have system notification sounds bound by Android OS
+            try {
+                notificationManager.deleteNotificationChannel("jackdaw_mail_incoming")
+                notificationManager.deleteNotificationChannel("jackdaw_sla_alerts")
+                notificationManager.deleteNotificationChannel("jackdaw_mail_incoming_v2")
+                notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v2")
+                notificationManager.deleteNotificationChannel("jackdaw_mail_incoming_v3")
+                notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v3")
+            } catch (_: Exception) {}
 
-            // 1. Incoming Mail Channel
+            // 1. Incoming Mail Channel - completely silent so only our soft acoustic pop plays
             val incomingChannel = NotificationChannel(
                 CHANNEL_INCOMING_MAIL,
                 "Входящие письма Jackdaw",
@@ -80,6 +84,7 @@ class NotificationHelper(private val context: Context) {
             .setStyle(NotificationCompat.BigTextStyle().bigText("${email.subject}\n\n${email.snippet}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setSilent(true)
             .setContentIntent(pendingIntent)
             .build()
 
@@ -129,6 +134,7 @@ class NotificationHelper(private val context: Context) {
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setSilent(true)
             .setContentIntent(pendingIntent)
             .build()
 
@@ -142,8 +148,8 @@ class NotificationHelper(private val context: Context) {
     }
 
     companion object {
-        const val CHANNEL_INCOMING_MAIL = "jackdaw_mail_incoming"
-        const val CHANNEL_SLA_ALERTS = "jackdaw_sla_alerts"
+        const val CHANNEL_INCOMING_MAIL = "jackdaw_incoming_v5"
+        const val CHANNEL_SLA_ALERTS = "jackdaw_sla_alerts_v5"
 
         @Volatile
         private var instance: NotificationHelper? = null

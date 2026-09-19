@@ -122,22 +122,16 @@ fun MailListScreen(
     onSwipeArchive: (EmailMessage) -> Unit = {},
     onSwipeDelete: (EmailMessage) -> Unit = {},
     onEmptyTrash: () -> Unit = {},
-    onNavigateToSlaDashboard: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
-    val isSlaFolder = currentFolder.type == FolderType.SLA_ALERTS
     val isTrashFolder = currentFolder.type == FolderType.TRASH
     var isSearchActive by remember { mutableStateOf(searchQuery.isNotBlank()) }
     var selectedFilter by remember { mutableStateOf(MailFilter.ALL) }
-    var selectedSlaFilter by remember(currentFolder.id) { mutableStateOf(SlaDashboardFilter.ALL) }
     var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
     var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
     val unreadCount = emails.count { !it.isRead }
-    val slaUrgentCount = emails.count { it.slaInfo?.severity in listOf(SlaSeverity.URGENT, SlaSeverity.BREACHED) }
-    val slaWarningCount = emails.count { it.slaInfo?.severity == SlaSeverity.WARNING }
-    val slaNormalCount = emails.count { it.slaInfo?.severity == SlaSeverity.NORMAL }
 
     val infiniteTransition = rememberInfiniteTransition(label = "sync_rotation")
     val syncRotation by if (isSyncing) {
@@ -154,23 +148,11 @@ fun MailListScreen(
         remember { mutableStateOf(0f) }
     }
 
-    val filteredEmails = if (isSlaFolder) {
-        emails.filter { email ->
-            when (selectedSlaFilter) {
-                SlaDashboardFilter.ALL -> true
-                SlaDashboardFilter.URGENT -> email.slaInfo?.severity in listOf(SlaSeverity.URGENT, SlaSeverity.BREACHED)
-                SlaDashboardFilter.WARNING -> email.slaInfo?.severity == SlaSeverity.WARNING
-                SlaDashboardFilter.NORMAL -> email.slaInfo?.severity == SlaSeverity.NORMAL
-                SlaDashboardFilter.UNREAD -> !email.isRead
-            }
-        }
-    } else {
-        emails.filter { email ->
-            when (selectedFilter) {
-                MailFilter.ALL -> true
-                MailFilter.UNREAD -> !email.isRead
-                MailFilter.STARRED -> email.isStarred
-            }
+    val filteredEmails = emails.filter { email ->
+        when (selectedFilter) {
+            MailFilter.ALL -> true
+            MailFilter.UNREAD -> !email.isRead
+            MailFilter.STARRED -> email.isStarred
         }
     }
 
@@ -186,7 +168,7 @@ fun MailListScreen(
                             onValueChange = onSearchQueryChange,
                             placeholder = {
                                 Text(
-                                    if (isSlaFolder) "Поиск объекта SLA..." else "Поиск в Jackdaw (FTS)...",
+                                    "Поиск в Jackdaw (FTS)...",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
@@ -203,7 +185,7 @@ fun MailListScreen(
                     } else {
                         Column {
                             Text(
-                                text = if (isSlaFolder) "SLA Мониторинг" else currentFolder.name,
+                                text = currentFolder.name,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -211,8 +193,6 @@ fun MailListScreen(
                             Text(
                                 text = if (isSyncing) {
                                     "Синхронизация..."
-                                } else if (isSlaFolder) {
-                                    "${filteredEmails.size} на контроле" + (if (slaUrgentCount > 0) " • $slaUrgentCount срочных" else "")
                                 } else if (unreadCount > 0) {
                                     "${filteredEmails.size} писем • $unreadCount непрочитанных"
                                 } else {
@@ -297,27 +277,25 @@ fun MailListScreen(
             )
         },
         floatingActionButton = {
-            if (!isSlaFolder) {
-                FloatingActionButton(
-                    onClick = onComposeClick,
-                    containerColor = JackdawAmber,
-                    contentColor = Color.Black,
-                    shape = RoundedCornerShape(16.dp)
+            FloatingActionButton(
+                onClick = onComposeClick,
+                containerColor = JackdawAmber,
+                contentColor = Color.Black,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = "Написать"
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Написать",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = "Написать"
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Написать",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         },
@@ -340,40 +318,27 @@ fun MailListScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Корзина (${filteredEmails.size})",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Удаленные сообщения",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Button(
+                        Text(
+                            text = "Письма в корзине",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
                             onClick = { showEmptyTrashDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFEF4444).copy(alpha = 0.18f),
-                                contentColor = Color(0xFFEF4444)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            colors = ButtonDefaults.textButtonColors(contentColor = SlaUrgentRed)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.DeleteSweep,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Очистить все",
+                                text = "Очистить корзину",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -382,110 +347,43 @@ fun MailListScreen(
                 }
             }
 
-            if (isSlaFolder) {
-                // Minimalist compact SLA status bar
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    item {
-                        SlaStatusPill(
-                            title = "Все",
-                            count = emails.size,
-                            isSelected = selectedSlaFilter == SlaDashboardFilter.ALL,
-                            accentColor = JackdawAmber,
-                            onClick = { selectedSlaFilter = SlaDashboardFilter.ALL }
-                        )
+            // Standard Mail filter chips
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(MailFilter.values()) { filter ->
+                    val isSelected = filter == selectedFilter
+                    val filterLabel = if (filter == MailFilter.UNREAD && unreadCount > 0) {
+                        "${filter.label} ($unreadCount)"
+                    } else {
+                        filter.label
                     }
-                    item {
-                        SlaStatusPill(
-                            title = "Срочные",
-                            count = slaUrgentCount,
-                            isSelected = selectedSlaFilter == SlaDashboardFilter.URGENT,
-                            accentColor = SlaUrgentRed,
-                            onClick = {
-                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.URGENT) SlaDashboardFilter.ALL else SlaDashboardFilter.URGENT
-                            }
-                        )
-                    }
-                    item {
-                        SlaStatusPill(
-                            title = "Внимание",
-                            count = slaWarningCount,
-                            isSelected = selectedSlaFilter == SlaDashboardFilter.WARNING,
-                            accentColor = SlaWarningAmber,
-                            onClick = {
-                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.WARNING) SlaDashboardFilter.ALL else SlaDashboardFilter.WARNING
-                            }
-                        )
-                    }
-                    item {
-                        SlaStatusPill(
-                            title = "В норме",
-                            count = slaNormalCount,
-                            isSelected = selectedSlaFilter == SlaDashboardFilter.NORMAL,
-                            accentColor = SlaGoodGreen,
-                            onClick = {
-                                selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.NORMAL) SlaDashboardFilter.ALL else SlaDashboardFilter.NORMAL
-                            }
-                        )
-                    }
-                    if (unreadCount > 0) {
-                        item {
-                            SlaStatusPill(
-                                title = "Новые",
-                                count = unreadCount,
-                                isSelected = selectedSlaFilter == SlaDashboardFilter.UNREAD,
-                                accentColor = Color(0xFF60A5FA),
-                                onClick = {
-                                    selectedSlaFilter = if (selectedSlaFilter == SlaDashboardFilter.UNREAD) SlaDashboardFilter.ALL else SlaDashboardFilter.UNREAD
-                                }
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedFilter = filter },
+                        label = {
+                            Text(
+                                text = filterLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
-                        }
-                    }
-                }
-            } else {
-                // Standard Mail filter chips
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(MailFilter.values()) { filter ->
-                        val isSelected = filter == selectedFilter
-                        val filterLabel = if (filter == MailFilter.UNREAD && unreadCount > 0) {
-                            "${filter.label} ($unreadCount)"
-                        } else {
-                            filter.label
-                        }
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedFilter = filter },
-                            label = {
-                                Text(
-                                    text = filterLabel,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = JackdawAmber,
-                                selectedLabelColor = Color.Black,
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            border = null,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                    }
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = JackdawAmber,
+                            selectedLabelColor = Color.Black,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        border = null,
+                        shape = RoundedCornerShape(8.dp)
+                    )
                 }
             }
 
-            // Emails / SLA LazyColumn
+            // Emails LazyColumn
             if (filteredEmails.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -495,14 +393,14 @@ fun MailListScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = if (isSlaFolder) "Нет объектов контроля" else "Писем не найдено",
+                            text = "Писем не найдено",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = if (isSlaFolder) "Все регламентные обязательства под контролем" else "В этой папке нет сообщений",
+                            text = "В этой папке нет сообщений",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -518,31 +416,20 @@ fun MailListScreen(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (isSlaFolder) {
-                        // Dedicated SLA monitoring cards without delete capability
-                        items(filteredEmails, key = { it.id }) { email ->
-                            SlaMonitoringCard(
-                                email = email,
-                                onClick = { onEmailClick(email) },
-                                onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) }
-                            )
-                        }
-                    } else {
-                        DateGroup.values().forEach { group ->
-                            val emailsInGroup = groupedEmails[group]
-                            if (!emailsInGroup.isNullOrEmpty()) {
-                                item(key = "header_${group.name}") {
-                                    DateSectionHeader(title = group.title, count = emailsInGroup.size)
-                                }
-                                items(emailsInGroup, key = { it.id }) { email ->
-                                    SwipeableEmailCard(
-                                        email = email,
-                                        onClick = { onEmailClick(email) },
-                                        onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
-                                        onSwipeArchive = { onSwipeArchive(email) },
-                                        onSwipeDelete = { emailToDeletePending = email }
-                                    )
-                                }
+                    DateGroup.values().forEach { group ->
+                        val emailsInGroup = groupedEmails[group]
+                        if (!emailsInGroup.isNullOrEmpty()) {
+                            item(key = "header_${group.name}") {
+                                DateSectionHeader(title = group.title, count = emailsInGroup.size)
+                            }
+                            items(emailsInGroup, key = { it.id }) { email ->
+                                SwipeableEmailCard(
+                                    email = email,
+                                    onClick = { onEmailClick(email) },
+                                    onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
+                                    onSwipeArchive = { onSwipeArchive(email) },
+                                    onSwipeDelete = { emailToDeletePending = email }
+                                )
                             }
                         }
                     }

@@ -109,7 +109,7 @@ fun SlaBadge(
                 if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
                 if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
                 Icons.Rounded.WarningAmber,
-                "SLA: Просрочено"
+                "Ответ просрочен"
             )
         }
         remainingMs <= 10 * 60 * 1000L -> {
@@ -118,7 +118,7 @@ fun SlaBadge(
                 if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
                 if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
                 Icons.Rounded.WarningAmber,
-                "SLA: $mins мин"
+                "До ответа: $mins мин"
             )
         }
         remainingMs <= 20 * 60 * 1000L -> {
@@ -127,7 +127,7 @@ fun SlaBadge(
                 if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
                 if (isDark) SlaWarningAmber else Color(0xFFB45309),
                 Icons.Rounded.AccessTime,
-                "SLA: $mins мин"
+                "До ответа: $mins мин"
             )
         }
         else -> {
@@ -136,7 +136,7 @@ fun SlaBadge(
                 if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
                 if (isDark) SlaGoodGreen else Color(0xFF047857),
                 Icons.Rounded.AccessTime,
-                "SLA: $mins мин"
+                "До ответа: $mins мин"
             )
         }
     }

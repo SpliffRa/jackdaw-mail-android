@@ -216,12 +216,6 @@ fun JackdawMainApp(
                             }
                         }
                     },
-                    onNavigateToSlaDashboard = {
-                        val sla = folders.firstOrNull { it.type == app.jackdaw.client.core.model.FolderType.SLA_ALERTS }
-                        if (sla != null) {
-                            viewModel.selectFolder(sla)
-                        }
-                    },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     onEmailClick = { clickedEmail ->

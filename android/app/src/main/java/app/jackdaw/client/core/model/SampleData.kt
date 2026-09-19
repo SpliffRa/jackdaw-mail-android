@@ -24,7 +24,6 @@ object SampleData {
     val defaultFolders = listOf(
         // Primary account folders
         Folder(id = "inbox", accountId = "acc_primary", name = "Входящие", type = FolderType.INBOX, unreadCount = 4, totalCount = 28),
-        Folder(id = "sla_alerts", accountId = "acc_primary", name = "SLA Контроль", type = FolderType.SLA_ALERTS, unreadCount = 2, totalCount = 5),
         Folder(id = "sent", accountId = "acc_primary", name = "Отправленные", type = FolderType.SENT, unreadCount = 0, totalCount = 14),
         Folder(id = "outbox", accountId = "acc_primary", name = "Исходящие", type = FolderType.OUTBOX, unreadCount = 0, totalCount = 0),
         Folder(id = "drafts", accountId = "acc_primary", name = "Черновики", type = FolderType.DRAFTS, unreadCount = 1, totalCount = 2),

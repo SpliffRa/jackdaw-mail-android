@@ -43,8 +43,14 @@ class SoundNotificationManager(private val context: Context) {
         get() = prefs.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, value).apply()
 
+    @Volatile
+    private var lastSoundTimestamp = 0L
+
     fun playIncomingMailSound() {
         if (!isIncomingSoundEnabled) return
+        val now = System.currentTimeMillis()
+        if (now - lastSoundTimestamp < 500L) return
+        lastSoundTimestamp = now
         try {
             val sampleRate = 44100
             val durationMs = 38
