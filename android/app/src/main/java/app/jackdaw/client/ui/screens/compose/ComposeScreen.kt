@@ -2,13 +2,16 @@ package app.jackdaw.client.ui.screens.compose
 
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,10 +28,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Edit
-import app.jackdaw.client.core.signature.SignatureManager
+import androidx.compose.material.icons.rounded.EditNote
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,9 +43,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.model.Attachment
 import app.jackdaw.client.core.model.MailAccount
+import app.jackdaw.client.core.signature.SignatureManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,10 +79,24 @@ fun ComposeScreen(
 ) {
     val context = LocalContext.current
     val signatureManager = remember { SignatureManager.getInstance(context) }
-    var toText by remember { mutableStateOf(initialTo) }
-    var subjectText by remember { mutableStateOf(initialSubject) }
-    var bodyText by remember { mutableStateOf(initialBody) }
+    var toText by remember(initialTo) { mutableStateOf(initialTo) }
+    var subjectText by remember(initialSubject) { mutableStateOf(initialSubject) }
+    var bodyText by remember(initialBody) { mutableStateOf(initialBody) }
     var attachments by remember { mutableStateOf<List<Attachment>>(emptyList()) }
+    var showSignatureMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialTo) {
+        if (toText.isBlank() && initialTo.isNotBlank()) toText = initialTo
+    }
+    LaunchedEffect(initialSubject) {
+        if (subjectText.isBlank() && initialSubject.isNotBlank()) subjectText = initialSubject
+    }
+    LaunchedEffect(initialBody) {
+        val emptySig = signatureManager.buildNewEmailBody(currentAccount)
+        if ((bodyText.isBlank() || bodyText == emptySig) && initialBody.isNotBlank()) {
+            bodyText = initialBody
+        }
+    }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -147,22 +169,98 @@ fun ComposeScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            val sig = signatureManager.getSignature(currentAccount)
-                            if (sig.isNotBlank()) {
-                                if (!bodyText.contains(sig)) {
-                                    bodyText = if (bodyText.isBlank()) sig else "$bodyText\n\n$sig"
-                                }
-                            }
+                    // Signature Template Menu
+                    Box {
+                        IconButton(onClick = { showSignatureMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Rounded.EditNote,
+                                contentDescription = "Шаблоны подписи",
+                                tint = JackdawAmber
+                            )
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = "Вставить подпись",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        DropdownMenu(
+                            expanded = showSignatureMenu,
+                            onDismissRequest = { showSignatureMenu = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        "ПОДГРУЗИТЬ ШАБЛОН",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = JackdawAmber
+                                    )
+                                },
+                                onClick = {},
+                                enabled = false
+                            )
+                            signatureManager.getTemplates().forEach { template ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(
+                                                text = template.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = template.description,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        val rendered = signatureManager.resolveTemplate(template.pattern, currentAccount)
+                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, rendered)
+                                        showSignatureMenu = false
+                                        Toast.makeText(context, "Подгружен шаблон: «${template.name}»", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Моя подпись из настроек",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    val sig = signatureManager.getSignature(currentAccount)
+                                    if (sig.isNotBlank()) {
+                                        bodyText = signatureManager.injectOrReplaceSignature(bodyText, sig)
+                                        Toast.makeText(context, "Подгружена сохраненная подпись", Toast.LENGTH_SHORT).show()
+                                    }
+                                    showSignatureMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = "Очистить подпись",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                },
+                                onClick = {
+                                    if (bodyText.contains(SignatureManager.OUTLOOK_QUOTE_SEPARATOR)) {
+                                        val parts = bodyText.split(SignatureManager.OUTLOOK_QUOTE_SEPARATOR, limit = 2)
+                                        bodyText = "\n\n${SignatureManager.OUTLOOK_QUOTE_SEPARATOR}${parts.getOrNull(1) ?: ""}"
+                                    } else {
+                                        bodyText = ""
+                                    }
+                                    showSignatureMenu = false
+                                    Toast.makeText(context, "Подпись удалена из сообщения", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
+
+                    // Attach File Button
                     IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                         Icon(
                             imageVector = Icons.Rounded.AttachFile,
@@ -170,6 +268,8 @@ fun ComposeScreen(
                             tint = if (attachments.isNotEmpty()) JackdawAmber else MaterialTheme.colorScheme.onSurface
                         )
                     }
+
+                    // Send Button
                     Button(
                         onClick = { onSend(toText, subjectText, bodyText, attachments) },
                         enabled = toText.isNotBlank(),
@@ -301,6 +401,37 @@ fun ComposeScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
+            // Signature template indicator & switch action
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Подпись: ${signatureManager.getTemplateById(signatureManager.getSelectedTemplateId(currentAccount))?.name ?: "Outlook"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(
+                    onClick = { showSignatureMenu = true },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SwapHoriz,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = JackdawAmber
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Сменить шаблон", fontSize = 11.sp, color = JackdawAmber, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
             // Attachments list (if any selected)
             if (attachments.isNotEmpty()) {
                 Row(
@@ -361,7 +492,7 @@ fun ComposeScreen(
                 ),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 8.dp)
+                    .padding(top = 4.dp)
             )
         }
     }

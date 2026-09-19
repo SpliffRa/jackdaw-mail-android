@@ -3,6 +3,7 @@ package app.jackdaw.client.ui.screens.settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -640,13 +641,54 @@ fun SettingsScreen(
                         HorizontalDivider(color = dividerColor)
                         Spacer(modifier = Modifier.height(8.dp))
 
+                        Text(
+                            text = "Подгрузить шаблон подписи:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            signatureManager.getTemplates().forEach { template ->
+                                val isSelected = signatureManager.getSelectedTemplateId(currentAccountObj) == template.id
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) JackdawAmber.copy(alpha = 0.22f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        .clickable {
+                                            val applied = signatureManager.applyTemplate(currentAccountObj, template.id)
+                                            signatureText = applied
+                                            Toast.makeText(context, "Подгружен шаблон: «${template.name}»", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = template.name,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Шаблон для ${currentAccountObj.displayName}:",
+                                "Редактор для ${currentAccountObj.displayName}:",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -655,10 +697,10 @@ fun SettingsScreen(
                                 onClick = {
                                     val reset = signatureManager.resetToOutlookTemplate(currentAccountObj)
                                     signatureText = reset
-                                    Toast.makeText(context, "Шаблон Outlook восстановлен", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Восстановлен корпоративный шаблон", Toast.LENGTH_SHORT).show()
                                 }
                             ) {
-                                Text("Сброс к Outlook", style = MaterialTheme.typography.labelSmall, color = JackdawAmber)
+                                Text("По умолчанию", style = MaterialTheme.typography.labelSmall, color = JackdawAmber)
                             }
                         }
 
@@ -671,7 +713,7 @@ fun SettingsScreen(
                             placeholder = { Text("Текст подписи...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(120.dp),
+                                .height(110.dp),
                             textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = JackdawAmber,
@@ -683,8 +725,42 @@ fun SettingsScreen(
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
+
+                        // Dynamic tag chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Теги:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            listOf("{name}", "{email}", "{app}").forEach { tag ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable {
+                                            signatureText = if (signatureText.isBlank()) tag else "$signatureText $tag"
+                                            signatureManager.setSignature(currentAccountObj, signatureText)
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = JackdawAmber,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            "По стандарту Outlook подпись размещается над блоком цитирования «-----Исходное сообщение-----» при ответе на входящие письма.",
+                            "В ответах шаблон подгружается над строкой «-----Исходное сообщение-----» по стандарту Outlook.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
