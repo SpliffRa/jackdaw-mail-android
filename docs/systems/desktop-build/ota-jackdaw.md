@@ -20,7 +20,7 @@ Related generic docs: [electron-builder.md](./electron-builder.md), [macos.md](.
 | **Builder config** | `desktop/electron-builder.yml` — `publish`, `extraResources`, Mac targets |
 | **Branding / token** | `app/build/jackdaw-brand.sh` — version bump, `gh-update-token.txt` |
 
-Desktop OTA publishes are manual **workflow_dispatch** runs. The run can choose `platform: mac | windows | both`.
+Push to `main` builds **both** platforms. Manual **workflow_dispatch** can choose `platform: mac | windows | both`.
 
 Пользовательское имя продукта и GitHub-репозиторий — **Jackdaw Mail** / `jackdaw-mail`. При этом `app.jackdaw.client` и внутреннее имя каталога данных `Jackdaw` сохраняются намеренно: это удерживает существующие настройки, локальную почту и совместимость обновлений при переименовании.
 
@@ -63,7 +63,7 @@ Example after a Windows-only fix:
 - `latest.yml` → `0.9.38-dev.NEW` (Windows users update)
 - `latest-mac.yml` → still `0.9.38-dev.OLD` (Mac users stay put)
 
-Manual dispatch is the only desktop OTA publish trigger, so ordinary pushes do not create user-facing updates.
+**Push to `main` always builds both** — use manual dispatch for single-OS releases.
 
 ### Job `prepare` (ubuntu)
 
@@ -98,7 +98,7 @@ Manual dispatch is the only desktop OTA publish trigger, so ordinary pushes do n
 
 ### Post-push GitHub history cleanup
 
-After a successful desktop publish, `.github/workflows/cleanup-github-history.yml`
+After a successful push-triggered desktop publish, `.github/workflows/cleanup-github-history.yml`
 keeps the newest non-empty GitHub Release and its tag. It removes older releases, their
 release tags, and completed historical Actions runs. The cleanup deliberately waits for a
 successful publish, so a failed build cannot delete the last working OTA release. In-progress
@@ -183,7 +183,7 @@ Dev/local builds without timestamp suffix show **“Automatic updates are not co
 # platform: both (default) | mac | windows  — single-OS keeps other platform via carry-forward
 ```
 
-Run the workflow manually when a desktop OTA release is intended.
+Or push to `main` touching monitored paths.
 
 ---
 
@@ -228,7 +228,7 @@ Do not poll every few minutes — wastes GitHub API and user bandwidth. 4 h is a
 
 1. Read this doc and `electron-builder.yml`
 2. Change backend + UI + CI together if behaviour crosses layers
-3. Run [Actions → Jackdaw Mail Publish Desktop Update](https://github.com/Uugsx/jackdaw-mail/actions), then watch the workflow
+3. Push to `main`, watch [Actions → Jackdaw Mail Publish Desktop Update](https://github.com/Uugsx/jackdaw-mail/actions)
 4. Verify **one** release contains: `latest.yml`, `latest-mac.yml`, `setup.exe`, `*.dmg`, zips
 5. Test Mac: Settings → About → check update → progress → quit → reinstall → new version
 6. Test Windows: same; confirm OTA from previous CI `setup.exe` build
