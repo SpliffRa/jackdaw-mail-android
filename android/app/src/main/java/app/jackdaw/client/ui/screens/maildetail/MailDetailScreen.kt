@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.rounded.ReplyAll
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Forward
@@ -300,44 +301,64 @@ fun MailDetailScreen(
             val isIncoming = email.folderId.contains("inbox", ignoreCase = true)
             val sla = email.slaInfo
             if (isIncoming && sla != null && sla.severity != SlaSeverity.NONE) {
-                val now = System.currentTimeMillis()
-                val deadline = if (sla.deadlineTimestamp > 0L) sla.deadlineTimestamp else email.timestamp + 30 * 60 * 1000L
-                val remainingMs = deadline - now
                 val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
-                val visuals = when {
-                    remainingMs <= 0 -> SlaItemVisuals(
-                        if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
-                        if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
-                        Icons.Rounded.WarningAmber,
-                        "Время на ответ истекло (регламент 30 мин)"
-                    )
-                    remainingMs <= 10 * 60 * 1000L -> {
-                        val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
-                        SlaItemVisuals(
-                            if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
-                            if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
-                            Icons.Rounded.WarningAmber,
-                            "Ответить в течение: $mins мин (регламент 30 мин)"
-                        )
-                    }
-                    remainingMs <= 20 * 60 * 1000L -> {
-                        val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                val visuals = if (sla.severity == SlaSeverity.COMPLETED) {
+                    val isLate = sla.remainingLabel.contains("опоздан", ignoreCase = true)
+                    if (isLate) {
                         SlaItemVisuals(
                             if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
                             if (isDark) SlaWarningAmber else Color(0xFFB45309),
-                            Icons.Rounded.AccessTime,
-                            "Ответить в течение: $mins мин (регламент 30 мин)"
+                            Icons.Rounded.Check,
+                            "Ответ дан с нарушением 30-минутного регламента"
                         )
-                    }
-                    else -> {
-                        val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                    } else {
                         SlaItemVisuals(
                             if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
                             if (isDark) SlaGoodGreen else Color(0xFF047857),
-                            Icons.Rounded.AccessTime,
-                            "Ответить в течение: $mins мин (регламент 30 мин)"
+                            Icons.Rounded.Check,
+                            "Ответ дан вовремя (регламент 30 мин соблюден)"
                         )
+                    }
+                } else {
+                    val now = System.currentTimeMillis()
+                    val deadline = if (sla.deadlineTimestamp > 0L) sla.deadlineTimestamp else email.timestamp + 30 * 60 * 1000L
+                    val remainingMs = deadline - now
+
+                    when {
+                        remainingMs <= 0 -> SlaItemVisuals(
+                            if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                            if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
+                            Icons.Rounded.WarningAmber,
+                            "Время на ответ истекло (регламент 30 мин)"
+                        )
+                        remainingMs <= 10 * 60 * 1000L -> {
+                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            SlaItemVisuals(
+                                if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                                if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
+                                Icons.Rounded.WarningAmber,
+                                "Ответить в течение: $mins мин (регламент 30 мин)"
+                            )
+                        }
+                        remainingMs <= 20 * 60 * 1000L -> {
+                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            SlaItemVisuals(
+                                if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
+                                if (isDark) SlaWarningAmber else Color(0xFFB45309),
+                                Icons.Rounded.AccessTime,
+                                "Ответить в течение: $mins мин (регламент 30 мин)"
+                            )
+                        }
+                        else -> {
+                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                            SlaItemVisuals(
+                                if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
+                                if (isDark) SlaGoodGreen else Color(0xFF047857),
+                                Icons.Rounded.AccessTime,
+                                "Ответить в течение: $mins мин (регламент 30 мин)"
+                            )
+                        }
                     }
                 }
 

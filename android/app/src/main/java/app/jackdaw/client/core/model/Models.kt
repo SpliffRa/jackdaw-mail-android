@@ -49,7 +49,8 @@ enum class SlaSeverity {
     NORMAL,
     WARNING,
     URGENT,
-    BREACHED
+    BREACHED,
+    COMPLETED
 }
 
 data class SlaInfo(

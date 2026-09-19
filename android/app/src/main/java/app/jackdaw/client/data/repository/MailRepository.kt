@@ -71,12 +71,12 @@ class OfflineFirstMailRepository(
         ) { folders, emails ->
             folders.map { folderEntity ->
                 val unread = if (folderEntity.type == FolderType.SLA_ALERTS) {
-                    emails.count { it.slaSeverity != SlaSeverity.NONE && !it.isRead }
+                    emails.count { it.slaSeverity != SlaSeverity.NONE && it.slaSeverity != SlaSeverity.COMPLETED && !it.isRead }
                 } else {
                     emails.count { it.folderId == folderEntity.id && !it.isRead }
                 }
                 val total = when (folderEntity.type) {
-                    FolderType.SLA_ALERTS -> emails.count { it.slaSeverity != SlaSeverity.NONE }
+                    FolderType.SLA_ALERTS -> emails.count { it.slaSeverity != SlaSeverity.NONE && it.slaSeverity != SlaSeverity.COMPLETED }
                     FolderType.OUTBOX -> emails.count {
                         it.deliveryStatus != app.jackdaw.client.core.model.DeliveryStatus.SENT && (it.folderId == folderEntity.id || it.folderId.contains("outbox"))
                     }
@@ -219,7 +219,18 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun markSlaCompleted(emailId: String) {
-        emailDao.updateSlaInfo(emailId, SlaSeverity.NONE, 0L, "Выполнен")
+        val email = emailDao.getEmailById(emailId).first()
+        val now = System.currentTimeMillis()
+        val effectiveDeadline = if (email != null && email.slaDeadlineTimestamp > 0L) {
+            email.slaDeadlineTimestamp
+        } else if (email != null) {
+            email.timestamp + 30 * 60 * 1000L
+        } else {
+            0L
+        }
+        val wasBreached = effectiveDeadline > 0L && now > effectiveDeadline
+        val label = if (wasBreached) "Ответ дан с опозданием" else "Ответ дан вовремя"
+        emailDao.updateSlaInfo(emailId, SlaSeverity.COMPLETED, effectiveDeadline, label)
     }
 
     override suspend fun restoreEmail(emailId: String, originalFolderId: String) {
@@ -314,7 +325,7 @@ class OfflineFirstMailRepository(
             val now = System.currentTimeMillis()
             val allEmails = emailDao.getAllEmails(accountId).first()
             for (item in allEmails) {
-                if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE) {
+                if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE && item.slaSeverity != SlaSeverity.COMPLETED) {
                     // Strictly enforce 30-minute SLA window from receipt timestamp
                     val effectiveDeadline = minOf(item.slaDeadlineTimestamp, item.timestamp + 30 * 60 * 1000L)
                     val remainingMs = effectiveDeadline - now

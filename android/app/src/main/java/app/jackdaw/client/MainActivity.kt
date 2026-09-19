@@ -291,7 +291,12 @@ fun JackdawMainApp(
                 })
             ) { backStackEntry ->
                 val replyToId = backStackEntry.arguments?.getString("replyToId")
-                val replyToEmail = emails.find { it.id == replyToId }
+                val replyEmailFromDb by if (!replyToId.isNullOrBlank()) {
+                    viewModel.getEmailById(replyToId).collectAsState(initial = null)
+                } else {
+                    androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(null) }
+                }
+                val replyToEmail = replyEmailFromDb ?: emails.find { it.id == replyToId }
 
                 ComposeScreen(
                     currentAccount = currentAccount,

@@ -33,6 +33,10 @@ class NotificationHelper(private val context: Context) {
                 notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v2")
                 notificationManager.deleteNotificationChannel("jackdaw_mail_incoming_v3")
                 notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v3")
+                notificationManager.deleteNotificationChannel("jackdaw_incoming_v4")
+                notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v4")
+                notificationManager.deleteNotificationChannel("jackdaw_incoming_v5")
+                notificationManager.deleteNotificationChannel("jackdaw_sla_alerts_v5")
             } catch (_: Exception) {}
 
             // 1. Incoming Mail Channel - completely silent so only our soft acoustic pop plays
@@ -103,14 +107,14 @@ class NotificationHelper(private val context: Context) {
         if (!soundManager.isNotificationsEnabled) return
 
         val sla = email.slaInfo ?: return
-        if (sla.severity == SlaSeverity.NONE) return
+        if (sla.severity == SlaSeverity.NONE || sla.severity == SlaSeverity.COMPLETED) return
 
         val title = when (sla.severity) {
             SlaSeverity.BREACHED -> "⚠️ SLA Просрочено!"
             SlaSeverity.URGENT -> "🔴 Срочный SLA дедлайн: ${sla.remainingLabel}"
             SlaSeverity.WARNING -> "🟡 Внимание по SLA: осталось ${sla.remainingLabel}"
             SlaSeverity.NORMAL -> "🟢 На контроле SLA: ${sla.remainingLabel}"
-            SlaSeverity.NONE -> return
+            SlaSeverity.NONE, SlaSeverity.COMPLETED -> return
         }
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
@@ -148,8 +152,8 @@ class NotificationHelper(private val context: Context) {
     }
 
     companion object {
-        const val CHANNEL_INCOMING_MAIL = "jackdaw_incoming_v5"
-        const val CHANNEL_SLA_ALERTS = "jackdaw_sla_alerts_v5"
+        const val CHANNEL_INCOMING_MAIL = "jackdaw_incoming_v6"
+        const val CHANNEL_SLA_ALERTS = "jackdaw_sla_alerts_v6"
 
         @Volatile
         private var instance: NotificationHelper? = null

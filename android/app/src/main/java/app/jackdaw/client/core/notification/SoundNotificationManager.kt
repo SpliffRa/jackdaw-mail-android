@@ -3,27 +3,46 @@ package app.jackdaw.client.core.notification
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.MediaPlayer
+import android.media.SoundPool
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import app.jackdaw.client.R
 
 class SoundNotificationManager(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("jackdaw_sound_prefs", Context.MODE_PRIVATE)
 
-    private var toneGenerator: ToneGenerator? = null
+    private var soundPool: SoundPool? = null
+    private var chpokSoundId: Int = 0
+    @Volatile
+    private var isSoundLoaded: Boolean = false
 
     init {
         try {
-            toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            val pool = SoundPool.Builder()
+                .setMaxStreams(4)
+                .setAudioAttributes(audioAttributes)
+                .build()
+
+            pool.setOnLoadCompleteListener { _, sampleId, status ->
+                if (status == 0 && sampleId == chpokSoundId) {
+                    isSoundLoaded = true
+                }
+            }
+
+            chpokSoundId = pool.load(context, R.raw.chpok, 1)
+            soundPool = pool
         } catch (_: Exception) {
-            toneGenerator = null
+            soundPool = null
         }
     }
 
@@ -49,75 +68,56 @@ class SoundNotificationManager(private val context: Context) {
     fun playIncomingMailSound() {
         if (!isIncomingSoundEnabled) return
         val now = System.currentTimeMillis()
-        if (now - lastSoundTimestamp < 500L) return
+        if (now - lastSoundTimestamp < 250L) return
         lastSoundTimestamp = now
-        try {
-            val sampleRate = 44100
-            val durationMs = 38
-            val numSamples = (sampleRate * durationMs) / 1000
-            val buffer = ShortArray(numSamples)
-            for (i in 0 until numSamples) {
-                val progress = i.toDouble() / numSamples
-                // Pop effect: frequency sweeps down from 520Hz to 160Hz with fast exponential damping
-                val freq = 520.0 - 360.0 * progress
-                val t = i.toDouble() / sampleRate
-                val envelope = Math.exp(-7.5 * progress) * Math.sin(Math.PI * Math.min(1.0, progress * 6.0))
-                val sample = (Math.sin(2.0 * Math.PI * freq * t) * envelope * 8500).toInt()
-                buffer[i] = sample.toShort()
-            }
 
-            val audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setBufferSizeInBytes(buffer.size * 2)
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .build()
-
-            audioTrack.write(buffer, 0, buffer.size)
-            audioTrack.setNotificationMarkerPosition(buffer.size)
-            audioTrack.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-                override fun onPeriodicNotification(track: AudioTrack?) {}
-                override fun onMarkerReached(track: AudioTrack?) {
-                    try {
-                        track?.stop()
-                        track?.release()
-                    } catch (_: Exception) {}
-                }
-            })
-            audioTrack.play()
-        } catch (_: Exception) {
-            try {
-                toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 70)
-            } catch (_: Exception) {}
-        }
+        playSound(volume = 0.9f, rate = 1.0f)
         vibrate(subtleVibe)
     }
 
     fun playSentMailSound() {
         if (!isSentSoundEnabled) return
-        try {
-            toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 120)
-        } catch (_: Exception) {}
+        val now = System.currentTimeMillis()
+        if (now - lastSoundTimestamp < 250L) return
+        lastSoundTimestamp = now
+
+        playSound(volume = 0.65f, rate = 1.25f)
         vibrate(subtleVibe)
     }
 
     fun playSlaAlertSound() {
         if (!isSlaSoundEnabled) return
-        try {
-            toneGenerator?.startTone(ToneGenerator.TONE_CDMA_ALERT_NETWORK_LITE, 260)
-        } catch (_: Exception) {}
+        val now = System.currentTimeMillis()
+        if (now - lastSoundTimestamp < 300L) return
+        lastSoundTimestamp = now
+
+        playSound(volume = 1.0f, rate = 0.9f)
         vibrate(urgentVibe)
+    }
+
+    private fun playSound(volume: Float, rate: Float) {
+        try {
+            val pool = soundPool
+            if (pool != null && isSoundLoaded && chpokSoundId != 0) {
+                val streamId = pool.play(chpokSoundId, volume, volume, 1, 0, rate)
+                if (streamId == 0) {
+                    playViaMediaPlayer(volume)
+                }
+            } else {
+                playViaMediaPlayer(volume)
+            }
+        } catch (_: Exception) {
+            playViaMediaPlayer(volume)
+        }
+    }
+
+    private fun playViaMediaPlayer(volume: Float) {
+        try {
+            val mp = MediaPlayer.create(context, R.raw.chpok)
+            mp.setOnCompletionListener { it.release() }
+            mp.setVolume(volume, volume)
+            mp.start()
+        } catch (_: Exception) {}
     }
 
     private fun vibrate(pattern: LongArray) {
@@ -155,3 +155,4 @@ class SoundNotificationManager(private val context: Context) {
         }
     }
 }
+

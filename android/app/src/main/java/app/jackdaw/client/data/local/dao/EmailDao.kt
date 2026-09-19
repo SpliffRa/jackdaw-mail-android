@@ -19,7 +19,7 @@ interface EmailDao {
     @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC")
     fun getAllEmails(accountId: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId AND slaSeverity != 'NONE' ORDER BY slaDeadlineTimestamp ASC, timestamp DESC")
+    @Query("SELECT * FROM emails WHERE accountId = :accountId AND slaSeverity != 'NONE' AND slaSeverity != 'COMPLETED' ORDER BY slaDeadlineTimestamp ASC, timestamp DESC")
     fun getSlaEmails(accountId: String): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE id = :id LIMIT 1")

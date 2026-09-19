@@ -72,7 +72,7 @@ fun SlaMonitoringCard(
             if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
             if (isDark) SlaWarningAmber else Color(0xFFD97706)
         )
-        SlaSeverity.NORMAL -> Triple(
+        SlaSeverity.NORMAL, SlaSeverity.COMPLETED -> Triple(
             if (isDark) SlaGoodGreen else Color(0xFF047857),
             if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
             if (isDark) SlaGoodGreen else Color(0xFF16A34A)

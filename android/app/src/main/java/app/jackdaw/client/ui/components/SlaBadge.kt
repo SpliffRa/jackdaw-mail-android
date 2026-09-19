@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessTime
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,7 +40,45 @@ fun SlaBadge(
     slaInfo: SlaInfo,
     modifier: Modifier = Modifier
 ) {
+    if (slaInfo.severity == SlaSeverity.NONE) return
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    if (slaInfo.severity == SlaSeverity.COMPLETED) {
+        val isLate = slaInfo.remainingLabel.contains("опоздан", ignoreCase = true)
+        val bgColor = if (isLate) {
+            if (isDark) SlaWarningContainerDark else SlaWarningContainerLight
+        } else {
+            if (isDark) SlaGoodContainerDark else SlaGoodContainerLight
+        }
+        val textColor = if (isLate) {
+            if (isDark) SlaWarningAmber else Color(0xFFB45309)
+        } else {
+            if (isDark) SlaGoodGreen else Color(0xFF047857)
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(bgColor)
+                .padding(horizontal = 7.dp, vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "Ответ дан",
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = slaInfo.remainingLabel.ifBlank { "Ответ дан вовремя" },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
+            )
+        }
+        return
+    }
 
     val (bgColor, textColor, icon) = when (slaInfo.severity) {
         SlaSeverity.BREACHED, SlaSeverity.URGENT -> Triple(
@@ -57,7 +96,7 @@ fun SlaBadge(
             if (isDark) SlaGoodGreen else Color(0xFF047857),
             Icons.Rounded.AccessTime
         )
-        SlaSeverity.NONE -> return
+        SlaSeverity.NONE, SlaSeverity.COMPLETED -> return
     }
 
     Row(
@@ -89,19 +128,54 @@ fun SlaBadge(
     modifier: Modifier = Modifier
 ) {
     val sla = email.slaInfo
-    if (sla?.severity == SlaSeverity.NONE) return
-    val isIncoming = email.folderId.contains("inbox", ignoreCase = true)
-    if (sla == null && !isIncoming) return
+    if (sla == null || sla.severity == SlaSeverity.NONE) return
+
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    if (sla.severity == SlaSeverity.COMPLETED) {
+        val isLate = sla.remainingLabel.contains("опоздан", ignoreCase = true)
+        val bgColor = if (isLate) {
+            if (isDark) SlaWarningContainerDark else SlaWarningContainerLight
+        } else {
+            if (isDark) SlaGoodContainerDark else SlaGoodContainerLight
+        }
+        val textColor = if (isLate) {
+            if (isDark) SlaWarningAmber else Color(0xFFB45309)
+        } else {
+            if (isDark) SlaGoodGreen else Color(0xFF047857)
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(bgColor)
+                .padding(horizontal = 7.dp, vertical = 2.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = "Ответ дан",
+                tint = textColor,
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = sla.remainingLabel.ifBlank { "Ответ дан вовремя" },
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = textColor
+            )
+        }
+        return
+    }
 
     val now = androidx.compose.runtime.remember { System.currentTimeMillis() }
-    val deadline = if (sla != null && sla.deadlineTimestamp > 0L) {
+    val deadline = if (sla.deadlineTimestamp > 0L) {
         sla.deadlineTimestamp
     } else {
         email.timestamp + 30 * 60 * 1000L
     }
     val remainingMs = deadline - now
-
-    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     val (bgColor, textColor, icon, label) = when {
         remainingMs <= 0 -> {
@@ -165,3 +239,4 @@ fun SlaBadge(
 }
 
 private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
