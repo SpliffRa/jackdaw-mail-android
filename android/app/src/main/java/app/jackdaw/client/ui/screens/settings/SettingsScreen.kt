@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
 import app.jackdaw.client.core.designsystem.theme.JackdawBorderDark
@@ -361,8 +362,8 @@ fun SettingsScreen(
                         Icon(imageVector = Icons.Rounded.SystemUpdate, contentDescription = null, tint = JackdawAmber, modifier = Modifier.size(24.dp))
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text("Jackdaw Mail v1.1", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            Text("Сборка: 2 (Release OTA Channel)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Jackdaw Mail v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Сборка: ${BuildConfig.VERSION_CODE} (Release OTA Channel)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
 
@@ -398,10 +399,10 @@ fun SettingsScreen(
                                         if (info.isUpdateAvailable) {
                                             updateStatusMessage = "Доступна новая версия: ${info.versionName}"
                                         } else {
-                                            updateStatusMessage = "Установлена актуальная версия (v1.1)"
+                                            updateStatusMessage = info.releaseNotes.ifBlank { "Установлена актуальная версия (v${BuildConfig.VERSION_NAME})" }
                                         }
-                                    }.onFailure {
-                                        updateStatusMessage = "Ошибка проверки обновлений"
+                                    }.onFailure { err ->
+                                        updateStatusMessage = "Ошибка проверки: ${err.message ?: "Сбой соединения"}"
                                     }
                                 }
                             },
@@ -459,32 +460,6 @@ fun SettingsScreen(
                             }
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // SECTION 4: ABOUT
-            Text(
-                text = "О СИСТЕМЕ",
-                style = MaterialTheme.typography.labelMedium,
-                color = JackdawAmber,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = JackdawSurfaceDark),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Text("Jackdaw Mail Android", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text("Версия 1.1 • Архитектура Kotlin 2.0 + Jetpack Compose", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("Локальное хранилище: SQLite Room WAL + FTS5 Full-Text Search", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Фоновые задачи: AndroidX WorkManager 2.9", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 

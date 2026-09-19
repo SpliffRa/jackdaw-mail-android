@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.JackdawAmberLight
 import app.jackdaw.client.core.designsystem.theme.JackdawBackgroundDark
@@ -322,7 +323,7 @@ fun FolderDrawer(
 
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Jackdaw Mail v1.1",
+                text = "Jackdaw Mail v${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(start = 12.dp)

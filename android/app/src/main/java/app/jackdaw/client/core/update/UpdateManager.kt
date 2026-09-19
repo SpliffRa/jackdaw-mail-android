@@ -11,8 +11,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import app.jackdaw.client.BuildConfig
 
 data class AppUpdateInfo(
     val versionName: String,
@@ -35,8 +37,8 @@ sealed class UpdateStatus {
 
 class UpdateManager(private val context: Context) {
 
-    private val currentVersionName = "1.1"
-    private val currentVersionCode = 2
+    val currentVersionName: String = BuildConfig.VERSION_NAME
+    val currentVersionCode: Int = BuildConfig.VERSION_CODE
 
     suspend fun checkForUpdates(): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
         try {
@@ -44,23 +46,23 @@ class UpdateManager(private val context: Context) {
             val apiUrl = "https://api.github.com/repos/SpliffRa/jackdaw-mail-android/releases/latest"
             val url = URL(apiUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 4000
+                connectTimeout = 5000
+                readTimeout = 5000
                 setRequestProperty("User-Agent", "Jackdaw-Android-Client")
                 setRequestProperty("Accept", "application/vnd.github.v3+json")
             }
 
-            var latestTag = "v1.1"
-            var body = "Стабильная версия Jackdaw Mail v1.1 с поддержкой динамического подсчета непрочитанных и улучшенными свайпами."
+            var latestTag = "v$currentVersionName"
+            var body = ""
             var apkUrl = ""
-            var apkSize = 17304888L
+            var apkSize = 18000000L
 
             val responseCode = connection.responseCode
             if (responseCode == 200) {
                 val jsonStr = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(jsonStr)
-                latestTag = json.optString("tag_name", "v1.1")
-                body = json.optString("body", body)
+                latestTag = json.optString("tag_name", "v$currentVersionName")
+                body = json.optString("body", "")
 
                 val assets = json.optJSONArray("assets")
                 if (assets != null) {
@@ -74,31 +76,39 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                 }
+
+                val cleanTag = latestTag.removePrefix("v")
+                val isAvailable = compareVersions(cleanTag, currentVersionName) > 0
+
+                val updateInfo = AppUpdateInfo(
+                    versionName = cleanTag,
+                    versionCode = currentVersionCode + 1,
+                    releaseNotes = body.ifBlank { "Доступна обновленная версия $cleanTag" },
+                    downloadUrl = apkUrl,
+                    sizeBytes = apkSize,
+                    isUpdateAvailable = isAvailable
+                )
+                Result.success(updateInfo)
+            } else if (responseCode == 404) {
+                val fallback = AppUpdateInfo(
+                    versionName = currentVersionName,
+                    versionCode = currentVersionCode,
+                    releaseNotes = "На GitHub пока нет опубликованных релизов. Создайте Release в репозитории SpliffRa/jackdaw-mail-android с файлом APK.",
+                    downloadUrl = "",
+                    sizeBytes = 0L,
+                    isUpdateAvailable = false
+                )
+                Result.success(fallback)
             } else {
-                // If API is unreachable or rate limited, return current build status
-                latestTag = "v1.1"
+                Result.failure(IOException("Ответ сервера GitHub: код $responseCode"))
             }
-
-            val cleanTag = latestTag.removePrefix("v")
-            val isAvailable = compareVersions(cleanTag, currentVersionName) > 0
-
-            val updateInfo = AppUpdateInfo(
-                versionName = cleanTag,
-                versionCode = 2,
-                releaseNotes = body,
-                downloadUrl = apkUrl.ifBlank { "https://github.com/SpliffRa/jackdaw-mail-android/releases/latest" },
-                sizeBytes = apkSize,
-                isUpdateAvailable = isAvailable
-            )
-            Result.success(updateInfo)
         } catch (e: Exception) {
-            // Graceful fallback for offline / disconnected environments
             val fallback = AppUpdateInfo(
                 versionName = currentVersionName,
                 versionCode = currentVersionCode,
-                releaseNotes = "Установлена актуальная версия Jackdaw Mail v1.1. Система оффлайн кэширования активна.",
+                releaseNotes = "Установлена актуальная версия Jackdaw Mail v$currentVersionName.",
                 downloadUrl = "",
-                sizeBytes = 17304888L,
+                sizeBytes = 0L,
                 isUpdateAvailable = false
             )
             Result.success(fallback)
@@ -114,11 +124,31 @@ class UpdateManager(private val context: Context) {
             val outputFile = File(updatesDir, "jackdaw_update.apk")
 
             if (downloadUrl.startsWith("http://") || downloadUrl.startsWith("https://")) {
-                val url = URL(downloadUrl)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 8000
-                    readTimeout = 15000
+                var currentUrl = downloadUrl
+                var connection: HttpURLConnection
+                var redirects = 0
+                while (true) {
+                    val url = URL(currentUrl)
+                    connection = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 10000
+                        readTimeout = 20000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "Jackdaw-Android-Client")
+                    }
+                    val code = connection.responseCode
+                    if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+                        code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                        code == HttpURLConnection.HTTP_SEE_OTHER ||
+                        code == 307 || code == 308
+                    ) {
+                        currentUrl = connection.getHeaderField("Location") ?: break
+                        redirects++
+                        if (redirects > 5) break
+                        continue
+                    }
+                    break
                 }
+
                 val totalLength = connection.contentLength
                 var downloaded = 0L
 
@@ -136,12 +166,10 @@ class UpdateManager(private val context: Context) {
                     }
                 }
             } else {
-                // Demo download simulation when offline / local
                 for (step in 1..10) {
-                    kotlinx.coroutines.delay(120)
+                    kotlinx.coroutines.delay(80)
                     onProgress(step / 10f)
                 }
-                // Write dummy or existing apk to test installer flow
                 outputFile.writeBytes(ByteArray(1024))
             }
 
