@@ -144,6 +144,13 @@ fun JackdawMainApp(
                             }
                         }
                     },
+                    onEmptyTrash = {
+                        viewModel.emptyTrash {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("Корзина очищена")
+                            }
+                        }
+                    },
                     onSearchQueryChange = { viewModel.setSearchQuery(it) },
                     onOpenDrawer = { scope.launch { drawerState.open() } },
                     onEmailClick = { clickedEmail ->

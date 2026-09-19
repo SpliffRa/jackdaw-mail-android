@@ -51,8 +51,8 @@ class MockNetworkSyncEngine : MailProtocolEngine {
                     ),
                     slaInfo = SlaInfo(
                         severity = SlaSeverity.NORMAL,
-                        deadlineTimestamp = now + 1000 * 60 * 60 * 12,
-                        remainingLabel = "12 ч"
+                        deadlineTimestamp = now + 1000 * 60 * 30,
+                        remainingLabel = "30 мин"
                     ),
                     threadId = "thread_k8s_upgrade",
                     relatedEmailsCount = 1,
@@ -79,8 +79,8 @@ class MockNetworkSyncEngine : MailProtocolEngine {
                     ),
                     slaInfo = SlaInfo(
                         severity = SlaSeverity.NORMAL,
-                        deadlineTimestamp = now + 1000 * 60 * 60 * 8,
-                        remainingLabel = "8 ч"
+                        deadlineTimestamp = now + 1000 * 60 * 30,
+                        remainingLabel = "30 мин"
                     ),
                     threadId = "thread_nda",
                     relatedEmailsCount = 3,

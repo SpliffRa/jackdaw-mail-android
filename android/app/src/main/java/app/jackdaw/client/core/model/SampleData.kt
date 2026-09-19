@@ -86,9 +86,9 @@ object SampleData {
             senderEmail = "compliance@corp-partner.com",
             toRecipients = listOf("president@jackdaw.app"),
             subject = "Срочно: Финальное согласование условий соглашения о конфиденциальности (NDA)",
-            snippet = "Добрый день! Просим подтвердить пункт 4.2 до конца рабочего дня, так как истекает установленный дедлайн по SLA...",
-            bodyText = "Добрый день!\n\nПросим подтвердить формулировку пункта 4.2 в приложенном проекте соглашения о конфиденциальности до 16:00, так как истекает установленный регламентом SLA дедлайн согласования.\n\nВ случае необходимости внесения правок просим предоставить комментарии ответным письмом.\n\nС уважением,\nЮридический департамент",
-            timestamp = System.currentTimeMillis() - 1000 * 60 * 18,
+            snippet = "Добрый день! Просим подтвердить пункт 4.2 в рамках регламентного окна ответа SLA (30 минут с момента получения)...",
+            bodyText = "Добрый день!\n\nПросим подтвердить формулировку пункта 4.2 в приложенном проекте соглашения о конфиденциальности. Напоминаем, что согласно регламенту компании ответ должен быть предоставлен в течение 30 минут с момента получения обращения.\n\nВ случае необходимости внесения правок просим оперативно предоставить комментарии ответным письмом.\n\nС уважением,\nЮридический департамент",
+            timestamp = System.currentTimeMillis() - 1000 * 60 * 22,
             isRead = false,
             isStarred = true,
             hasAttachments = true,
@@ -97,8 +97,8 @@ object SampleData {
             ),
             slaInfo = SlaInfo(
                 severity = SlaSeverity.URGENT,
-                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 42,
-                remainingLabel = "42 мин"
+                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 8,
+                remainingLabel = "8 мин"
             ),
             threadId = "thread_nda",
             relatedEmailsCount = 2
@@ -112,16 +112,16 @@ object SampleData {
             senderEmail = "support@jackdaw.app",
             toRecipients = listOf("president@jackdaw.app"),
             subject = "Тикет #4892: Синхронизация почтовых ящиков Exchange ActiveSync",
-            snippet = "Ваш запрос переведен в статус 'В обработке'. Специалист приступил к диагностике очереди событий...",
-            bodyText = "Здравствуйте!\n\nУведомляем, что инцидент по оптимизации протокола ActiveSync успешно передан дежурному инженеру. Ожидаемое время разрешения согласно вашему корпоративному тарифу — 2 часа.\n\nТекущий статус: В обработке.\nПриоритет: Высокий.",
-            timestamp = System.currentTimeMillis() - 1000 * 60 * 45,
+            snippet = "Ваш запрос принят на контроль. Согласно регламенту SLA ответ должен быть предоставлен в течение 30 минут с момента поступления...",
+            bodyText = "Здравствуйте!\n\nУведомляем, что инцидент по оптимизации протокола ActiveSync успешно передан дежурному инженеру. Регламентное время предоставления ответа — 30 минут с момента регистрации тикета.\n\nТекущий статус: В обработке.\nПриоритет: Высокий.",
+            timestamp = System.currentTimeMillis() - 1000 * 60 * 15,
             isRead = false,
             isStarred = false,
             hasAttachments = false,
             slaInfo = SlaInfo(
                 severity = SlaSeverity.WARNING,
-                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 135,
-                remainingLabel = "2 ч 15 мин"
+                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 15,
+                remainingLabel = "15 мин"
             ),
             threadId = "thread_ticket",
             relatedEmailsCount = 1
@@ -134,9 +134,9 @@ object SampleData {
             senderEmail = "a.smirnov@techteam.io",
             toRecipients = listOf("president@jackdaw.app"),
             subject = "Архитектура нативного Android клиента Jackdaw Mail (Kotlin + Compose)",
-            snippet = "Привет! Подготовили драфт архитектуры: Compose UI, Room FTS5 офлайн кэш и WorkManager для синхронизации...",
-            bodyText = "Привет!\n\nСобрали спецификацию нативного клиента на Kotlin и Jetpack Compose. Ключевые преимущества:\n- Плавный интерфейс 120 FPS\n- Полнотекстовый поиск по письмам через Room SQLite FTS5 без ожидания сервера\n- Энергоэффективный WorkManager, не сажающий батарею в фоне\n- Поддержка темного оформления и фирменного стиля Amber/Charcoal.\n\nЖдем ревью!",
-            timestamp = System.currentTimeMillis() - 1000 * 60 * 120,
+            snippet = "Привет! Подготовили спецификацию. Контрольный срок первого ответа по регламенту SLA — 30 минут...",
+            bodyText = "Привет!\n\nСобрали спецификацию нативного клиента на Kotlin и Jetpack Compose. Ключевые преимущества:\n- Плавный интерфейс 120 FPS\n- Полнотекстовый поиск по письмам через Room SQLite FTS5 без ожидания сервера\n- Энергоэффективный WorkManager, не сажающий батарею в фоне\n- Поддержка темного оформления и фирменного стиля Amber/Charcoal.\n\nЖдем ответа в рамках SLA (30 минут с момента получения)!",
+            timestamp = System.currentTimeMillis() - 1000 * 60 * 5,
             isRead = false,
             isStarred = true,
             hasAttachments = true,
@@ -146,8 +146,8 @@ object SampleData {
             ),
             slaInfo = SlaInfo(
                 severity = SlaSeverity.NORMAL,
-                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 60 * 24,
-                remainingLabel = "24 ч"
+                deadlineTimestamp = System.currentTimeMillis() + 1000 * 60 * 25,
+                remainingLabel = "25 мин"
             ),
             threadId = "thread_android_arch",
             relatedEmailsCount = 4

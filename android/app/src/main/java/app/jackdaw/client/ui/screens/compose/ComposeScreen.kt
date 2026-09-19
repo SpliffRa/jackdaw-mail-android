@@ -94,12 +94,31 @@ fun ComposeScreen(
                 // Keep default names if failed to resolve
             }
             val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+
+            var savedLocalUri = uri.toString()
+            try {
+                val attachmentsDir = java.io.File(context.filesDir, "attachments").apply { mkdirs() }
+                val safeFileName = fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                val destFile = java.io.File(attachmentsDir, "${System.currentTimeMillis()}_$safeFileName")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    destFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                if (destFile.exists() && destFile.length() > 0L) {
+                    savedLocalUri = destFile.absolutePath
+                    if (fileSize == 0L) fileSize = destFile.length()
+                }
+            } catch (e: Exception) {
+                // fallback to original uri
+            }
+
             Attachment(
                 id = "att_${System.currentTimeMillis()}_${(100..999).random()}",
                 fileName = fileName,
                 sizeBytes = fileSize,
                 mimeType = mimeType,
-                localUri = uri.toString()
+                localUri = savedLocalUri
             )
         }
         attachments = attachments + newAttachments

@@ -17,4 +17,7 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE emailId = :emailId")
     suspend fun deleteAttachmentsForEmail(emailId: String)
+
+    @Query("DELETE FROM attachments WHERE emailId IN (SELECT id FROM emails WHERE accountId = :accountId AND folderId = :folderId)")
+    suspend fun deleteAttachmentsInFolder(accountId: String, folderId: String)
 }

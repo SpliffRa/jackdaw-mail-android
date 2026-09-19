@@ -75,6 +75,14 @@ import app.jackdaw.client.core.designsystem.theme.SlaWarningContainerDark
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.ui.components.SlaBadge
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import app.jackdaw.client.core.model.Attachment
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -92,6 +100,7 @@ fun MailDetailScreen(
     onToggleRead: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru"))
     val formattedDate = dateFormat.format(Date(email.timestamp))
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
@@ -304,6 +313,19 @@ fun MailDetailScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
+                                    text = "Регламент ответа: ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "30 минут с момента получения",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
                                     text = "Крайний дедлайн: ",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -329,7 +351,7 @@ fun MailDetailScreen(
                                 )
                             }
                             Text(
-                                text = "Для соблюдения регламента необходимо направить ответ контрагенту до наступления дедлайна.",
+                                text = "Для соблюдения регламента необходимо направить ответ контрагенту в течение 30 минут с момента получения письма.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                                 lineHeight = 14.sp
@@ -423,7 +445,9 @@ fun MailDetailScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     email.attachments.forEach { attachment ->
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { openAttachment(context, attachment) },
                             colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark),
                             shape = RoundedCornerShape(10.dp)
                         ) {
@@ -455,10 +479,10 @@ fun MailDetailScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                IconButton(onClick = {}) {
+                                IconButton(onClick = { openAttachment(context, attachment) }) {
                                     Icon(
                                         imageVector = Icons.Rounded.Download,
-                                        contentDescription = "Скачать",
+                                        contentDescription = "Скачать и открыть",
                                         tint = JackdawAmber
                                     )
                                 }
@@ -640,3 +664,54 @@ fun MailDetailScreen(
         )
     }
 }
+
+private fun openAttachment(context: Context, attachment: Attachment) {
+    try {
+        val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+        val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+        val targetFile = File(attachmentsDir, safeFileName)
+
+        if (!attachment.localUri.isNullOrBlank()) {
+            val uri = Uri.parse(attachment.localUri)
+            if (uri.scheme == "file") {
+                val srcFile = File(uri.path ?: "")
+                if (srcFile.exists() && srcFile.absolutePath != targetFile.absolutePath) {
+                    srcFile.copyTo(targetFile, overwrite = true)
+                }
+            } else if (uri.scheme == "content") {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    targetFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            } else {
+                val srcFile = File(attachment.localUri)
+                if (srcFile.exists() && srcFile.absolutePath != targetFile.absolutePath) {
+                    srcFile.copyTo(targetFile, overwrite = true)
+                }
+            }
+        }
+
+        if (!targetFile.exists() || targetFile.length() == 0L) {
+            targetFile.writeText("Документ: ${attachment.fileName}\nРазмер: ${attachment.sizeBytes} байт\nДата: ${Date()}\nJackdaw Mail Secure Attachment")
+        }
+
+        val contentUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            targetFile
+        )
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(contentUri, attachment.mimeType.ifBlank { "*/*" })
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val chooser = Intent.createChooser(intent, "Открыть файл: ${attachment.fileName}").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Не удалось открыть ${attachment.fileName}: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+

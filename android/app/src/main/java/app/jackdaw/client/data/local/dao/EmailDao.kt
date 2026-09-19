@@ -61,6 +61,9 @@ interface EmailDao {
     @Query("DELETE FROM emails WHERE accountId = :accountId")
     suspend fun deleteEmailsByAccount(accountId: String)
 
+    @Query("DELETE FROM emails WHERE accountId = :accountId AND folderId = :folderId")
+    suspend fun deleteEmailsInFolder(accountId: String, folderId: String)
+
     @Query("SELECT * FROM emails WHERE slaSeverity = 'URGENT' OR slaSeverity = 'WARNING'")
     suspend fun getUrgentSlaEmails(): List<EmailEntity>
 }

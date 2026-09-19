@@ -34,6 +34,8 @@ interface MailRepository {
     suspend fun toggleStar(emailId: String, isStarred: Boolean)
     suspend fun moveToArchive(emailId: String)
     suspend fun moveToTrash(emailId: String)
+    suspend fun emptyTrash(accountId: String, folderId: String)
+    suspend fun markSlaCompleted(emailId: String)
     suspend fun restoreEmail(emailId: String, originalFolderId: String)
     suspend fun queueEmailForSending(email: EmailMessage)
     suspend fun sendEmail(email: EmailMessage)
@@ -192,6 +194,15 @@ class OfflineFirstMailRepository(
         emailDao.updateFolder(emailId, targetFolder)
     }
 
+    override suspend fun emptyTrash(accountId: String, folderId: String) {
+        attachmentDao.deleteAttachmentsInFolder(accountId, folderId)
+        emailDao.deleteEmailsInFolder(accountId, folderId)
+    }
+
+    override suspend fun markSlaCompleted(emailId: String) {
+        emailDao.updateSlaInfo(emailId, SlaSeverity.NONE, 0L, "Выполнен")
+    }
+
     override suspend fun restoreEmail(emailId: String, originalFolderId: String) {
         emailDao.updateFolder(emailId, originalFolderId)
     }
@@ -277,7 +288,7 @@ class OfflineFirstMailRepository(
                 }
             }
 
-            // 3. Dynamic SLA recalculation
+            // 3. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
             val now = System.currentTimeMillis()
             val allEmails = emailDao.getAllEmails(accountId).first()
             for (item in allEmails) {
@@ -285,18 +296,17 @@ class OfflineFirstMailRepository(
                     val remainingMs = item.slaDeadlineTimestamp - now
                     val (newSeverity, newLabel) = when {
                         remainingMs <= 0 -> SlaSeverity.BREACHED to "Просрочено"
-                        remainingMs < 60 * 60 * 1000L -> {
+                        remainingMs <= 10 * 60 * 1000L -> {
                             val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
                             SlaSeverity.URGENT to "$mins мин"
                         }
-                        remainingMs < 4 * 60 * 60 * 1000L -> {
-                            val hours = remainingMs / (60 * 60 * 1000L)
-                            val mins = (remainingMs % (60 * 60 * 1000L)) / (60 * 1000L)
-                            SlaSeverity.WARNING to "${hours} ч ${mins} мин"
+                        remainingMs <= 20 * 60 * 1000L -> {
+                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            SlaSeverity.WARNING to "$mins мин"
                         }
                         else -> {
-                            val hours = remainingMs / (60 * 60 * 1000L)
-                            SlaSeverity.NORMAL to "${hours} ч"
+                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                            SlaSeverity.NORMAL to "$mins мин"
                         }
                     }
                     if (newSeverity != item.slaSeverity || newLabel != item.slaRemainingLabel) {

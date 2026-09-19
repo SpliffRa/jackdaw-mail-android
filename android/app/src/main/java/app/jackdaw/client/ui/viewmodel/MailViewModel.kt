@@ -206,6 +206,21 @@ class MailViewModel(
         }
     }
 
+    fun emptyTrash(onDone: () -> Unit = {}) {
+        val account = _currentAccount.value
+        val folder = selectedFolder.value
+        viewModelScope.launch {
+            repository.emptyTrash(account.id, folder.id)
+            onDone()
+        }
+    }
+
+    fun markSlaCompleted(emailId: String) {
+        viewModelScope.launch {
+            repository.markSlaCompleted(emailId)
+        }
+    }
+
     fun addAccount(account: MailAccount) {
         viewModelScope.launch {
             repository.addAccount(account)

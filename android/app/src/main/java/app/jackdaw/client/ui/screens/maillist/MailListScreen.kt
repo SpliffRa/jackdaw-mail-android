@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Menu
@@ -119,14 +120,17 @@ fun MailListScreen(
     onToggleStar: (String, Boolean) -> Unit,
     onSwipeArchive: (EmailMessage) -> Unit = {},
     onSwipeDelete: (EmailMessage) -> Unit = {},
+    onEmptyTrash: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
     val isSlaFolder = currentFolder.type == FolderType.SLA_ALERTS
+    val isTrashFolder = currentFolder.type == FolderType.TRASH
     var isSearchActive by remember { mutableStateOf(searchQuery.isNotBlank()) }
     var selectedFilter by remember { mutableStateOf(MailFilter.ALL) }
     var selectedSlaFilter by remember(currentFolder.id) { mutableStateOf(SlaDashboardFilter.ALL) }
     var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
+    var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
     val unreadCount = emails.count { !it.isRead }
     val slaUrgentCount = emails.count { it.slaInfo?.severity in listOf(SlaSeverity.URGENT, SlaSeverity.BREACHED) }
@@ -250,6 +254,15 @@ fun MailListScreen(
                             Icon(Icons.Rounded.Close, contentDescription = "Закрыть поиск", tint = MaterialTheme.colorScheme.onSurface)
                         }
                     } else {
+                        if (isTrashFolder && filteredEmails.isNotEmpty()) {
+                            IconButton(onClick = { showEmptyTrashDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.DeleteSweep,
+                                    contentDescription = "Очистить корзину",
+                                    tint = Color(0xFFEF4444)
+                                )
+                            }
+                        }
                         IconButton(onClick = onSyncClick) {
                             Icon(
                                 imageVector = Icons.Rounded.Sync,
@@ -316,6 +329,59 @@ fun MailListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (isTrashFolder && filteredEmails.isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    colors = CardDefaults.cardColors(containerColor = JackdawSurfaceElevatedDark),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Корзина (${filteredEmails.size})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Удаленные сообщения",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = { showEmptyTrashDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEF4444).copy(alpha = 0.18f),
+                                contentColor = Color(0xFFEF4444)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteSweep,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Очистить все",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
             if (isSlaFolder) {
                 // Executive SLA KPI summary tiles
                 Row(
@@ -527,6 +593,47 @@ fun MailListScreen(
                 TextButton(
                     onClick = { emailToDeletePending = null }
                 ) {
+                    Text("Отмена", color = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+        )
+    }
+
+    if (showEmptyTrashDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashDialog = false },
+            containerColor = JackdawSurfaceElevatedDark,
+            title = {
+                Text(
+                    text = "Очистить корзину?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Все письма (${filteredEmails.size}) будут безвозвратно удалены из корзины.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showEmptyTrashDialog = false
+                        onEmptyTrash()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Очистить все", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashDialog = false }) {
                     Text("Отмена", color = MaterialTheme.colorScheme.onSurface)
                 }
             }

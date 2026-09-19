@@ -240,6 +240,24 @@ fun SlaMonitoringCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // SLA 30 min window tag
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(JackdawAmber.copy(alpha = 0.15f))
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "SLA 30 мин",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = JackdawAmber,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 // Deadline pill
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
