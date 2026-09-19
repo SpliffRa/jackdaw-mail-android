@@ -1,0 +1,39 @@
+# Cursor Rules — Jackdaw Android
+
+## Стек
+- Kotlin + Jetpack Compose (Material 3), Gradle Kotlin DSL.
+- minSdk 26, targetSdk 34, compileSdk 34.
+- Clean Architecture + MVI/MVVM (Offline-First).
+- База данных: Room SQLite + FTS4/FTS5.
+- Фоновые задачи: WorkManager.
+- Сеть & Протоколы: OkHttp / Ktor / IMAP / EWS.
+- Асинхронность: Kotlin Coroutines + Flow (StateFlow / SharedFlow).
+
+## Структура пакетов (`android/app/src/main/java/app/jackdaw/client/`)
+- `core/`
+  - `designsystem/` — тема, цвета (Amber `#F59E0B`, Charcoal `#0B0F14`), типографика.
+  - `model/` — доменные модели (Account, Email, Folder, Attachment, SLA).
+  - `update/` — менеджер обновлений (OTA через GitHub Releases & FileProvider).
+- `data/`
+  - `local/` — Room DB (`JackdawDatabase`), Entity (`AccountEntity`, `EmailEntity`, `EmailFtsEntity`), DAO, конвертеры.
+  - `network/` — движки протоколов (`MailProtocolEngine`, `MockNetworkSyncEngine`, `SyncResult`).
+  - `repository/` — `MailRepository`, `OfflineFirstMailRepository`.
+  - `worker/` — `MailSyncWorker`, планировщик фоновой синхронизации `SyncScheduler`.
+- `ui/`
+  - `components/` — `EmailCard`, `FolderDrawer`, `SlaBadge`.
+  - `navigation/` — роутинг и навигация Jetpack Compose.
+  - `screens/` — `maillist`, `maildetail`, `compose`, `settings`.
+  - `viewmodel/` — `MailViewModel`, `MailUiState`.
+
+## Правила кода
+- Никаких `!!`. Использовать `requireNotNull`, `?: return`, `Result`.
+- UI не обращается к БД напрямую — только через `MailRepository` / `MailViewModel`.
+- Compose: стабильные модели, `LazyColumn` с `key`, оптимизация рекомпозиций.
+- `StateFlow` для UI-состояния, `SharedFlow` для однократных событий (Snackbar, навигация).
+- Бизнес-логика в domain/repository, не в Composable функциях.
+- Безопасность: чувствительные данные (токены/пароли) не логировать в открытом виде.
+
+## Сборка и проверка (Windows PowerShell)
+- Сборка: `cd android; .\gradlew.bat assembleDebug`
+- Установка: `adb install -r android\app\build\outputs\apk\debug\app-debug.apk`
+- Запуск: `adb shell am start -n app.jackdaw.client/.MainActivity`

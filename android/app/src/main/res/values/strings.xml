@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Jackdaw Mail</string>
+    <string name="inbox">Входящие</string>
+    <string name="sent">Отправленные</string>
+    <string name="drafts">Черновики</string>
+    <string name="archive">Архив</string>
+    <string name="trash">Корзина</string>
+    <string name="sla_alerts">SLA Контроль</string>
+    <string name="compose">Написать</string>
+    <string name="search_hint">Поиск писем, контактов, SLA...</string>
+    <string name="no_emails">Нет писем в этой папке</string>
+    <string name="related_emails">Связанные письма (цепочка)</string>
+    <string name="sla_deadline">Срок SLA</string>
+    <string name="reply">Ответить</string>
+    <string name="reply_all">Ответить всем</string>
+    <string name="forward">Переслать</string>
+</resources>

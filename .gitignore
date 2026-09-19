@@ -18,3 +18,35 @@ claude/
 app/logic/Auth/OAuth2Secrets.user.ts
 desktop/build/gh-update-token.txt
 *.tsbuildinfo
+
+# Build distributions & packages
+dist/
+releases/
+*.apk
+*.aab
+*.ap_
+
+# Android & Gradle
+.gradle/
+android/.gradle/
+android/build/
+android/*/build/
+android/local.properties
+android/.cxx/
+
+# Android Studio / IntelliJ IDEA / VS Code
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Temporary logs and dumps
+tempmediaStorage/
+*.log
+*.tmp
+screencap*.png
