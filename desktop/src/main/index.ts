@@ -1,4 +1,4 @@
-import { setMainWindow, startupBackend, shutdownBackend, startupArgs, updateState, checkForUpdateAndNotify, installUpdate, createJPCSecret, isQuittingForUpdate, prepareUpdaterAuth } from '../../backend/backend';
+import { setMainWindow, startupBackend, shutdownBackend, startupArgs, updateState, checkForUpdateAndNotify, createJPCSecret, isQuittingForUpdate, prepareUpdaterAuth } from '../../backend/backend';
 import { app, shell, BrowserWindow, session, Menu, MenuItemConstructorOptions, type ContextMenuParams, type WebContents } from 'electron'
 import { ipcMain } from 'electron/main';
 import { join } from 'path'
@@ -679,10 +679,6 @@ app.on("before-quit", event => {
 async function handleBeforeQuit() {
   try {
     await releaseOWASessionsOnQuit();
-    if (process.platform !== "darwin" && await updateState.updateDownloaded()) {
-      await installUpdate();
-      return;
-    }
   } catch (ex) {
     console.error(ex);
   }

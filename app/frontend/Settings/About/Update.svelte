@@ -25,7 +25,7 @@
         {$t`The app will close, install the update, and reopen automatically.`}
       </p>
     {:else}
-      <p class="hint">{$t`The update will also install automatically when you quit the app.`}</p>
+      <p class="hint">{$t`The update will install only after you click Install update.`}</p>
     {/if}
     <hbox class="actions">
       <Button label={installingUpdate ? $t`Installing update…` : $t`Install update`} onClick={installUpdate}
@@ -36,11 +36,18 @@
         errorCallback={showError} />
     </hbox>
   {:else if phase === "available"}
-    <div class="status">{$t`Update found`}{version ? `: ${version}` : ""}. {$t`Downloading…`}</div>
+    <div class="status">{$t`Update found`}{version ? `: ${version}` : ""}. {$t`Download it when you are ready.`}</div>
     <div class="progress" role="progressbar" aria-valuenow={progress} aria-valuemin="0" aria-valuemax="100">
       <div class="progress-fill" class:indeterminate={progress <= 0} style:width="{progress > 0 ? Math.max(progress, 2) : undefined}%"></div>
     </div>
     <hbox class="actions">
+      {#if !isMac}
+        <Button
+          label={downloadingUpdate ? $t`Downloading update…` : $t`Download update`}
+          onClick={downloadUpdate}
+          disabled={downloadingUpdate}
+          errorCallback={showError} />
+      {/if}
       <Button
         label={isMac ? $t`Download .dmg manually` : $t`Download latest installer`}
         onClick={openManualDownload}
@@ -93,6 +100,7 @@
   let progress = 0;
   let version: string | null = null;
   let readyToInstall = false;
+  let downloadingUpdate = false;
   let installingUpdate = false;
   let errorEx: Error | undefined;
   let unsub: (() => void) | undefined;
@@ -241,6 +249,9 @@
       if (phase === "downloading" || phase === "available" || phase === "downloaded") {
         installingUpdate = false;
       }
+      if (phase === "downloaded" || phase === "idle" || phase === "uptodate" || phase === "unsupported") {
+        downloadingUpdate = false;
+      }
     }
     if (obj.progress != null) {
       progress = obj.progress;
@@ -296,6 +307,23 @@
     } catch (ex) {
       installingUpdate = false;
       errorEx = ex as Error;
+    }
+  }
+
+  async function downloadUpdate() {
+    let remoteApp = getUpdaterRemoteApp();
+    if (!remoteApp || typeof remoteApp.downloadUpdate !== "function") {
+      return;
+    }
+    downloadingUpdate = true;
+    errorEx = undefined;
+    try {
+      await remoteApp.downloadUpdate();
+      await refreshStatus(remoteApp);
+    } catch (ex) {
+      downloadingUpdate = false;
+      errorEx = ex as Error;
+      await refreshStatus();
     }
   }
 

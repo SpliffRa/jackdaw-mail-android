@@ -172,6 +172,7 @@ async function createSharedAppObject() {
     fetchMailImage,
     prepareUpdaterAuth,
     checkForUpdate,
+    downloadUpdate,
     installUpdate,
     openPendingReleaseDownload,
     isQuittingForUpdate,
@@ -574,6 +575,7 @@ export function isQuittingForUpdate(): boolean {
 }
 
 const checkForUpdateRunOnce = new RunOnce<boolean>();
+const updateDownloadRunOnce = new RunOnce<boolean>();
 
 function readGhUpdateTokenFile(filePath: string): string | null {
   try {
@@ -645,9 +647,8 @@ function ensureGhUpdateAuth(): boolean {
 }
 
 function configureAutoUpdater() {
-  let isMac = process.platform === "darwin";
-  autoUpdater.autoDownload = !isMac;
-  autoUpdater.autoInstallOnAppQuit = !isMac;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
   if (app.getVersion().includes("-dev")) {
     autoUpdater.allowPrerelease = true;
   }
@@ -1109,6 +1110,43 @@ export async function getUpdateStatus() {
 
 export async function prepareUpdaterAuth(): Promise<boolean> {
   return ensureGhUpdateAuth();
+}
+
+export async function downloadUpdate(): Promise<boolean> {
+  if (process.platform === "darwin") {
+    if (!macDmgPendingPath) {
+      await downloadMacDmgUpdate(updateState.version);
+    }
+    return true;
+  }
+  if (updateState.readyToInstall) {
+    return true;
+  }
+  if (!updateState.haveUpdate) {
+    throw new Error("No update available");
+  }
+  return await updateDownloadRunOnce.runOnce(async () => {
+    updateState.phase = "downloading";
+    updateState.progress = 0;
+    updateState.error = null;
+    try {
+      await withTimeout(
+        autoUpdater.downloadUpdate(),
+        kUpdateDownloadTimeoutMs,
+        "Update download timed out",
+      );
+      updateState.phase = "downloaded";
+      updateState.progress = 100;
+      updateState.error = null;
+      return true;
+    } catch (ex) {
+      updateState.error = String((ex as Error)?.message ?? ex ?? "Update download failed");
+      if (updateState.phase === "downloading") {
+        updateState.phase = "available";
+      }
+      throw ex;
+    }
+  });
 }
 
 export async function installUpdate() {
