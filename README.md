@@ -21,6 +21,11 @@
 
 **Jackdaw Mail Android** — это нативный клиент электронной почты, разработанный на **Kotlin** и **Jetpack Compose (Material 3)**. Приложение построено по принципу **Offline-First**, обеспечивая максимальную скорость работы (120 FPS), мгновенный полнотекстовый поиск по письмам через **Room SQLite FTS5**, живой контроль корпоративных дедлайнов (SLA) и фоновую синхронизацию через **WorkManager**.
 
+> [!NOTE]
+> **Оригинальная идея и концепция:**  
+> Концепция и дизайн-система Jackdaw Mail изначально заимствованы у автора **[Uugsx](https://github.com/Uugsx)** (оригинальный проект: [Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail)). Первоначальная идея и реализация десктопного решения принадлежат ему.  
+> В рамках данного репозитория **[SpliffRa](https://github.com/SpliffRa)** занимается исключительно разработкой нативного мобильного приложения для платформы **Android**.
+
 Фирменный дизайн выполнен в контрастной темной палитре **Charcoal & Jackdaw Amber**.
 
 ---
@@ -136,14 +141,15 @@ android/app/src/main/java/app/jackdaw/client/
 
 ---
 
-## 👤 Автор
+## 👤 Автор и благодарности
 
-- **Разработчик:** [SpliffRa](https://github.com/SpliffRa)
-- **Репозиторий проекта:** [SpliffRa/jackdaw-mail-android](https://github.com/SpliffRa/jackdaw-mail-android)
+- **Разработка Android-приложения:** [SpliffRa](https://github.com/SpliffRa)
 - **Email для связи:** `spliffraida@gmail.com`
+- **Репозиторий Android-клиента:** [SpliffRa/jackdaw-mail-android](https://github.com/SpliffRa/jackdaw-mail-android)
+- **Оригинальная идея и концепция Jackdaw Mail:** [Uugsx](https://github.com/Uugsx) (проект [Uugsx/jackdaw-mail](https://github.com/Uugsx/jackdaw-mail))
 
 ---
 
 <div align="center">
-<sub>Jackdaw Mail Android · Developed by SpliffRa</sub>
+<sub>Jackdaw Mail Android · Developed by SpliffRa · Originally inspired by Uugsx</sub>
 </div>
