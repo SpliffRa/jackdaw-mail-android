@@ -88,9 +88,24 @@ class MailViewModel(
         initialValue = SampleData.sampleEmails
     )
 
+    val totalUnreadCount: StateFlow<Int> = repository.getTotalUnreadCount()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 0
+        )
+
     init {
         viewModelScope.launch {
             repository.initializeSampleDataIfEmpty()
+        }
+        viewModelScope.launch {
+            totalUnreadCount.collect { count ->
+                app.jackdaw.client.core.notification.LauncherBadgeManager.setBadge(
+                    app.jackdaw.client.JackdawApp.instance,
+                    count
+                )
+            }
         }
     }
 

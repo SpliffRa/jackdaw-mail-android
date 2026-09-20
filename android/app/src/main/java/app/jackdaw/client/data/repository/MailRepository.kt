@@ -45,6 +45,7 @@ interface MailRepository {
     suspend fun deleteAccount(accountId: String)
     suspend fun syncAll(accountId: String): SyncResult
     suspend fun initializeSampleDataIfEmpty()
+    fun getTotalUnreadCount(): Flow<Int>
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -62,6 +63,10 @@ class OfflineFirstMailRepository(
         return accountDao.getAllAccounts().map { entities ->
             entities.map { it.toDomain() }
         }
+    }
+
+    override fun getTotalUnreadCount(): Flow<Int> {
+        return emailDao.getTotalUnreadCountFlow()
     }
 
     override fun getFolders(accountId: String): Flow<List<Folder>> {

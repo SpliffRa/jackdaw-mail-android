@@ -48,6 +48,7 @@ class NotificationHelper(private val context: Context) {
                 description = "Уведомления о поступлении новых входящих писем"
                 enableVibration(false)
                 setSound(null, null)
+                setShowBadge(true)
             }
 
             // 2. SLA Alerts Channel
@@ -59,6 +60,7 @@ class NotificationHelper(private val context: Context) {
                 description = "Критические оповещения об истечении 30-минутного регламента ответа"
                 enableVibration(true)
                 setSound(null, null)
+                setShowBadge(true)
             }
 
             notificationManager.createNotificationChannel(incomingChannel)
@@ -66,7 +68,7 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
-    fun showNewEmailNotification(email: EmailMessage) {
+    fun showNewEmailNotification(email: EmailMessage, unreadCount: Int = 1) {
         val soundManager = SoundNotificationManager.getInstance(context)
         if (!soundManager.isNotificationsEnabled) return
 
@@ -87,6 +89,8 @@ class NotificationHelper(private val context: Context) {
             .setContentText(email.subject)
             .setStyle(NotificationCompat.BigTextStyle().bigText("${email.subject}\n\n${email.snippet}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setNumber(unreadCount)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setAutoCancel(true)
             .setSilent(true)
             .setContentIntent(pendingIntent)

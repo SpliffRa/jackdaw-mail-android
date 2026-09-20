@@ -52,6 +52,9 @@ interface EmailDao {
     @Query("SELECT COUNT(*) FROM emails")
     suspend fun getEmailCount(): Int
 
+    @Query("SELECT COUNT(*) FROM emails WHERE isRead = 0 AND folderId NOT LIKE '%trash%' AND folderId NOT LIKE '%archive%'")
+    fun getTotalUnreadCountFlow(): Flow<Int>
+
     @Query("SELECT * FROM emails WHERE deliveryStatus = 'QUEUED' ORDER BY timestamp ASC")
     suspend fun getPendingOutgoingEmails(): List<EmailEntity>
 

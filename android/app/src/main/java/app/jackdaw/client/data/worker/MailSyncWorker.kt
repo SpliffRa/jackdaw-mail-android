@@ -56,6 +56,10 @@ class MailSyncWorker(
                 notificationHelper.showSlaAlertNotification(mostUrgent.toDomain(emptyList()))
             }
 
+            // 4. Synchronize launcher icon badge with actual unread count
+            val totalUnread = repository.getTotalUnreadCount().first()
+            app.jackdaw.client.core.notification.LauncherBadgeManager.setBadge(context, totalUnread)
+
             Log.d(TAG, "MailSyncWorker completed successfully")
             Result.success()
         } catch (e: Exception) {
