@@ -93,3 +93,27 @@ data class EmailMessage(
     val deliveryStatus: DeliveryStatus = DeliveryStatus.SENT
 )
 
+enum class EventRsvpStatus {
+    NONE,
+    ACCEPTED,
+    TENTATIVE,
+    DECLINED
+}
+
+data class CalendarEvent(
+    val id: String,
+    val accountId: String,
+    val title: String,
+    val description: String = "",
+    val location: String = "",
+    val meetingLink: String? = null,
+    val startTimestamp: Long,
+    val endTimestamp: Long,
+    val isAllDay: Boolean = false,
+    val organizerEmail: String = "",
+    val organizerName: String = "",
+    val attendees: List<String> = emptyList(),
+    val rsvpStatus: EventRsvpStatus = EventRsvpStatus.NONE,
+    val colorHex: Long = 0xFF2563EB // Default corporate blue / Outlook blue
+)
+

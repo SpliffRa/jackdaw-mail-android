@@ -10,8 +10,10 @@ import app.jackdaw.client.data.local.dao.AccountDao
 import app.jackdaw.client.data.local.dao.AttachmentDao
 import app.jackdaw.client.data.local.dao.EmailDao
 import app.jackdaw.client.data.local.dao.FolderDao
+import app.jackdaw.client.data.local.dao.CalendarEventDao
 import app.jackdaw.client.data.local.entity.AccountEntity
 import app.jackdaw.client.data.local.entity.AttachmentEntity
+import app.jackdaw.client.data.local.entity.CalendarEventEntity
 import app.jackdaw.client.data.local.entity.EmailEntity
 import app.jackdaw.client.data.local.entity.EmailFtsEntity
 import app.jackdaw.client.data.local.entity.FolderEntity
@@ -22,9 +24,10 @@ import app.jackdaw.client.data.local.entity.FolderEntity
         FolderEntity::class,
         EmailEntity::class,
         EmailFtsEntity::class,
-        AttachmentEntity::class
+        AttachmentEntity::class,
+        CalendarEventEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -33,6 +36,7 @@ abstract class JackdawDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
     abstract fun emailDao(): EmailDao
     abstract fun attachmentDao(): AttachmentDao
+    abstract fun calendarEventDao(): CalendarEventDao
 
     companion object {
         @Volatile

@@ -41,8 +41,15 @@ import app.jackdaw.client.core.model.FolderType
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.ui.viewmodel.MailViewModel
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
+import androidx.navigation.compose.currentBackStackEntryAsState
 import app.jackdaw.client.core.designsystem.theme.ThemeMode
 import app.jackdaw.client.core.designsystem.theme.ThemePreferencesManager
+import app.jackdaw.client.data.repository.CalendarRepositoryImpl
+import app.jackdaw.client.ui.components.OutlookBottomNavigationBar
+import app.jackdaw.client.ui.screens.calendar.CalendarScreen
+import app.jackdaw.client.ui.viewmodel.CalendarViewModel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -63,6 +70,7 @@ class MainActivity : ComponentActivity() {
 
         val database = JackdawDatabase.getInstance(applicationContext)
         val repository = OfflineFirstMailRepository(database)
+        val calendarRepository = CalendarRepositoryImpl(database.calendarEventDao())
 
         setContent {
             val themeManager = remember { ThemePreferencesManager.getInstance(applicationContext) }
@@ -77,9 +85,13 @@ class MainActivity : ComponentActivity() {
                 val mailViewModel: MailViewModel = viewModel(
                     factory = MailViewModel.Factory(repository)
                 )
+                val calendarViewModel: CalendarViewModel = viewModel(
+                    factory = CalendarViewModel.Factory(calendarRepository)
+                )
 
                 JackdawMainApp(
                     viewModel = mailViewModel,
+                    calendarViewModel = calendarViewModel,
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = { mode -> themeManager.setThemeMode(mode) },
                     onToast = { message ->
@@ -94,6 +106,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun JackdawMainApp(
     viewModel: MailViewModel,
+    calendarViewModel: CalendarViewModel,
     currentThemeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onToast: (String) -> Unit
@@ -112,6 +125,11 @@ fun JackdawMainApp(
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
+    val totalUnreadCount by viewModel.totalUnreadCount.collectAsState()
+
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute == null || currentRoute == Screen.MailList.route || currentRoute == Screen.Calendar.route
 
     if (accounts.isEmpty() || currentAccount == null) {
         SetupAccountScreen(
@@ -148,6 +166,19 @@ fun JackdawMainApp(
                 onSelectFolder = { folder ->
                     viewModel.selectFolder(folder)
                     scope.launch { drawerState.close() }
+                    if (currentRoute != Screen.MailList.route) {
+                        navController.navigate(Screen.MailList.route) {
+                            popUpTo(Screen.MailList.route) { inclusive = true }
+                        }
+                    }
+                },
+                onOpenCalendar = {
+                    scope.launch { drawerState.close() }
+                    if (currentRoute != Screen.Calendar.route) {
+                        navController.navigate(Screen.Calendar.route) {
+                            launchSingleTop = true
+                        }
+                    }
                 },
                 onOpenSettings = {
                     scope.launch { drawerState.close() }
@@ -156,11 +187,37 @@ fun JackdawMainApp(
             )
         }
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = Screen.MailList.route,
-            modifier = Modifier.fillMaxSize()
-        ) {
+        Scaffold(
+            bottomBar = {
+                if (showBottomBar) {
+                    OutlookBottomNavigationBar(
+                        currentRoute = currentRoute ?: Screen.MailList.route,
+                        unreadCount = totalUnreadCount,
+                        onNavigateToMail = {
+                            if (currentRoute != Screen.MailList.route) {
+                                navController.navigate(Screen.MailList.route) {
+                                    popUpTo(Screen.MailList.route) { inclusive = true }
+                                }
+                            }
+                        },
+                        onNavigateToCalendar = {
+                            if (currentRoute != Screen.Calendar.route) {
+                                navController.navigate(Screen.Calendar.route) {
+                                    launchSingleTop = true
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.MailList.route,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
             composable(Screen.MailList.route) {
                 MailListScreen(
                     currentAccount = activeAccount,
@@ -372,6 +429,15 @@ fun JackdawMainApp(
                     }
                 )
             }
+
+            composable(Screen.Calendar.route) {
+                CalendarScreen(
+                    currentAccount = activeAccount,
+                    viewModel = calendarViewModel,
+                    onOpenDrawer = { scope.launch { drawerState.open() } }
+                )
+            }
         }
     }
+}
 }

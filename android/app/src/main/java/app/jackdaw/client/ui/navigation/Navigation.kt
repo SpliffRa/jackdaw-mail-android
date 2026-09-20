@@ -10,4 +10,5 @@ sealed class Screen(val route: String) {
             if (replyToId != null) "compose?replyToId=$replyToId" else "compose"
     }
     data object Settings : Screen("settings")
+    data object Calendar : Screen("calendar")
 }

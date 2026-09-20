@@ -48,5 +48,13 @@ class Converters {
     fun toDeliveryStatus(value: String): app.jackdaw.client.core.model.DeliveryStatus = runCatching {
         app.jackdaw.client.core.model.DeliveryStatus.valueOf(value)
     }.getOrDefault(app.jackdaw.client.core.model.DeliveryStatus.SENT)
+
+    @TypeConverter
+    fun fromEventRsvpStatus(status: app.jackdaw.client.core.model.EventRsvpStatus): String = status.name
+
+    @TypeConverter
+    fun toEventRsvpStatus(value: String): app.jackdaw.client.core.model.EventRsvpStatus = runCatching {
+        app.jackdaw.client.core.model.EventRsvpStatus.valueOf(value)
+    }.getOrDefault(app.jackdaw.client.core.model.EventRsvpStatus.NONE)
 }
 

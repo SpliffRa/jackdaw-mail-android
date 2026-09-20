@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Drafts
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Inbox
@@ -64,6 +65,7 @@ fun FolderDrawer(
     folders: List<Folder>,
     selectedFolderId: String,
     onSelectFolder: (Folder) -> Unit,
+    onOpenCalendar: () -> Unit = {},
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -293,6 +295,30 @@ fun FolderDrawer(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                 modifier = Modifier.padding(vertical = 12.dp)
             )
+
+            // Calendar item
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onOpenCalendar() }
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DateRange,
+                    contentDescription = "Календарь",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = "Календарь встреч",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             // Settings item
             Row(
