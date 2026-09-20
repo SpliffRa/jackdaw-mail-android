@@ -62,6 +62,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.util.DateGroup
 import app.jackdaw.client.core.util.DateGrouping
+import app.jackdaw.client.core.util.PluralRules
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
@@ -194,9 +195,9 @@ fun MailListScreen(
                                 text = if (isSyncing) {
                                     "Синхронизация..."
                                 } else if (unreadCount > 0) {
-                                    "${filteredEmails.size} писем • $unreadCount непрочитанных"
+                                    "${PluralRules.formatEmailCount(filteredEmails.size)} • ${PluralRules.formatUnreadCount(unreadCount)}"
                                 } else {
-                                    "${filteredEmails.size} писем"
+                                    PluralRules.formatEmailCount(filteredEmails.size)
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant

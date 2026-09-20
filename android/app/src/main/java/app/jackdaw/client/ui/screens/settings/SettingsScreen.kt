@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.Notifications
@@ -422,7 +423,7 @@ fun SettingsScreen(
                                                 }
                                             }
                                             Text(
-                                                text = "${account.email} • ${account.protocol.name}",
+                                                text = "${account.email} • ${account.protocol.displayName}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1000,12 +1001,13 @@ fun SettingsScreen(
     }
 
     // Add Account Dialog
-    if (showAddAccountDialog) {
-        var newDisplayName by remember { mutableStateOf("") }
-        var newEmail by remember { mutableStateOf("") }
-        var newProtocol by remember { mutableStateOf(AccountProtocol.EXCHANGE_EWS) }
-        var newServerHost by remember { mutableStateOf("mail.corp.com") }
+    var showOwaWebLoginDialog by remember { mutableStateOf(false) }
+    var newDisplayName by remember { mutableStateOf("") }
+    var newEmail by remember { mutableStateOf("") }
+    var newProtocol by remember { mutableStateOf(AccountProtocol.EXCHANGE_OWA) }
+    var newServerHost by remember { mutableStateOf("mail.corp.com") }
 
+    if (showAddAccountDialog) {
         AlertDialog(
             onDismissRequest = { showAddAccountDialog = false },
             title = { Text("Добавить учетную запись", color = MaterialTheme.colorScheme.onSurface) },
@@ -1030,14 +1032,35 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = newServerHost,
                         onValueChange = { newServerHost = it },
-                        label = { Text("Сервер (Exchange / IMAP)") },
+                        label = {
+                            Text(
+                                if (newProtocol == AccountProtocol.EXCHANGE_OWA) "OWA сервер или URL"
+                                else "Сервер (Exchange / IMAP)"
+                            )
+                        },
+                        placeholder = {
+                            if (newProtocol == AccountProtocol.EXCHANGE_OWA) {
+                                Text("https://mail.corp.com/owa", fontSize = 12.sp)
+                            }
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("Протокол подключения:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { newProtocol = AccountProtocol.EXCHANGE_OWA },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (newProtocol == AccountProtocol.EXCHANGE_OWA) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (newProtocol == AccountProtocol.EXCHANGE_OWA) Color.Black else MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("OWA", fontSize = 11.sp, maxLines = 1)
+                        }
                         Button(
                             onClick = { newProtocol = AccountProtocol.EXCHANGE_EWS },
                             colors = ButtonDefaults.buttonColors(
@@ -1047,7 +1070,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Exchange", fontSize = 12.sp)
+                            Text("Exchange", fontSize = 11.sp, maxLines = 1)
                         }
                         Button(
                             onClick = { newProtocol = AccountProtocol.IMAP },
@@ -1058,8 +1081,42 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("IMAP", fontSize = 12.sp)
+                            Text("IMAP", fontSize = 11.sp, maxLines = 1)
                         }
+                    }
+
+                    if (newProtocol == AccountProtocol.EXCHANGE_OWA) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { showOwaWebLoginDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = JackdawAmber.copy(alpha = 0.18f),
+                                contentColor = JackdawAmber
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Language,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = JackdawAmber
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Войти через веб-интерфейс OWA (SSO / MFA)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Поддерживает форму входа Exchange, ADFS, SAML и двухфакторную проверку (2FA).",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 10.sp
+                        )
                     }
                 }
             },
@@ -1073,7 +1130,8 @@ fun SettingsScreen(
                                 displayName = newDisplayName.ifBlank { newEmail.substringBefore("@") },
                                 protocol = newProtocol,
                                 isDefault = false,
-                                avatarColorHex = 0xFF10B981L
+                                avatarColorHex = if (newProtocol == AccountProtocol.EXCHANGE_OWA) 0xFFF59E0BL else 0xFF10B981L,
+                                serverHost = newServerHost.trim()
                             )
                             onAddAccount(createdAccount)
                             Toast.makeText(context, "Аккаунт ${createdAccount.email} добавлен", Toast.LENGTH_SHORT).show()
@@ -1092,6 +1150,20 @@ fun SettingsScreen(
                 }
             },
             containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+
+    if (showOwaWebLoginDialog) {
+        OwaWebLoginDialog(
+            initialOwaUrl = newServerHost.ifBlank { "mail.corp.com" },
+            initialEmail = newEmail,
+            onDismissRequest = { showOwaWebLoginDialog = false },
+            onAccountAuthorized = { owaAccount ->
+                onAddAccount(owaAccount)
+                Toast.makeText(context, "OWA аккаунт ${owaAccount.email} подключен", Toast.LENGTH_SHORT).show()
+                showOwaWebLoginDialog = false
+                showAddAccountDialog = false
+            }
         )
     }
 

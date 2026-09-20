@@ -24,7 +24,7 @@ import app.jackdaw.client.data.local.entity.FolderEntity
         EmailFtsEntity::class,
         AttachmentEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

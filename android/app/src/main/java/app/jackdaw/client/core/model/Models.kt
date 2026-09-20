@@ -1,10 +1,11 @@
 package app.jackdaw.client.core.model
 
-enum class AccountProtocol {
-    IMAP,
-    EXCHANGE_EWS,
-    ACTIVESTYNC,
-    MICROSOFT_GRAPH
+enum class AccountProtocol(val displayName: String) {
+    IMAP("IMAP"),
+    EXCHANGE_EWS("Exchange"),
+    EXCHANGE_OWA("OWA"),
+    ACTIVESTYNC("ActiveSync"),
+    MICROSOFT_GRAPH("MS Graph")
 }
 
 data class MailAccount(
@@ -13,7 +14,9 @@ data class MailAccount(
     val displayName: String,
     val protocol: AccountProtocol = AccountProtocol.IMAP,
     val isDefault: Boolean = false,
-    val avatarColorHex: Long = 0xFFF59E0BL
+    val avatarColorHex: Long = 0xFFF59E0BL,
+    val serverHost: String = "",
+    val authSessionToken: String = ""
 )
 
 enum class FolderType {

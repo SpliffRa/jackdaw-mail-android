@@ -135,11 +135,11 @@ class MailViewModel(
                 }
                 when {
                     result.newMessagesCount > 0 && result.sentMessagesCount > 0 ->
-                        "Синхронизировано: +${result.newMessagesCount} новых, ${result.sentMessagesCount} отправлено"
+                        "Синхронизировано: +${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.newMessagesCount)}, ${result.sentMessagesCount} отправлено"
                     result.newMessagesCount > 0 ->
-                        "Получено новых писем: ${result.newMessagesCount}"
+                        "Получено: ${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.newMessagesCount)}"
                     result.sentMessagesCount > 0 ->
-                        "Отправлено из очереди: ${result.sentMessagesCount}"
+                        "Отправлено: ${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.sentMessagesCount)}"
                     else ->
                         "Все папки актуальны"
                 }

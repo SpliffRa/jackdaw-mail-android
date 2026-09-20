@@ -13,7 +13,9 @@ data class AccountEntity(
     val displayName: String,
     val protocol: AccountProtocol = AccountProtocol.IMAP,
     val isDefault: Boolean = false,
-    val avatarColorHex: Long = 0xFFF59E0BL
+    val avatarColorHex: Long = 0xFFF59E0BL,
+    val serverHost: String = "",
+    val authSessionToken: String = ""
 ) {
     fun toDomain(): MailAccount = MailAccount(
         id = id,
@@ -21,7 +23,9 @@ data class AccountEntity(
         displayName = displayName,
         protocol = protocol,
         isDefault = isDefault,
-        avatarColorHex = avatarColorHex
+        avatarColorHex = avatarColorHex,
+        serverHost = serverHost,
+        authSessionToken = authSessionToken
     )
 
     companion object {
@@ -31,7 +35,9 @@ data class AccountEntity(
             displayName = domain.displayName,
             protocol = domain.protocol,
             isDefault = domain.isDefault,
-            avatarColorHex = domain.avatarColorHex
+            avatarColorHex = domain.avatarColorHex,
+            serverHost = domain.serverHost,
+            authSessionToken = domain.authSessionToken
         )
     }
 }
