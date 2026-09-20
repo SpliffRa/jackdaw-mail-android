@@ -5,7 +5,6 @@ import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.FolderType
 import app.jackdaw.client.core.model.MailAccount
-import app.jackdaw.client.core.model.SampleData
 import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.data.local.JackdawDatabase
 import app.jackdaw.client.data.local.entity.AccountEntity
@@ -370,17 +369,19 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun initializeSampleDataIfEmpty() {
-        if (emailDao.getEmailCount() > 0) return
-        accountDao.insertAccounts(SampleData.allAccounts.map { AccountEntity.fromDomain(it) })
-        folderDao.insertFolders(SampleData.defaultFolders.map { FolderEntity.fromDomain(it) })
-        emailDao.insertEmails(SampleData.sampleEmails.map { EmailEntity.fromDomain(it) })
-
-        val attachments = SampleData.sampleEmails.flatMap { email ->
-            email.attachments.map { AttachmentEntity.fromDomain(it, email.id) }
-        }
-        if (attachments.isNotEmpty()) {
-            attachmentDao.insertAttachments(attachments)
-        }
+        // Clean up any legacy demo/mock data if existing on device
+        accountDao.deleteAccount("acc_primary")
+        accountDao.deleteAccount("acc_secondary")
+        emailDao.deleteEmailsByAccount("acc_primary")
+        emailDao.deleteEmailsByAccount("acc_secondary")
+        folderDao.deleteFoldersByAccount("acc_primary")
+        folderDao.deleteFoldersByAccount("acc_secondary")
+        emailDao.deleteEmail("msg_sync_k8s_audit")
+        emailDao.deleteEmail("msg_sync_nda_final")
+        emailDao.deleteEmail("msg_nda_1")
+        emailDao.deleteEmail("msg_nda_2")
+        emailDao.deleteEmail("msg_k8s_patch")
+        emailDao.deleteEmail("msg_spec")
     }
 }
 

@@ -7,7 +7,6 @@ import app.jackdaw.client.core.model.Attachment
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.MailAccount
-import app.jackdaw.client.core.model.SampleData
 import app.jackdaw.client.data.repository.MailRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,10 +22,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class MailUiState(
-    val currentAccount: MailAccount = SampleData.defaultAccount,
-    val accounts: List<MailAccount> = listOf(SampleData.defaultAccount),
-    val folders: List<Folder> = SampleData.defaultFolders,
-    val selectedFolder: Folder = SampleData.defaultFolders.first(),
+    val currentAccount: MailAccount? = null,
+    val accounts: List<MailAccount> = emptyList(),
+    val folders: List<Folder> = emptyList(),
+    val selectedFolder: Folder? = null,
     val emails: List<EmailMessage> = emptyList(),
     val searchQuery: String = "",
     val isLoading: Boolean = false
@@ -37,8 +36,8 @@ class MailViewModel(
     private val repository: MailRepository
 ) : ViewModel() {
 
-    private val _currentAccount = MutableStateFlow(SampleData.defaultAccount)
-    private val _selectedFolderId = MutableStateFlow(SampleData.defaultFolders.first().id)
+    private val _manualSelectedAccountId = MutableStateFlow<String?>(null)
+    private val _selectedFolderId = MutableStateFlow<String?>(null)
     private val _searchQuery = MutableStateFlow("")
     private val _isSyncing = MutableStateFlow(false)
     private val _lastSyncTimestamp = MutableStateFlow(System.currentTimeMillis())
@@ -48,44 +47,63 @@ class MailViewModel(
     val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
     val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
 
-    val accounts = repository.getAccounts().stateIn(
+    val accounts: StateFlow<List<MailAccount>> = repository.getAccounts().stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = listOf(SampleData.defaultAccount)
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
     )
 
-    val folders = _currentAccount.flatMapLatest { account ->
-        repository.getFolders(account.id)
+    val currentAccount: StateFlow<MailAccount?> = combine(accounts, _manualSelectedAccountId) { accList, manualId ->
+        if (accList.isEmpty()) null
+        else accList.find { it.id == manualId } ?: accList.find { it.isDefault } ?: accList.firstOrNull()
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = SampleData.defaultFolders
+        started = SharingStarted.Eagerly,
+        initialValue = null
     )
 
-    val selectedFolder: StateFlow<Folder> = combine(_selectedFolderId, folders) { folderId, folderList ->
-        folderList.find { it.id == folderId } ?: folderList.firstOrNull() ?: SampleData.defaultFolders.first()
+    val folders: StateFlow<List<Folder>> = currentAccount.flatMapLatest { account ->
+        if (account != null) {
+            repository.getFolders(account.id)
+        } else {
+            flowOf(emptyList())
+        }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = SampleData.defaultFolders.first()
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
+    )
+
+    val selectedFolder: StateFlow<Folder?> = combine(_selectedFolderId, folders) { folderId, folderList ->
+        if (folderId != null) {
+            folderList.find { it.id == folderId } ?: folderList.firstOrNull()
+        } else {
+            folderList.firstOrNull()
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = null
     )
 
     val emails: StateFlow<List<EmailMessage>> = combine(
-        _currentAccount,
+        currentAccount,
         selectedFolder,
         _searchQuery
     ) { account, folder, query ->
         Triple(account, folder, query)
     }.flatMapLatest { (account, folder, query) ->
-        if (query.isNotBlank()) {
+        if (account == null || folder == null) {
+            flowOf(emptyList())
+        } else if (query.isNotBlank()) {
             repository.searchEmails(query)
         } else {
             repository.getEmailsInFolder(account.id, folder.id)
         }
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = SampleData.sampleEmails
+        started = SharingStarted.Eagerly,
+        initialValue = emptyList()
     )
 
     val totalUnreadCount: StateFlow<Int> = repository.getTotalUnreadCount()
@@ -109,7 +127,6 @@ class MailViewModel(
         }
     }
 
-    val currentAccount: StateFlow<MailAccount> = _currentAccount.asStateFlow()
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     fun selectFolder(folder: Folder) {
@@ -119,11 +136,11 @@ class MailViewModel(
 
     fun selectAccount(account: MailAccount) {
         viewModelScope.launch {
+            _manualSelectedAccountId.value = account.id
             val accountFolders = repository.getFolders(account.id).first()
             if (accountFolders.isNotEmpty()) {
                 _selectedFolderId.value = accountFolders.first().id
             }
-            _currentAccount.value = account
         }
     }
 
@@ -132,10 +149,10 @@ class MailViewModel(
     }
 
     fun triggerSync(onCompleted: ((String) -> Unit)? = null) {
+        val account = currentAccount.value ?: return
         if (_isSyncing.value) return
         viewModelScope.launch {
             _isSyncing.value = true
-            val account = _currentAccount.value
             val result = repository.syncAll(account.id)
             _isSyncing.value = false
             _lastSyncTimestamp.value = System.currentTimeMillis()
@@ -223,7 +240,7 @@ class MailViewModel(
         attachments: List<Attachment> = emptyList(),
         replyToEmailId: String? = null
     ) {
-        val account = _currentAccount.value
+        val account = currentAccount.value ?: return
         viewModelScope.launch {
             var threadId = "thread_${System.currentTimeMillis()}"
             var parentTimestamp = 0L
@@ -274,8 +291,8 @@ class MailViewModel(
     }
 
     fun emptyTrash(onDone: () -> Unit = {}) {
-        val account = _currentAccount.value
-        val folder = selectedFolder.value
+        val account = currentAccount.value ?: return
+        val folder = selectedFolder.value ?: return
         viewModelScope.launch {
             repository.emptyTrash(account.id, folder.id)
             onDone()
@@ -299,8 +316,12 @@ class MailViewModel(
         viewModelScope.launch {
             val allAccounts = accounts.value
             val remaining = allAccounts.filter { it.id != accountId }
-            if (_currentAccount.value.id == accountId && remaining.isNotEmpty()) {
-                selectAccount(remaining.first())
+            if (currentAccount.value?.id == accountId) {
+                if (remaining.isNotEmpty()) {
+                    selectAccount(remaining.first())
+                } else {
+                    _manualSelectedAccountId.value = null
+                }
             }
             repository.deleteAccount(accountId)
         }

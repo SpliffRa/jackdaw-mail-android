@@ -1005,7 +1005,7 @@ fun SettingsScreen(
     var newDisplayName by remember { mutableStateOf("") }
     var newEmail by remember { mutableStateOf("") }
     var newProtocol by remember { mutableStateOf(AccountProtocol.EXCHANGE_OWA) }
-    var newServerHost by remember { mutableStateOf("mail.corp.com") }
+    var newServerHost by remember { mutableStateOf("") }
 
     if (showAddAccountDialog) {
         AlertDialog(
@@ -1154,8 +1154,11 @@ fun SettingsScreen(
     }
 
     if (showOwaWebLoginDialog) {
+        val targetUrl = newServerHost.ifBlank {
+            if (newEmail.contains("@")) "https://${newEmail.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
+        }
         OwaWebLoginDialog(
-            initialOwaUrl = newServerHost.ifBlank { "mail.corp.com" },
+            initialOwaUrl = targetUrl,
             initialEmail = newEmail,
             onDismissRequest = { showOwaWebLoginDialog = false },
             onAccountAuthorized = { owaAccount ->

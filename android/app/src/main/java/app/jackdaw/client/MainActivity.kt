@@ -36,6 +36,9 @@ import app.jackdaw.client.ui.screens.compose.ComposeScreen
 import app.jackdaw.client.ui.screens.maildetail.MailDetailScreen
 import app.jackdaw.client.ui.screens.maillist.MailListScreen
 import app.jackdaw.client.ui.screens.settings.SettingsScreen
+import app.jackdaw.client.ui.screens.setup.SetupAccountScreen
+import app.jackdaw.client.core.model.FolderType
+import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.ui.viewmodel.MailViewModel
 import androidx.compose.foundation.isSystemInDarkTheme
 import app.jackdaw.client.core.designsystem.theme.ThemeMode
@@ -110,18 +113,38 @@ fun JackdawMainApp(
     val context = androidx.compose.ui.platform.LocalContext.current
     val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
 
+    if (accounts.isEmpty() || currentAccount == null) {
+        SetupAccountScreen(
+            onAccountAdded = { newAccount ->
+                viewModel.addAccount(newAccount)
+                onToast("Учетная запись ${newAccount.email} успешно подключена")
+            }
+        )
+        return
+    }
+
+    val activeAccount = currentAccount!!
+    val activeFolder = selectedFolder ?: folders.firstOrNull() ?: Folder(
+        id = "${activeAccount.id}_inbox",
+        accountId = activeAccount.id,
+        name = "Входящие",
+        type = FolderType.INBOX,
+        unreadCount = 0,
+        totalCount = 0
+    )
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             FolderDrawer(
-                currentAccount = currentAccount,
+                currentAccount = activeAccount,
                 accounts = accounts,
                 onSelectAccount = { account ->
                     viewModel.selectAccount(account)
                     scope.launch { drawerState.close() }
                 },
                 folders = folders,
-                selectedFolderId = selectedFolder.id,
+                selectedFolderId = activeFolder.id,
                 onSelectFolder = { folder ->
                     viewModel.selectFolder(folder)
                     scope.launch { drawerState.close() }
@@ -140,8 +163,8 @@ fun JackdawMainApp(
         ) {
             composable(Screen.MailList.route) {
                 MailListScreen(
-                    currentAccount = currentAccount,
-                    currentFolder = selectedFolder,
+                    currentAccount = activeAccount,
+                    currentFolder = activeFolder,
                     emails = emails,
                     searchQuery = searchQuery,
                     isSyncing = isSyncing,
@@ -306,16 +329,16 @@ fun JackdawMainApp(
                 val signatureManager = androidx.compose.runtime.remember {
                     app.jackdaw.client.core.signature.SignatureManager.getInstance(context)
                 }
-                val initialBody = androidx.compose.runtime.remember(replyToEmail?.id, currentAccount.id) {
+                val initialBody = androidx.compose.runtime.remember(replyToEmail?.id, activeAccount.id) {
                     if (replyToEmail != null) {
-                        signatureManager.buildReplyBody(currentAccount, replyToEmail)
+                        signatureManager.buildReplyBody(activeAccount, replyToEmail)
                     } else {
-                        signatureManager.buildNewEmailBody(currentAccount)
+                        signatureManager.buildNewEmailBody(activeAccount)
                     }
                 }
 
                 ComposeScreen(
-                    currentAccount = currentAccount,
+                    currentAccount = activeAccount,
                     initialTo = replyToEmail?.senderEmail ?: "",
                     initialSubject = replyToEmail?.let {
                         if (it.subject.startsWith("Re:", ignoreCase = true)) it.subject else "Re: ${it.subject}"
@@ -332,7 +355,7 @@ fun JackdawMainApp(
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     accounts = accounts,
-                    currentAccountId = currentAccount.id,
+                    currentAccountId = activeAccount.id,
                     currentThemeMode = currentThemeMode,
                     onThemeModeChange = onThemeModeChange,
                     onBack = { navController.popBackStack() },
