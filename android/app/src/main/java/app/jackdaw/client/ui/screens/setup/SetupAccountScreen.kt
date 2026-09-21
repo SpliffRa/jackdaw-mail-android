@@ -354,7 +354,7 @@ fun SetupAccountScreen(
                     val createdAccount = MailAccount(
                         id = "acc_${System.currentTimeMillis()}",
                         email = email.trim(),
-                        displayName = displayName.ifBlank { email.substringBefore("@") },
+                        displayName = displayName.trim().ifBlank { email.trim().substringBefore("@") },
                         protocol = selectedProtocol,
                         isDefault = true,
                         avatarColorHex = if (selectedProtocol == AccountProtocol.EXCHANGE_OWA) 0xFFF59E0BL else 0xFF10B981L,
@@ -405,17 +405,25 @@ fun SetupAccountScreen(
     }
 
     if (showOwaWebLoginDialog) {
-        val targetUrl = serverHost.ifBlank {
+        val targetUrl = serverHost.trim().ifBlank {
             if (email.contains("@")) "https://${email.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
         }
         OwaWebLoginDialog(
             initialOwaUrl = targetUrl,
-            initialEmail = email,
-            autoLoginUser = loginUser.ifBlank { email },
+            initialEmail = email.trim(),
+            initialDisplayName = displayName.trim(),
+            autoLoginUser = loginUser.trim().ifBlank { email.trim() },
             autoLoginPassword = password,
             onDismissRequest = { showOwaWebLoginDialog = false },
             onAccountAuthorized = { owaAccount ->
-                onAccountAdded(owaAccount)
+                val finalAccount = owaAccount.copy(
+                    displayName = displayName.trim().ifBlank { owaAccount.displayName }.ifBlank { email.trim().substringBefore("@") },
+                    email = email.trim().ifBlank { owaAccount.email },
+                    loginUser = loginUser.trim().ifBlank { owaAccount.loginUser },
+                    savedPassword = password.ifBlank { owaAccount.savedPassword },
+                    serverHost = serverHost.trim().ifBlank { owaAccount.serverHost }
+                )
+                onAccountAdded(finalAccount)
                 showOwaWebLoginDialog = false
             }
         )

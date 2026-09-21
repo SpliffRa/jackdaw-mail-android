@@ -114,7 +114,7 @@ enum class SettingsSubfolder(
     THEME("Тема оформления", "Выбор тёмной, светлой или системной темы", Icons.Rounded.SettingsBrightness),
     ACCOUNTS("Учетные записи", "Управление подключенными почтовыми ящиками", Icons.Rounded.AccountCircle),
     SYNC_SLA("Синхронизация и SLA", "Фоновая проверка, Wi-Fi и контроль 30 минут", Icons.Rounded.Sync),
-    NOTIFICATIONS_SOUND("Уведомления и звуки", "Тихий чпок, громкость и сигналы", Icons.Rounded.Notifications),
+    NOTIFICATIONS_SOUND("Уведомления и звуки", "Громкость и сигналы оповещений", Icons.Rounded.Notifications),
     SIGNATURE("Шаблон подписи", "Точный текст подписи для писем и ответов", Icons.Rounded.EditNote),
     READ_STATUS("Пометка прочитанных (Outlook)", "Правила смены статуса прочтения писем", Icons.Rounded.MarkEmailRead),
     ABOUT("О приложении и обновления", "Версия клиента, проверка и установка APK", Icons.Rounded.Info)
@@ -243,7 +243,7 @@ fun SettingsScreen(
                                 SettingsSubfolder.THEME -> "Текущая: ${currentThemeMode.title}"
                                 SettingsSubfolder.ACCOUNTS -> "${accounts.size} ящик(ов) • Активен: ${currentAccountObj.displayName}"
                                 SettingsSubfolder.SYNC_SLA -> "Контроль SLA 30 мин: ${if (slaAlertsEnabled) "Вкл" else "Выкл"}"
-                                SettingsSubfolder.NOTIFICATIONS_SOUND -> "Громкость ${(soundVolume * 100).toInt()}% • Чпок: ${if (incomingSound) "Вкл" else "Выкл"}"
+                                SettingsSubfolder.NOTIFICATIONS_SOUND -> "Громкость ${(soundVolume * 100).toInt()}% • Звук: ${if (incomingSound) "Вкл" else "Выкл"}"
                                 SettingsSubfolder.SIGNATURE -> if (isSignatureEnabled) "Включена" else "Отключена"
                                 SettingsSubfolder.READ_STATUS -> currentMarkAsReadMode.title
                                 SettingsSubfolder.ABOUT -> "Версия v${BuildConfig.VERSION_NAME}"
@@ -602,7 +602,7 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text("Входящее письмо (тихий чпок)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                                        Text("Звук входящего письма", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                                         Text("Мягкий сигнал и виброотклик", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1201,7 +1201,7 @@ fun SettingsScreen(
                             val createdAccount = MailAccount(
                                 id = "acc_${System.currentTimeMillis()}",
                                 email = newEmail.trim(),
-                                displayName = newDisplayName.ifBlank { newEmail.substringBefore("@") },
+                                displayName = newDisplayName.trim().ifBlank { newEmail.trim().substringBefore("@") },
                                 protocol = newProtocol,
                                 isDefault = false,
                                 avatarColorHex = if (newProtocol == AccountProtocol.EXCHANGE_OWA) 0xFFF59E0BL else 0xFF10B981L,
@@ -1212,6 +1212,12 @@ fun SettingsScreen(
                             onAddAccount(createdAccount)
                             Toast.makeText(context, "Аккаунт ${createdAccount.email} добавлен", Toast.LENGTH_SHORT).show()
                             showAddAccountDialog = false
+                            newDisplayName = ""
+                            newEmail = ""
+                            newLoginUser = ""
+                            newPassword = ""
+                            isNewPasswordVisible = false
+                            newServerHost = ""
                         }
                     },
                     enabled = newEmail.isNotBlank(),
@@ -1221,7 +1227,15 @@ fun SettingsScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddAccountDialog = false }) {
+                TextButton(onClick = {
+                    showAddAccountDialog = false
+                    newDisplayName = ""
+                    newEmail = ""
+                    newLoginUser = ""
+                    newPassword = ""
+                    isNewPasswordVisible = false
+                    newServerHost = ""
+                }) {
                     Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
@@ -1230,20 +1244,34 @@ fun SettingsScreen(
     }
 
     if (showOwaWebLoginDialog) {
-        val targetUrl = newServerHost.ifBlank {
+        val targetUrl = newServerHost.trim().ifBlank {
             if (newEmail.contains("@")) "https://${newEmail.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
         }
         OwaWebLoginDialog(
             initialOwaUrl = targetUrl,
-            initialEmail = newEmail,
-            autoLoginUser = newLoginUser.ifBlank { newEmail },
+            initialEmail = newEmail.trim(),
+            initialDisplayName = newDisplayName.trim(),
+            autoLoginUser = newLoginUser.trim().ifBlank { newEmail.trim() },
             autoLoginPassword = newPassword,
             onDismissRequest = { showOwaWebLoginDialog = false },
             onAccountAuthorized = { owaAccount ->
-                onAddAccount(owaAccount)
-                Toast.makeText(context, "OWA аккаунт ${owaAccount.email} подключен", Toast.LENGTH_SHORT).show()
+                val finalAccount = owaAccount.copy(
+                    displayName = newDisplayName.trim().ifBlank { owaAccount.displayName }.ifBlank { newEmail.trim().substringBefore("@") },
+                    email = newEmail.trim().ifBlank { owaAccount.email },
+                    loginUser = newLoginUser.trim().ifBlank { owaAccount.loginUser },
+                    savedPassword = newPassword.ifBlank { owaAccount.savedPassword },
+                    serverHost = newServerHost.trim().ifBlank { owaAccount.serverHost }
+                )
+                onAddAccount(finalAccount)
+                Toast.makeText(context, "OWA аккаунт ${finalAccount.email} подключен", Toast.LENGTH_SHORT).show()
                 showOwaWebLoginDialog = false
                 showAddAccountDialog = false
+                newDisplayName = ""
+                newEmail = ""
+                newLoginUser = ""
+                newPassword = ""
+                isNewPasswordVisible = false
+                newServerHost = ""
             }
         )
     }
@@ -1257,7 +1285,8 @@ fun SettingsScreen(
         var editPassword by remember(target.id) { mutableStateOf(target.savedPassword) }
         var editServerHost by remember(target.id) { mutableStateOf(target.serverHost) }
         var editProtocol by remember(target.id) { mutableStateOf(target.protocol) }
-        var isEditPasswordVisible by remember { mutableStateOf(false) }
+        var isEditPasswordVisible by remember(target.id) { mutableStateOf(false) }
+        var showEditOwaLoginDialog by remember(target.id) { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { accountToEdit = null },
@@ -1416,11 +1445,11 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         val updated = target.copy(
-                            displayName = editDisplayName.ifBlank { editEmail.substringBefore("@") },
-                            email = editEmail.trim(),
-                            loginUser = editLoginUser.trim(),
-                            savedPassword = editPassword,
-                            serverHost = editServerHost.trim(),
+                            displayName = editDisplayName.trim().ifBlank { target.displayName },
+                            email = editEmail.trim().ifBlank { target.email },
+                            loginUser = editLoginUser.trim().ifBlank { target.loginUser },
+                            savedPassword = editPassword.ifBlank { target.savedPassword },
+                            serverHost = editServerHost.trim().ifBlank { target.serverHost },
                             protocol = editProtocol
                         )
                         onUpdateAccount(updated)
@@ -1441,23 +1470,24 @@ fun SettingsScreen(
         )
 
         if (showEditOwaLoginDialog) {
-            val targetUrl = editServerHost.ifBlank { target.serverHost }.ifBlank {
+            val targetUrl = editServerHost.trim().ifBlank { target.serverHost }.ifBlank {
                 if (editEmail.contains("@")) "https://${editEmail.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
             }
             OwaWebLoginDialog(
                 initialOwaUrl = targetUrl,
-                initialEmail = editEmail.ifBlank { target.email },
-                autoLoginUser = editLoginUser.ifBlank { target.loginUser }.ifBlank { editEmail },
+                initialDisplayName = editDisplayName.trim().ifBlank { target.displayName },
+                initialEmail = editEmail.trim().ifBlank { target.email },
+                autoLoginUser = editLoginUser.trim().ifBlank { target.loginUser }.ifBlank { editEmail.trim() },
                 autoLoginPassword = editPassword.ifBlank { target.savedPassword },
                 existingAccountId = target.id,
                 onDismissRequest = { showEditOwaLoginDialog = false },
                 onAccountAuthorized = { authorizedAccount ->
                     val updatedWithInputs = authorizedAccount.copy(
-                        displayName = editDisplayName.ifBlank { authorizedAccount.displayName },
-                        email = editEmail.ifBlank { authorizedAccount.email },
-                        loginUser = editLoginUser.ifBlank { authorizedAccount.loginUser },
-                        savedPassword = editPassword.ifBlank { authorizedAccount.savedPassword },
-                        serverHost = editServerHost.ifBlank { authorizedAccount.serverHost },
+                        displayName = editDisplayName.trim().ifBlank { target.displayName }.ifBlank { authorizedAccount.displayName },
+                        email = editEmail.trim().ifBlank { target.email }.ifBlank { authorizedAccount.email },
+                        loginUser = editLoginUser.trim().ifBlank { target.loginUser }.ifBlank { authorizedAccount.loginUser },
+                        savedPassword = editPassword.ifBlank { target.savedPassword }.ifBlank { authorizedAccount.savedPassword },
+                        serverHost = editServerHost.trim().ifBlank { target.serverHost }.ifBlank { authorizedAccount.serverHost },
                         protocol = editProtocol
                     )
                     onUpdateAccount(updatedWithInputs)

@@ -110,6 +110,7 @@ class JackdawBridge(
 fun OwaWebLoginDialog(
     initialOwaUrl: String,
     initialEmail: String = "",
+    initialDisplayName: String = "",
     autoLoginUser: String = "",
     autoLoginPassword: String = "",
     existingAccountId: String? = null,
@@ -172,8 +173,10 @@ fun OwaWebLoginDialog(
                     if (userVal) {
                         var userSelectors = [
                             'input#username', 'input#userNameInput', 'input#loginfmt', 'input#email',
-                            'input[name="username" i]', 'input[name="UserName" i]', 'input[name="login" i]',
-                            'input[name="loginfmt" i]', 'input[type="email"]', 'input[type="text"]:not([readonly])'
+                            'input#cred_userid_inputtext', 'input#user', 'input[name="username" i]',
+                            'input[name="UserName" i]', 'input[name="login" i]', 'input[name="loginfmt" i]',
+                            'input[name="user" i]', 'input[name="email" i]', 'input[autocomplete="username"]',
+                            'input[autocomplete="email"]', 'input[type="email"]', 'input[type="text"]:not([readonly])'
                         ];
                         for (var i = 0; i < userSelectors.length; i++) {
                             var el = document.querySelector(userSelectors[i]);
@@ -189,8 +192,10 @@ fun OwaWebLoginDialog(
                     if (passVal) {
                         var passSelectors = [
                             'input[type="password"]', 'input#password', 'input#passwordInput',
-                            'input#passwd', 'input#i0118', 'input[name="password" i]',
-                            'input[name="Password" i]', 'input[name="passwd" i]'
+                            'input#passwd', 'input#i0118', 'input#cred_password_inputtext',
+                            'input#pass', 'input[name="password" i]', 'input[name="Password" i]',
+                            'input[name="passwd" i]', 'input[name="pass" i]', 'input[name="pword" i]',
+                            'input[autocomplete="current-password"]', 'input[autocomplete="password"]'
                         ];
                         for (var j = 0; j < passSelectors.length; j++) {
                             var pel = document.querySelector(passSelectors[j]);
@@ -468,17 +473,21 @@ fun OwaWebLoginDialog(
             OwaAuthManager.extractCanary(finalCookies).orEmpty()
         }
 
+        val finalDisplayName = initialDisplayName.trim().ifBlank {
+            if (email.isNotBlank()) email.substringBefore("@") else "Почта"
+        }
+
         val account = MailAccount(
             id = effectiveAccountId,
             email = email,
-            displayName = email.substringBefore("@"),
+            displayName = finalDisplayName,
             protocol = AccountProtocol.EXCHANGE_OWA,
             isDefault = false,
             avatarColorHex = 0xFFF59E0BL,
             serverHost = normalizedUrl,
             authSessionToken = finalCanary,
             authSessionCookies = finalCookies,
-            loginUser = autoLoginUser,
+            loginUser = autoLoginUser.trim(),
             savedPassword = autoLoginPassword
         )
         onAccountAuthorized(account)
