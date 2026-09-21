@@ -26,10 +26,11 @@ import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Drafts
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Inbox
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.NotificationImportant
 import androidx.compose.material.icons.rounded.Outbox
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
-import app.jackdaw.client.core.designsystem.theme.JackdawAmberLight
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.FolderType
@@ -54,12 +54,16 @@ import app.jackdaw.client.core.model.MailAccount
 
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.DragHandle
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 
 @Composable
 fun FolderDrawer(
@@ -69,11 +73,25 @@ fun FolderDrawer(
     folders: List<Folder>,
     selectedFolderId: String,
     onSelectFolder: (Folder) -> Unit,
+    onReorderFolders: (List<String>) -> Unit = {},
     onOpenCalendar: () -> Unit = {},
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isAccountsExpanded by remember { mutableStateOf(false) }
+    var isReorderMode by remember { mutableStateOf(false) }
+
+    val regularFolders = remember(folders) {
+        folders.filter { it.type != FolderType.SLA_ALERTS }
+    }
+    // Mutable local list for reordering, automatically synced when outside reorder mode
+    val reorderList = remember(regularFolders) { regularFolders.toMutableStateList() }
+    LaunchedEffect(regularFolders) {
+        if (!isReorderMode) {
+            reorderList.clear()
+            reorderList.addAll(regularFolders)
+        }
+    }
 
     ModalDrawerSheet(
         modifier = modifier
@@ -84,6 +102,7 @@ fun FolderDrawer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
             // Header / Current Account Switcher
@@ -264,24 +283,96 @@ fun FolderDrawer(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            val regularFolders = folders.filter { it.type != FolderType.SLA_ALERTS }
-
-            // Scrollable folders list
+            // Folders list (scrolled by outer Column)
             Column(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = "ПОЧТОВЫЕ ПАПКИ",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                // Section header with reorder toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "ПОЧТОВЫЕ ПАПКИ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isReorderMode) {
+                            Surface(
+                                onClick = {
+                                    val sorted = reorderList.sortedWith(
+                                        compareBy<Folder> {
+                                            when (it.type) {
+                                                FolderType.INBOX -> 0
+                                                FolderType.SENT -> 1
+                                                FolderType.DRAFTS -> 2
+                                                FolderType.ARCHIVE -> 3
+                                                FolderType.OUTBOX -> 4
+                                                FolderType.TRASH -> 5
+                                                FolderType.SLA_ALERTS -> 6
+                                                FolderType.CUSTOM -> 100
+                                            }
+                                        }.thenBy { it.name }
+                                    )
+                                    reorderList.clear()
+                                    reorderList.addAll(sorted)
+                                    onReorderFolders(reorderList.map { it.id })
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = "Сброс",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
 
-                // Regular Folders List
-                regularFolders.forEach { folder ->
+                        // Toggle reorder mode button
+                        Surface(
+                            onClick = {
+                                if (isReorderMode) {
+                                    onReorderFolders(reorderList.map { it.id })
+                                }
+                                isReorderMode = !isReorderMode
+                            },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isReorderMode) JackdawAmber.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isReorderMode) Icons.Rounded.Done else Icons.Rounded.Edit,
+                                    contentDescription = if (isReorderMode) "Готово" else "Упорядочить",
+                                    tint = if (isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = if (isReorderMode) "Готово" else "Упорядочить",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (isReorderMode) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Folders list
+                reorderList.forEachIndexed { index, folder ->
                     val isSelected = folder.id == selectedFolderId
                     val icon = getFolderIcon(folder.type)
 
@@ -290,16 +381,91 @@ fun FolderDrawer(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(
-                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                                if (isSelected && !isReorderMode) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
                             )
-                            .clickable { onSelectFolder(folder) }
-                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                            .then(
+                                if (!isReorderMode) Modifier.clickable { onSelectFolder(folder) }
+                                else Modifier
+                            )
+                            .padding(
+                                start = if (isReorderMode) 4.dp else 12.dp,
+                                end = 12.dp,
+                                top = 11.dp,
+                                bottom = 11.dp
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // In reorder mode: show ↑/↓ buttons
+                        if (isReorderMode) {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (index > 0) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                                        )
+                                        .then(
+                                            if (index > 0) Modifier.clickable {
+                                                val item = reorderList.removeAt(index)
+                                                reorderList.add(index - 1, item)
+                                                onReorderFolders(reorderList.map { it.id })
+                                            } else Modifier
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (index > 0) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.KeyboardArrowUp,
+                                            contentDescription = "Вверх",
+                                            tint = JackdawAmber,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (index < reorderList.size - 1) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                                        )
+                                        .then(
+                                            if (index < reorderList.size - 1) Modifier.clickable {
+                                                val item = reorderList.removeAt(index)
+                                                reorderList.add(index + 1, item)
+                                                onReorderFolders(reorderList.map { it.id })
+                                            } else Modifier
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (index < reorderList.size - 1) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                                            contentDescription = "Вниз",
+                                            tint = JackdawAmber,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.DragHandle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+
                         Icon(
                             imageVector = icon,
                             contentDescription = folder.name,
-                            tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
 
@@ -308,12 +474,12 @@ fun FolderDrawer(
                         Text(
                             text = folder.name,
                             style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface,
+                            fontWeight = if (isSelected && !isReorderMode) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f)
                         )
 
-                        if (folder.unreadCount > 0) {
+                        if (folder.unreadCount > 0 && !isReorderMode) {
                             Box(
                                 modifier = Modifier
                                     .clip(CircleShape)

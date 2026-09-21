@@ -873,16 +873,21 @@ class OwaProtocolEngine : MailProtocolEngine {
             val displayName = folderObj.optString("DisplayName", "").trim()
             if (displayName.isBlank()) continue
 
+            val folderTypeStr = folderObj.optString("__type", "")
             val folderClass = folderObj.optString("FolderClass", "")
             val lowerName = displayName.lowercase()
-            // Exclude non-mail folders (Exchange mail folders are IPF.Note or empty) and internal system plumbing
-            if (folderClass.startsWith("IPF.Appointment") ||
-                folderClass.startsWith("IPF.Contact") ||
-                folderClass.startsWith("IPF.Task") ||
-                folderClass.startsWith("IPF.Configuration") ||
-                folderClass.startsWith("IPF.StickyNote") ||
-                folderClass.startsWith("IPF.Journal") ||
-                (folderClass.isNotEmpty() && !folderClass.startsWith("IPF.Note")) ||
+
+            // Exclude virtual search folders, non-mail classes, and Exchange internal plumbing
+            if (folderTypeStr.contains("SearchFolder", ignoreCase = true) ||
+                folderClass.startsWith("IPF.SearchFolder", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Appointment", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Contact", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Task", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Configuration", ignoreCase = true) ||
+                folderClass.startsWith("IPF.StickyNote", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Journal", ignoreCase = true) ||
+                folderClass.startsWith("IPF.Shortcut", ignoreCase = true) ||
+                (folderClass.isNotEmpty() && !folderClass.startsWith("IPF.Note", ignoreCase = true)) ||
                 lowerName == "календарь" || lowerName == "calendar" ||
                 lowerName == "контакты" || lowerName == "contacts" ||
                 lowerName == "задачи" || lowerName == "tasks" ||
@@ -910,7 +915,39 @@ class OwaProtocolEngine : MailProtocolEngine {
                 lowerName.contains("files") ||
                 lowerName.contains("rss") ||
                 lowerName.contains("feeds") ||
-                lowerName.startsWith("{")
+                lowerName.contains("search folders") ||
+                lowerName.contains("папки поиска") ||
+                lowerName.contains("social activity") ||
+                lowerName.contains("common views") ||
+                lowerName.contains("sharing") ||
+                lowerName.contains("shortcuts") ||
+                lowerName.contains("spooler") ||
+                lowerName.contains("voice mail") ||
+                lowerName.contains("голосовая почта") ||
+                lowerName.contains("news feed") ||
+                lowerName.contains("новости") ||
+                lowerName.contains("conversation history") ||
+                lowerName.contains("журнал бесед") ||
+                lowerName.contains("suggested contacts") ||
+                lowerName.contains("companies") ||
+                lowerName.contains("junk") ||
+                lowerName.contains("нежелательн") ||
+                lowerName == "buddies" ||
+                lowerName.contains("inbound") ||
+                lowerName.contains("outbound") ||
+                lowerName.contains("clutter") ||
+                lowerName.contains("scheduled") ||
+                lowerName.contains("spamsubscriptions") ||
+                lowerName.contains("personalmetadata") ||
+                lowerName.contains("recoverable items") ||
+                lowerName.contains("deletions") ||
+                lowerName.contains("purges") ||
+                lowerName.contains("versions") ||
+                lowerName.contains("discoveryholds") ||
+                lowerName.startsWith("{") ||
+                lowerName.startsWith("@") ||
+                lowerName.startsWith(".") ||
+                lowerName.matches(Regex(".*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.*", RegexOption.IGNORE_CASE))
             ) {
                 continue
             }
@@ -1019,9 +1056,22 @@ class OwaProtocolEngine : MailProtocolEngine {
     private fun stripHtml(html: String): String {
         if (html.isBlank()) return ""
         return runCatching {
-            android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+            // 1. Remove <head>...</head> and <style>...</style> blocks (including inline Outlook CSS)
+            var cleaned = html
+                .replace(Regex("<head[^>]*>.*?</head>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
+                .replace(Regex("<style[^>]*>.*?</style>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
+                .replace(Regex("<script[^>]*>.*?</script>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), "")
+            // 2. Remove HTML comments (<!-- ... -->) which often contain Outlook CSS rules
+            cleaned = cleaned.replace(Regex("<!--.*?-->", setOf(RegexOption.DOT_MATCHES_ALL)), "")
+            // 3. Remove cid: image src attributes to avoid "cid:image001.png@..." leaking into text
+            cleaned = cleaned.replace(Regex("src=[\"']cid:[^\"']*[\"']", RegexOption.IGNORE_CASE), "src=\"\"")
+            // 4. Parse remaining HTML to plain text
+            val plain = android.text.Html.fromHtml(cleaned, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+            // 5. Collapse whitespace and trim
+            plain.replace(Regex("\\s+"), " ").trim()
         }.getOrElse {
-            html.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+            html.replace(Regex("<[^>]*>"), " ").replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+                .replace(Regex("\\s+"), " ").trim()
         }
     }
 }

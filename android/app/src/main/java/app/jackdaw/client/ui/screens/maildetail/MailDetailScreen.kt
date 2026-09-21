@@ -31,9 +31,11 @@ import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Forward
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.Star
@@ -302,55 +304,96 @@ fun MailDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Email Body
-            val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            val isSystemDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            var forceLightMode by remember(email.id) { mutableStateOf(false) }
+            val effectiveDark = isSystemDark && !forceLightMode
             val hasHtml = !email.bodyHtml.isNullOrBlank()
 
             if (hasHtml) {
-                // Render rich HTML via WebView (scroll disabled — outer Column handles it)
-                var webViewHeightPx by remember { mutableIntStateOf(600) }
-                val density = androidx.compose.ui.platform.LocalDensity.current
-                val webViewHeightDp = with(density) { webViewHeightPx.toDp() }
+                // Reading mode pill to switch between light and dark backgrounds
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        onClick = { forceLightMode = !forceLightMode },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (forceLightMode) JackdawAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (forceLightMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                                contentDescription = null,
+                                tint = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (forceLightMode) "Тёмный фон" else "Светлый фон",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
-                val bgColor = if (isDarkTheme) "#1C1B1F" else "#FFFFFF"
-                val textColor = if (isDarkTheme) "#E6E1E5" else "#1C1B1F"
-                val linkColor = if (isDarkTheme) "#D4A017" else "#8B6914"
+                // In WebView CSS pixels match dp when viewport is device-width.
+                // We add buffer padding so footer and signature are never clipped.
+                var webViewHeightPx by remember(email.id, effectiveDark) { mutableIntStateOf(500) }
+                val webViewHeightDp = (webViewHeightPx + 48).coerceAtLeast(150).dp
+
+                val bgColor = if (effectiveDark) "#1C1B1F" else "#FFFFFF"
+                val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
+                val linkColor = if (effectiveDark) "#D4A017" else "#8B6914"
 
                 val htmlDoc = """
                     <!DOCTYPE html>
                     <html>
                     <head>
                     <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <style>
                       * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
-                      body {
-                        margin: 0; padding: 0;
+                      html, body {
+                        margin: 0; padding: 4px 0;
                         background: $bgColor;
                         color: $textColor;
-                        font-family: -apple-system, Roboto, Arial, sans-serif;
+                        font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
                         font-size: 15px;
-                        line-height: 1.6;
-                        word-wrap: break-word;
-                        overflow-wrap: break-word;
+                        line-height: 1.55;
+                        word-break: normal;
                       }
-                      a { color: $linkColor; }
-                      img { max-width: 100%%; height: auto; }
+                      a { color: $linkColor; word-break: break-all; }
+                      img { max-width: 100%% !important; height: auto !important; }
+                      /* Hide broken CID attachments */
+                      img[src^="cid:"], img[src=""] { display: none !important; }
                       pre, code { white-space: pre-wrap; word-break: break-all; }
-                      table { max-width: 100%%; }
+                      table { max-width: 100%% !important; }
+                      p { margin: 0 0 8px 0; }
+                      blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid ${if (effectiveDark) "#444" else "#ccc"}; color: ${if (effectiveDark) "#aaa" else "#666"}; }
+                      hr { border: none; border-top: 1px solid ${if (effectiveDark) "#333" else "#ddd"}; margin: 12px 0; }
                     </style>
                     </head>
                     <body>${email.bodyHtml}</body>
                     </html>
                 """.trimIndent()
 
+                val viewTag = "${email.id}_${effectiveDark}"
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).apply {
-                            tag = email.id  // track which email is loaded
+                            tag = viewTag
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView, url: String) {
                                     view.evaluateJavascript(
-                                        "(function(){ return document.documentElement.scrollHeight; })()"
+                                        "(function(){ return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight); })()"
                                     ) { result ->
                                         val px = result?.trim('"')?.toIntOrNull() ?: 0
                                         if (px > 0) webViewHeightPx = px
@@ -362,28 +405,36 @@ fun MailDetailScreen(
                                 domStorageEnabled = false
                                 loadWithOverviewMode = true
                                 useWideViewPort = true
-                                setSupportZoom(false)
-                                builtInZoomControls = false
+                                setSupportZoom(true)
+                                builtInZoomControls = true
                                 displayZoomControls = false
                                 cacheMode = WebSettings.LOAD_NO_CACHE
                             }
                             isScrollContainer = false
                             isVerticalScrollBarEnabled = false
                             isHorizontalScrollBarEnabled = false
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            setBackgroundColor(if (forceLightMode) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
                             loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
                         }
                     },
                     update = { view ->
-                        // Only reload if a different email is now shown (tag mismatch)
-                        if (view.tag != email.id) {
-                            view.tag = email.id
-                            webViewHeightPx = 600
+                        if (view.tag != viewTag) {
+                            view.tag = viewTag
+                            webViewHeightPx = 500
+                            view.setBackgroundColor(if (forceLightMode) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
                             view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (forceLightMode) {
+                                Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.White)
+                                    .padding(8.dp)
+                            } else Modifier
+                        )
                         .height(webViewHeightDp)
                 )
             } else {

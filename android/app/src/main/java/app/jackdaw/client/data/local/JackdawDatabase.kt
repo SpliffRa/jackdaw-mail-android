@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AttachmentEntity::class,
         CalendarEventEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -53,6 +53,12 @@ abstract class JackdawDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE folders ADD COLUMN displayOrder INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): JackdawDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -60,7 +66,7 @@ abstract class JackdawDatabase : RoomDatabase() {
                     JackdawDatabase::class.java,
                     "jackdaw_mail.db"
                 )
-                    .addMigrations(MIGRATION_4_5)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

@@ -381,6 +381,12 @@ class MailViewModel(
         }
     }
 
+    fun reorderFolders(orderedIds: List<String>) {
+        viewModelScope.launch {
+            repository.reorderFolders(orderedIds)
+        }
+    }
+
     class Factory(private val repository: MailRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {

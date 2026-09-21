@@ -13,7 +13,8 @@ data class FolderEntity(
     val name: String,
     val type: FolderType,
     val unreadCount: Int = 0,
-    val totalCount: Int = 0
+    val totalCount: Int = 0,
+    val displayOrder: Int = 0
 ) {
     fun toDomain(): Folder = Folder(
         id = id,
@@ -21,7 +22,8 @@ data class FolderEntity(
         name = name,
         type = type,
         unreadCount = unreadCount,
-        totalCount = totalCount
+        totalCount = totalCount,
+        displayOrder = displayOrder
     )
 
     companion object {
@@ -31,7 +33,8 @@ data class FolderEntity(
             name = domain.name,
             type = domain.type,
             unreadCount = domain.unreadCount,
-            totalCount = domain.totalCount
+            totalCount = domain.totalCount,
+            displayOrder = domain.displayOrder
         )
     }
 }

@@ -49,6 +49,7 @@ interface MailRepository {
     suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
     suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>?
     fun getTotalUnreadCount(): Flow<Int>
+    suspend fun reorderFolders(orderedIds: List<String>)
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -326,6 +327,9 @@ class OfflineFirstMailRepository(
 
             // 2. Discover and synchronize server folders (Inbox, Sent, Trash, Drafts, Archive, and all custom folders)
             try {
+                // First purge any cached Exchange system / search folders from Room
+                folderDao.cleanupNonMailFolders(account.id)
+
                 val remoteFolders = mailProtocolEngine.fetchFolders(account)
                 android.util.Log.i("MailRepository", "syncAll: discovered ${remoteFolders.size} remote folders: ${remoteFolders.map { "${it.name}(${it.totalCount})" }}")
                 if (remoteFolders.isNotEmpty()) {
@@ -333,13 +337,24 @@ class OfflineFirstMailRepository(
                     val existingMap = existingFolders.associateBy { it.id }
                     val entitiesToSave = remoteFolders.map { rf ->
                         val existing = existingMap[rf.id]
+                        val defaultOrder = when (rf.type) {
+                            FolderType.INBOX -> 0
+                            FolderType.SENT -> 1
+                            FolderType.DRAFTS -> 2
+                            FolderType.ARCHIVE -> 3
+                            FolderType.OUTBOX -> 4
+                            FolderType.TRASH -> 5
+                            FolderType.SLA_ALERTS -> 6
+                            FolderType.CUSTOM -> 100
+                        }
                         FolderEntity(
                             id = rf.id,
                             accountId = account.id,
                             name = rf.name,
                             type = rf.type,
                             unreadCount = if (rf.unreadCount > 0) rf.unreadCount else (existing?.unreadCount ?: 0),
-                            totalCount = if (rf.totalCount > 0) rf.totalCount else (existing?.totalCount ?: 0)
+                            totalCount = if (rf.totalCount > 0) rf.totalCount else (existing?.totalCount ?: 0),
+                            displayOrder = existing?.displayOrder ?: defaultOrder
                         )
                     }
                     folderDao.insertFolders(entitiesToSave)
@@ -357,7 +372,8 @@ class OfflineFirstMailRepository(
                         id = outboxFolder,
                         accountId = account.id,
                         name = "Исходящие",
-                        type = FolderType.OUTBOX
+                        type = FolderType.OUTBOX,
+                        displayOrder = 4
                     )
                 ))
             }
@@ -490,6 +506,12 @@ class OfflineFirstMailRepository(
 
     override suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>? {
         return mailProtocolEngine.fetchEmailBody(account, itemId)
+    }
+
+    override suspend fun reorderFolders(orderedIds: List<String>) {
+        orderedIds.forEachIndexed { index, folderId ->
+            folderDao.updateFolderOrder(folderId, index)
+        }
     }
 }
 

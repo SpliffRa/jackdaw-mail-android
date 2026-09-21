@@ -172,6 +172,9 @@ fun JackdawMainApp(
                         }
                     }
                 },
+                onReorderFolders = { orderedIds ->
+                    viewModel.reorderFolders(orderedIds)
+                },
                 onOpenCalendar = {
                     scope.launch { drawerState.close() }
                     if (currentRoute != Screen.Calendar.route) {
