@@ -297,8 +297,18 @@ fun MailDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Email Body
+            val displayText = when {
+                email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
+                !email.bodyHtml.isNullOrBlank() -> runCatching {
+                    android.text.Html.fromHtml(email.bodyHtml, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                }.getOrDefault(email.bodyText)
+                email.bodyText.isNotBlank() -> email.bodyText
+                email.snippet.isNotBlank() -> email.snippet
+                else -> "(Письмо не содержит текста)"
+            }
+
             Text(
-                text = email.bodyText,
+                text = displayText,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 lineHeight = 24.sp
@@ -539,8 +549,17 @@ fun MailDetailScreen(
                                         modifier = Modifier.padding(vertical = 8.dp),
                                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
                                     )
+                                    val threadDisplayText = when {
+                                        threadMsg.bodyText.isNotBlank() && threadMsg.bodyText != threadMsg.subject -> threadMsg.bodyText
+                                        !threadMsg.bodyHtml.isNullOrBlank() -> runCatching {
+                                            android.text.Html.fromHtml(threadMsg.bodyHtml, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                                        }.getOrDefault(threadMsg.bodyText)
+                                        threadMsg.bodyText.isNotBlank() -> threadMsg.bodyText
+                                        threadMsg.snippet.isNotBlank() -> threadMsg.snippet
+                                        else -> "(Письмо не содержит текста)"
+                                    }
                                     Text(
-                                        text = threadMsg.bodyText,
+                                        text = threadDisplayText,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         lineHeight = 20.sp

@@ -5,9 +5,14 @@ import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.MailAccount
 import app.jackdaw.client.data.network.model.SendResult
 
+import app.jackdaw.client.core.model.Folder
+
 interface MailProtocolEngine {
     suspend fun fetchNewEmails(account: MailAccount, folderId: String, sinceTimestamp: Long): List<EmailMessage>
     suspend fun fetchCalendarEvents(account: MailAccount, startRange: Long, endRange: Long): List<CalendarEvent>
     suspend fun sendMessage(account: MailAccount, email: EmailMessage): SendResult
+    suspend fun fetchFolders(account: MailAccount): List<Folder> = emptyList()
+    suspend fun fetchEmailBodies(account: MailAccount, itemIds: List<String>): Map<String, Pair<String, String>> = emptyMap()
+    suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? = null
 }
 

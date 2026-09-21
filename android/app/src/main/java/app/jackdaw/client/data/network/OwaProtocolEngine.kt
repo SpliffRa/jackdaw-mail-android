@@ -23,6 +23,9 @@ import java.net.URL
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
+import android.util.Base64
+import app.jackdaw.client.core.model.Folder
+import app.jackdaw.client.core.model.FolderType
 
 class OwaProtocolEngine : MailProtocolEngine {
 
@@ -30,6 +33,28 @@ class OwaProtocolEngine : MailProtocolEngine {
         private const val TAG = "OwaProtocolEngine"
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    }
+
+    override suspend fun fetchFolders(account: MailAccount): List<Folder> = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) {
+            Log.w(TAG, "Cannot sync folders: serverHost is blank for account ${account.email}")
+            return@withContext emptyList()
+        }
+
+        val cookies = resolveCookies(account)
+        val canary = resolveCanary(account, cookies)
+        val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindFolder")
+        val requestBody = buildFindFolderPayload()
+
+        try {
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+                ?: return@withContext emptyList()
+            parseFoldersFromFindFolderResponse(account, responseJson)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to fetch folders from OWA endpoint $owaServiceUrl", e)
+            emptyList()
+        }
     }
 
     override suspend fun fetchNewEmails(
@@ -50,14 +75,86 @@ class OwaProtocolEngine : MailProtocolEngine {
         val requestBody = buildFindItemEmailPayload(folderId)
 
         try {
-            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
                 ?: return@withContext emptyList()
 
-            parseEmailsFromFindItemResponse(account, folderId, responseJson)
+            val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
+            if (emails.isNotEmpty()) {
+                // Fetch full HTML and plain text bodies via GetItem
+                val bodies = fetchEmailBodies(account, emails.map { it.id })
+                emails.map { email ->
+                    val pair = bodies[email.id]
+                    if (pair != null) {
+                        val bodyText = pair.first.ifBlank { email.bodyText }
+                        val bodyHtml = pair.second.ifBlank { email.bodyHtml }
+                        val snippet = pair.first.take(150).ifBlank { email.snippet }
+                        email.copy(
+                            bodyText = bodyText,
+                            bodyHtml = bodyHtml,
+                            snippet = snippet
+                        )
+                    } else {
+                        email
+                    }
+                }
+            } else {
+                emptyList()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl", e)
             emptyList()
         }
+    }
+
+    override suspend fun fetchEmailBodies(
+        account: MailAccount,
+        itemIds: List<String>
+    ): Map<String, Pair<String, String>> = withContext(Dispatchers.IO) {
+        if (itemIds.isEmpty()) return@withContext emptyMap()
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) return@withContext emptyMap()
+
+        val cookies = resolveCookies(account)
+        val canary = resolveCanary(account, cookies)
+        val owaServiceUrl = buildOwaServiceUrl(serverUrl, "GetItem")
+
+        val resultMap = mutableMapOf<String, Pair<String, String>>()
+
+        // Chunk in batches of 20 to conform with Exchange JSON-RPC limits
+        for (chunk in itemIds.chunked(20)) {
+            try {
+                val requestBody = buildGetItemPayload(chunk)
+                val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account) ?: continue
+                val items = extractGetItemsArray(responseJson) ?: continue
+                for (j in 0 until items.length()) {
+                    val item = items.optJSONObject(j) ?: continue
+                    val id = item.optJSONObject("ItemId")?.optString("Id") ?: continue
+                    val bodyObj = item.optJSONObject("Body")
+                    val bodyHtml = bodyObj?.optString("Value", "").orEmpty()
+                    val textBody = item.optJSONObject("TextBody")?.optString("Value", "").orEmpty()
+                    val normBody = item.optJSONObject("NormalizedBody")?.optString("Value", "").orEmpty()
+                    val preview = item.optString("Preview", "").trim()
+
+                    val cleanText = when {
+                        textBody.isNotBlank() -> textBody
+                        normBody.isNotBlank() -> normBody
+                        bodyHtml.isNotBlank() -> stripHtml(bodyHtml)
+                        preview.isNotBlank() -> preview
+                        else -> ""
+                    }
+                    resultMap[id] = Pair(cleanText, bodyHtml)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to fetch email bodies chunk: ${e.message}")
+            }
+        }
+
+        resultMap
+    }
+
+    override suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? {
+        val bodies = fetchEmailBodies(account, listOf(itemId))
+        return bodies[itemId]
     }
 
     override suspend fun fetchCalendarEvents(
@@ -75,10 +172,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         val canary = resolveCanary(account, cookies)
 
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
-        val requestBody = buildFindItemCalendarPayload()
+        val requestBody = buildFindItemCalendarPayload(startRange, endRange)
 
         try {
-            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
                 ?: return@withContext emptyList()
 
             parseCalendarEventsFromFindItemResponse(account, responseJson)
@@ -97,7 +194,7 @@ class OwaProtocolEngine : MailProtocolEngine {
             try {
                 val owaServiceUrl = buildOwaServiceUrl(serverUrl, "CreateItem")
                 val requestBody = buildCreateItemEmailPayload(email)
-                val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary)
+                val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
                 if (responseJson != null) {
                     val serverId = extractCreatedItemId(responseJson) ?: "owa_${UUID.randomUUID().toString().take(8)}"
                     return@withContext SendResult(isSuccess = true, serverMessageId = serverId)
@@ -171,7 +268,8 @@ class OwaProtocolEngine : MailProtocolEngine {
         urlString: String,
         jsonBody: JSONObject,
         cookies: String,
-        canary: String
+        canary: String,
+        account: MailAccount? = null
     ): JSONObject? {
         val candidateUrls = listOf(
             urlString,
@@ -200,6 +298,11 @@ class OwaProtocolEngine : MailProtocolEngine {
                     if (cookies.isNotBlank()) {
                         setRequestProperty("Cookie", cookies)
                     }
+                    if (account != null && account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                        val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
+                        val authBase64 = Base64.encodeToString(authStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                        setRequestProperty("Authorization", "Basic $authBase64")
+                    }
                 }
 
                 OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
@@ -223,14 +326,97 @@ class OwaProtocolEngine : MailProtocolEngine {
         return null
     }
 
+    private fun buildFindFolderPayload(): JSONObject {
+        val additionalProperties = JSONArray().apply {
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:DisplayName") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:TotalCount") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:UnreadCount") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:FolderClass") })
+        }
+
+        val folderShape = JSONObject().apply {
+            put("__type", "FolderResponseShape:#Exchange")
+            put("BaseShape", "Default")
+            put("AdditionalProperties", additionalProperties)
+        }
+
+        val parentFolderIds = JSONArray().apply {
+            put(JSONObject().apply {
+                put("__type", "DistinguishedFolderId:#Exchange")
+                put("Id", "msgfolderroot")
+            })
+        }
+
+        val body = JSONObject().apply {
+            put("__type", "FindFolderRequest:#Exchange")
+            put("FolderShape", folderShape)
+            put("ParentFolderIds", parentFolderIds)
+            put("Traversal", "Deep")
+        }
+
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+
+        return JSONObject().apply {
+            put("__type", "FindFolderJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
+    private fun buildGetItemPayload(itemIds: List<String>): JSONObject {
+        val itemIdsArray = JSONArray()
+        for (id in itemIds) {
+            itemIdsArray.put(JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", id)
+            })
+        }
+
+        val additionalProperties = JSONArray().apply {
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Subject") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Body") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:TextBody") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:NormalizedBody") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Preview") })
+        }
+
+        val itemShape = JSONObject().apply {
+            put("__type", "ItemResponseShape:#Exchange")
+            put("BaseShape", "Default")
+            put("BodyType", "HTML")
+            put("AdditionalProperties", additionalProperties)
+        }
+
+        val body = JSONObject().apply {
+            put("__type", "GetItemRequest:#Exchange")
+            put("ItemShape", itemShape)
+            put("ItemIds", itemIdsArray)
+        }
+
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+
+        return JSONObject().apply {
+            put("__type", "GetItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
     private fun buildFindItemEmailPayload(folderId: String): JSONObject {
         val targetFolder = when {
-            folderId.contains("inbox", ignoreCase = true) -> "inbox"
-            folderId.contains("sent", ignoreCase = true) -> "sentitems"
-            folderId.contains("draft", ignoreCase = true) -> "drafts"
-            folderId.contains("trash", ignoreCase = true) -> "deleteditems"
-            folderId.contains("archive", ignoreCase = true) -> "archive"
-            else -> "inbox"
+            folderId.endsWith("inbox", ignoreCase = true) || folderId.equals("inbox", ignoreCase = true) -> "inbox"
+            folderId.endsWith("sent", ignoreCase = true) || folderId.equals("sentitems", ignoreCase = true) -> "sentitems"
+            folderId.endsWith("drafts", ignoreCase = true) || folderId.equals("drafts", ignoreCase = true) -> "drafts"
+            folderId.endsWith("trash", ignoreCase = true) || folderId.endsWith("deleted", ignoreCase = true) || folderId.equals("deleteditems", ignoreCase = true) -> "deleteditems"
+            folderId.endsWith("archive", ignoreCase = true) || folderId.equals("archive", ignoreCase = true) -> "archive"
+            folderId.endsWith("junk", ignoreCase = true) || folderId.equals("junkemail", ignoreCase = true) -> "junkemail"
+            else -> folderId
         }
 
         val additionalProperties = JSONArray().apply {
@@ -249,10 +435,16 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("AdditionalProperties", additionalProperties)
         }
 
+        val isDistinguished = targetFolder in listOf("inbox", "sentitems", "drafts", "deleteditems", "archive", "junkemail")
         val parentFolderIds = JSONArray().apply {
             put(JSONObject().apply {
-                put("__type", "DistinguishedFolderId:#Exchange")
-                put("Id", targetFolder)
+                if (isDistinguished) {
+                    put("__type", "DistinguishedFolderId:#Exchange")
+                    put("Id", targetFolder)
+                } else {
+                    put("__type", "FolderId:#Exchange")
+                    put("Id", targetFolder)
+                }
             })
         }
 
@@ -260,7 +452,7 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("__type", "IndexedPageView:#Exchange")
             put("BasePoint", "Beginning")
             put("Offset", 0)
-            put("MaxEntriesReturned", 50)
+            put("MaxEntriesReturned", 100)
         }
 
         val sortOrder = JSONArray().apply {
@@ -295,7 +487,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
-    private fun buildFindItemCalendarPayload(): JSONObject {
+    private fun buildFindItemCalendarPayload(startRange: Long, endRange: Long): JSONObject {
+        val startIso = Instant.ofEpochMilli(startRange).toString()
+        val endIso = Instant.ofEpochMilli(endRange).toString()
+
         val additionalProperties = JSONArray().apply {
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Subject") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "calendar:Start") })
@@ -319,10 +514,10 @@ class OwaProtocolEngine : MailProtocolEngine {
             })
         }
 
-        val paging = JSONObject().apply {
-            put("__type", "IndexedPageView:#Exchange")
-            put("BasePoint", "Beginning")
-            put("Offset", 0)
+        val calendarView = JSONObject().apply {
+            put("__type", "CalendarView:#Exchange")
+            put("StartDate", startIso)
+            put("EndDate", endIso)
             put("MaxEntriesReturned", 100)
         }
 
@@ -331,7 +526,7 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("ItemShape", itemShape)
             put("ParentFolderIds", parentFolderIds)
             put("Traversal", "Shallow")
-            put("Paging", paging)
+            put("CalendarView", calendarView)
         }
 
         val header = JSONObject().apply {
@@ -586,5 +781,128 @@ class OwaProtocolEngine : MailProtocolEngine {
     private fun extractMeetingLink(location: String, body: String): String? {
         val urlRegex = Regex("(https://[\\w\\.-]+(?:teams|zoom|meet|telemost)[\\w\\./\\?=\\-#&%]+)")
         return urlRegex.find(location)?.value ?: urlRegex.find(body)?.value
+    }
+
+    private fun parseFoldersFromFindFolderResponse(
+        account: MailAccount,
+        response: JSONObject
+    ): List<Folder> {
+        val foldersArray = extractFoldersArray(response) ?: return emptyList()
+        val result = mutableListOf<Folder>()
+
+        for (i in 0 until foldersArray.length()) {
+            val folderObj = foldersArray.optJSONObject(i) ?: continue
+            val folderIdObj = folderObj.optJSONObject("FolderId")
+            val serverFolderId = folderIdObj?.optString("Id") ?: continue
+            val displayName = folderObj.optString("DisplayName", "").trim()
+            if (displayName.isBlank()) continue
+
+            val folderClass = folderObj.optString("FolderClass", "")
+            // Exclude calendars, contacts, and tasks from mail folder list
+            if (folderClass.startsWith("IPF.Appointment") ||
+                folderClass.startsWith("IPF.Contact") ||
+                folderClass.startsWith("IPF.Task")
+            ) {
+                continue
+            }
+
+            val unreadCount = folderObj.optInt("UnreadCount", 0)
+            val totalCount = folderObj.optInt("TotalCount", 0)
+            val distinguishedId = folderObj.optString("DistinguishedFolderId", "").lowercase()
+
+            val folderType = when {
+                distinguishedId == "inbox" || displayName.equals("Входящие", ignoreCase = true) || displayName.equals("Inbox", ignoreCase = true) -> FolderType.INBOX
+                distinguishedId == "sentitems" || displayName.equals("Отправленные", ignoreCase = true) || displayName.equals("Sent Items", ignoreCase = true) || displayName.equals("Sent", ignoreCase = true) -> FolderType.SENT
+                distinguishedId == "drafts" || displayName.equals("Черновики", ignoreCase = true) || displayName.equals("Drafts", ignoreCase = true) -> FolderType.DRAFTS
+                distinguishedId == "deleteditems" || displayName.equals("Удаленные", ignoreCase = true) || displayName.equals("Deleted Items", ignoreCase = true) || displayName.equals("Корзина", ignoreCase = true) || displayName.equals("Trash", ignoreCase = true) -> FolderType.TRASH
+                distinguishedId == "archive" || displayName.equals("Архив", ignoreCase = true) || displayName.equals("Archive", ignoreCase = true) -> FolderType.ARCHIVE
+                distinguishedId == "outbox" || displayName.equals("Исходящие", ignoreCase = true) || displayName.equals("Outbox", ignoreCase = true) -> FolderType.OUTBOX
+                else -> FolderType.CUSTOM
+            }
+
+            val folderLocalId = when (folderType) {
+                FolderType.INBOX -> "${account.id}_inbox"
+                FolderType.SENT -> "${account.id}_sent"
+                FolderType.DRAFTS -> "${account.id}_drafts"
+                FolderType.TRASH -> "${account.id}_trash"
+                FolderType.ARCHIVE -> "${account.id}_archive"
+                FolderType.OUTBOX -> "${account.id}_outbox"
+                FolderType.SLA_ALERTS -> "${account.id}_sla_alerts"
+                FolderType.CUSTOM -> serverFolderId
+            }
+
+            result.add(
+                Folder(
+                    id = folderLocalId,
+                    accountId = account.id,
+                    name = displayName,
+                    type = folderType,
+                    unreadCount = unreadCount,
+                    totalCount = totalCount
+                )
+            )
+        }
+
+        return result
+    }
+
+    private fun extractFoldersArray(response: JSONObject): JSONArray? {
+        val body = response.optJSONObject("Body")
+        val root = body ?: response
+
+        val responseMessages = root.optJSONObject("ResponseMessages")
+        if (responseMessages != null) {
+            val items = responseMessages.optJSONArray("Items")
+            if (items != null && items.length() > 0) {
+                val first = items.optJSONObject(0)
+                val rootFolder = first?.optJSONObject("RootFolder")
+                val list = rootFolder?.optJSONArray("Folders") ?: first?.optJSONArray("Folders")
+                if (list != null) return list
+            }
+        }
+
+        val rootFolder = root.optJSONObject("RootFolder")
+        if (rootFolder != null) {
+            val list = rootFolder.optJSONArray("Folders")
+            if (list != null) return list
+        }
+
+        return root.optJSONArray("Folders")
+    }
+
+    private fun extractGetItemsArray(response: JSONObject): JSONArray? {
+        val body = response.optJSONObject("Body")
+        val root = body ?: response
+        val combined = JSONArray()
+
+        val responseMessages = root.optJSONObject("ResponseMessages")
+        if (responseMessages != null) {
+            val items = responseMessages.optJSONArray("Items")
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val respMsg = items.optJSONObject(i) ?: continue
+                    val subItems = respMsg.optJSONArray("Items")
+                    if (subItems != null) {
+                        for (j in 0 until subItems.length()) {
+                            subItems.optJSONObject(j)?.let { combined.put(it) }
+                        }
+                    } else if (respMsg.has("ItemId")) {
+                        combined.put(respMsg)
+                    }
+                }
+                if (combined.length() > 0) return combined
+            }
+        }
+
+        return root.optJSONArray("Items")
+    }
+
+    private fun stripHtml(html: String): String {
+        if (html.isBlank()) return ""
+        return runCatching {
+            android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
+        }.getOrElse {
+            html.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+        }
     }
 }

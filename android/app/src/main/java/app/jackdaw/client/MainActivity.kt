@@ -331,6 +331,9 @@ fun JackdawMainApp(
                 }
 
                 if (currentEmail != null) {
+                    androidx.compose.runtime.LaunchedEffect(currentEmail.id) {
+                        viewModel.loadEmailBodyIfNeeded(currentEmail)
+                    }
                     MailDetailScreen(
                         email = currentEmail,
                         threadEmails = threadEmails,

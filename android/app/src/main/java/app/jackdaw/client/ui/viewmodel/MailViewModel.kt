@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class MailUiState(
@@ -123,6 +125,31 @@ class MailViewModel(
                     app.jackdaw.client.JackdawApp.instance,
                     count
                 )
+            }
+        }
+        // Real-time foreground sync polling ticker (25s intervals)
+        viewModelScope.launch {
+            delay(2000)
+            currentAccount.value?.let { acc ->
+                if (!_isSyncing.value) {
+                    repository.syncAll(acc.id)
+                }
+            }
+            while (isActive) {
+                delay(25000)
+                currentAccount.value?.let { acc ->
+                    if (!_isSyncing.value) {
+                        val result = repository.syncAll(acc.id)
+                        _lastSyncTimestamp.value = System.currentTimeMillis()
+                        if (result.isSuccess && result.newMessagesCount > 0) {
+                            try {
+                                app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
+                                    app.jackdaw.client.JackdawApp.instance
+                                ).playIncomingMailSound()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
             }
         }
     }
@@ -231,6 +258,21 @@ class MailViewModel(
 
     fun getEmailById(emailId: String): kotlinx.coroutines.flow.Flow<EmailMessage?> {
         return repository.getEmailById(emailId)
+    }
+
+    fun loadEmailBodyIfNeeded(email: EmailMessage) {
+        if (email.bodyText.isBlank() || email.bodyText == email.subject) {
+            viewModelScope.launch {
+                val account = currentAccount.value ?: return@launch
+                val pair = repository.fetchEmailBodyDirect(account, email.id)
+                if (pair != null) {
+                    val bodyText = pair.first.ifBlank { email.bodyText }
+                    val bodyHtml = pair.second.ifBlank { email.bodyHtml }
+                    val snippet = pair.first.take(150).ifBlank { email.snippet }
+                    repository.updateEmailBody(email.id, bodyText, bodyHtml, snippet)
+                }
+            }
+        }
     }
 
     fun sendEmail(

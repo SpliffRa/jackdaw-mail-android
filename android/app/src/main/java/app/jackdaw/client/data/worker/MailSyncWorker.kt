@@ -14,7 +14,7 @@ import app.jackdaw.client.MainActivity
 import app.jackdaw.client.R
 import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.data.local.JackdawDatabase
-import app.jackdaw.client.data.network.MockNetworkSyncEngine
+import app.jackdaw.client.data.network.OwaProtocolEngine
 import app.jackdaw.client.data.repository.OfflineFirstMailRepository
 import kotlinx.coroutines.flow.first
 
@@ -28,7 +28,7 @@ class MailSyncWorker(
 
         return try {
             val database = JackdawDatabase.getInstance(context)
-            val networkEngine = MockNetworkSyncEngine()
+            val networkEngine = OwaProtocolEngine()
             val repository = OfflineFirstMailRepository(database, networkEngine)
 
             // 1. Ensure sample data initialized

@@ -46,6 +46,8 @@ interface MailRepository {
     suspend fun deleteAccount(accountId: String)
     suspend fun syncAll(accountId: String): SyncResult
     suspend fun initializeSampleDataIfEmpty()
+    suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
+    suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>?
     fun getTotalUnreadCount(): Flow<Int>
 }
 
@@ -321,37 +323,103 @@ class OfflineFirstMailRepository(
                 }
             }
 
-            // 2. Fetch new emails from remote server
-            val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
-            if (newEmails.isNotEmpty()) {
-                val emailEntities = newEmails.map { EmailEntity.fromDomain(it) }
-                emailDao.insertEmails(emailEntities)
-
-                val attachments = newEmails.flatMap { email ->
-                    email.attachments.map { AttachmentEntity.fromDomain(it, email.id) }
+            // 2. Discover and synchronize server folders (Inbox, Sent, Trash, Drafts, Archive, and all custom folders)
+            try {
+                val remoteFolders = mailProtocolEngine.fetchFolders(account)
+                if (remoteFolders.isNotEmpty()) {
+                    val existingFolders = folderDao.getFoldersByAccount(account.id).first()
+                    val existingMap = existingFolders.associateBy { it.id }
+                    val entitiesToSave = remoteFolders.map { rf ->
+                        val existing = existingMap[rf.id]
+                        FolderEntity(
+                            id = rf.id,
+                            accountId = account.id,
+                            name = rf.name,
+                            type = rf.type,
+                            unreadCount = if (rf.unreadCount > 0) rf.unreadCount else (existing?.unreadCount ?: 0),
+                            totalCount = if (rf.totalCount > 0) rf.totalCount else (existing?.totalCount ?: 0)
+                        )
+                    }
+                    folderDao.insertFolders(entitiesToSave)
                 }
-                if (attachments.isNotEmpty()) {
-                    attachmentDao.insertAttachments(attachments)
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Failed to sync remote folders", e)
+            }
+
+            // Ensure standard Outbox folder exists
+            val existingAccountFolders = folderDao.getFoldersByAccount(account.id).first()
+            if (existingAccountFolders.none { it.type == FolderType.OUTBOX }) {
+                folderDao.insertFolders(listOf(
+                    FolderEntity(
+                        id = outboxFolder,
+                        accountId = account.id,
+                        name = "Исходящие",
+                        type = FolderType.OUTBOX
+                    )
+                ))
+            }
+
+            // 3. Fetch emails for all syncable folders
+            val foldersToSync = folderDao.getFoldersByAccount(account.id).first()
+                .filter { it.type != FolderType.OUTBOX && it.type != FolderType.SLA_ALERTS }
+
+            var totalNewEmails = 0
+            if (foldersToSync.isNotEmpty()) {
+                for (folder in foldersToSync) {
+                    try {
+                        val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
+                        if (newEmails.isNotEmpty()) {
+                            val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = folder.id)) }
+                            emailDao.insertEmails(emailEntities)
+
+                            val attachments = newEmails.flatMap { email ->
+                                email.attachments.map { AttachmentEntity.fromDomain(it, email.id) }
+                            }
+                            if (attachments.isNotEmpty()) {
+                                attachmentDao.insertAttachments(attachments)
+                            }
+                            totalNewEmails += newEmails.size
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MailRepository", "Error syncing folder ${folder.name} (${folder.id})", e)
+                    }
+                }
+            } else {
+                // Fallback to inbox folder if folder list is not yet populated
+                val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
+                if (newEmails.isNotEmpty()) {
+                    val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = inboxFolder)) }
+                    emailDao.insertEmails(emailEntities)
+                    totalNewEmails += newEmails.size
                 }
             }
 
-            // 3. Fetch calendar meetings & events from remote server
+            // 4. Fetch calendar meetings & events from remote server
             val now = System.currentTimeMillis()
             val thirtyDaysAgo = now - 30L * 86400000L
             val ninetyDaysAhead = now + 90L * 86400000L
-            val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
-            if (calendarEvents.isNotEmpty()) {
-                calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
+            try {
+                val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
+                if (calendarEvents.isNotEmpty()) {
+                    calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Error syncing calendar events", e)
             }
 
-            // 4. Update folder unread and total counters
-            for (fId in listOf(inboxFolder, sentFolder, outboxFolder)) {
-                val unread = emailDao.getFolderUnreadCount(fId)
-                val total = emailDao.getFolderTotalCount(fId)
-                folderDao.updateCounts(fId, unread, total)
+            // 5. Update folder unread and total counters
+            val updatedFolders = folderDao.getFoldersByAccount(account.id).first()
+            for (f in updatedFolders) {
+                val unread = emailDao.getFolderUnreadCount(f.id)
+                val total = emailDao.getFolderTotalCount(f.id)
+                folderDao.updateCounts(
+                    f.id,
+                    if (unread > 0 || f.unreadCount == 0) unread else f.unreadCount,
+                    if (total > 0 || f.totalCount == 0) total else f.totalCount
+                )
             }
 
-            // 5. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
+            // 6. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
             val allEmails = emailDao.getAllEmails(accountId).first()
             for (item in allEmails) {
                 if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE && item.slaSeverity != SlaSeverity.COMPLETED) {
@@ -381,7 +449,7 @@ class OfflineFirstMailRepository(
 
             SyncResult(
                 isSuccess = true,
-                newMessagesCount = newEmails.size,
+                newMessagesCount = totalNewEmails,
                 sentMessagesCount = sentCount,
                 syncedAtTimestamp = System.currentTimeMillis()
             )
@@ -408,6 +476,14 @@ class OfflineFirstMailRepository(
         emailDao.deleteEmail("msg_nda_2")
         emailDao.deleteEmail("msg_k8s_patch")
         emailDao.deleteEmail("msg_spec")
+    }
+
+    override suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String) {
+        emailDao.updateEmailBody(id, bodyText, bodyHtml, snippet)
+    }
+
+    override suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>? {
+        return mailProtocolEngine.fetchEmailBody(account, itemId)
     }
 }
 

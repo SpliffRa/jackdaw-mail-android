@@ -81,4 +81,7 @@ interface EmailDao {
 
     @Query("SELECT COUNT(*) FROM emails WHERE folderId = :folderId")
     suspend fun getFolderTotalCount(folderId: String): Int
+
+    @Query("UPDATE emails SET bodyText = :bodyText, bodyHtml = :bodyHtml, snippet = :snippet WHERE id = :id")
+    suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
 }
