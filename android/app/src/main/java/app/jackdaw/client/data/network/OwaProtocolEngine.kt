@@ -875,25 +875,41 @@ class OwaProtocolEngine : MailProtocolEngine {
 
             val folderClass = folderObj.optString("FolderClass", "")
             val lowerName = displayName.lowercase()
-            // Exclude calendars, contacts, tasks, and internal Exchange system folders from mail list
+            // Exclude non-mail folders (Exchange mail folders are IPF.Note or empty) and internal system plumbing
             if (folderClass.startsWith("IPF.Appointment") ||
                 folderClass.startsWith("IPF.Contact") ||
                 folderClass.startsWith("IPF.Task") ||
                 folderClass.startsWith("IPF.Configuration") ||
+                folderClass.startsWith("IPF.StickyNote") ||
+                folderClass.startsWith("IPF.Journal") ||
+                (folderClass.isNotEmpty() && !folderClass.startsWith("IPF.Note")) ||
                 lowerName == "календарь" || lowerName == "calendar" ||
                 lowerName == "контакты" || lowerName == "contacts" ||
                 lowerName == "задачи" || lowerName == "tasks" ||
                 lowerName == "дни рождения" || lowerName == "журнал" ||
-                lowerName.startsWith("recipient cache") ||
-                lowerName.startsWith("gal contacts") ||
-                lowerName.startsWith("organizational contacts") ||
-                lowerName.startsWith("peoplecentric") ||
-                lowerName.startsWith("externalcontacts") ||
-                lowerName.startsWith("conversation action") ||
-                lowerName.startsWith("настройка быстрых") ||
-                lowerName.startsWith("корневая папка yammer") ||
-                lowerName.startsWith("ошибки синхронизации") ||
-                lowerName.startsWith("файлы") ||
+                lowerName == "заметки" || lowerName == "notes" ||
+                lowerName == "организации" ||
+                lowerName.contains("recipient cache") ||
+                lowerName.contains("gal contacts") ||
+                lowerName.contains("organizational contacts") ||
+                lowerName.contains("peoplecentric") ||
+                lowerName.contains("external contacts") ||
+                lowerName.contains("externalcontacts") ||
+                lowerName.contains("conversation action") ||
+                lowerName.contains("quick step") ||
+                lowerName.contains("настройка быстрых") ||
+                lowerName.contains("yammer") ||
+                lowerName.contains("ошибки синхронизации") ||
+                lowerName.contains("sync issues") ||
+                lowerName.contains("конфликты") ||
+                lowerName.contains("conflicts") ||
+                lowerName.contains("локальные ошибки") ||
+                lowerName.contains("ошибки сервера") ||
+                lowerName.contains("failures") ||
+                lowerName.contains("файлы") ||
+                lowerName.contains("files") ||
+                lowerName.contains("rss") ||
+                lowerName.contains("feeds") ||
                 lowerName.startsWith("{")
             ) {
                 continue

@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Archive
@@ -80,7 +83,7 @@ fun FolderDrawer(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
             // Header / Current Account Switcher
@@ -263,68 +266,74 @@ fun FolderDrawer(
 
             val regularFolders = folders.filter { it.type != FolderType.SLA_ALERTS }
 
-            Text(
-                text = "ПОЧТОВЫЕ ПАПКИ",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-            )
+            // Scrollable folders list
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "ПОЧТОВЫЕ ПАПКИ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
 
-            // Regular Folders List
-            regularFolders.forEach { folder ->
-                val isSelected = folder.id == selectedFolderId
-                val icon = getFolderIcon(folder.type)
+                // Regular Folders List
+                regularFolders.forEach { folder ->
+                    val isSelected = folder.id == selectedFolderId
+                    val icon = getFolderIcon(folder.type)
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-                        )
-                        .clickable { onSelectFolder(folder) }
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = folder.name,
-                        tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Text(
-                        text = folder.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (folder.unreadCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(
-                                    if (folder.type == FolderType.SLA_ALERTS) SlaUrgentRed else JackdawAmber
-                                )
-                                .padding(horizontal = 7.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${folder.unreadCount}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
                             )
+                            .clickable { onSelectFolder(folder) }
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = folder.name,
+                            tint = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Text(
+                            text = folder.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        if (folder.unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (folder.type == FolderType.SLA_ALERTS) SlaUrgentRed else JackdawAmber
+                                    )
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${folder.unreadCount}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.weight(1f))
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),

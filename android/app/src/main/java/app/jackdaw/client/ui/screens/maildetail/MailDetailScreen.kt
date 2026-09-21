@@ -65,6 +65,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.luminance
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.viewinterop.AndroidView
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerDark
 import app.jackdaw.client.core.designsystem.theme.SlaGoodContainerLight
@@ -297,22 +302,104 @@ fun MailDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Email Body
-            val displayText = when {
-                email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
-                !email.bodyHtml.isNullOrBlank() -> runCatching {
-                    android.text.Html.fromHtml(email.bodyHtml, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
-                }.getOrDefault(email.bodyText)
-                email.bodyText.isNotBlank() -> email.bodyText
-                email.snippet.isNotBlank() -> email.snippet
-                else -> "(Письмо не содержит текста)"
-            }
+            val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            val hasHtml = !email.bodyHtml.isNullOrBlank()
 
-            Text(
-                text = displayText,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 24.sp
-            )
+            if (hasHtml) {
+                // Render rich HTML via WebView (scroll disabled — outer Column handles it)
+                var webViewHeightPx by remember { mutableIntStateOf(600) }
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val webViewHeightDp = with(density) { webViewHeightPx.toDp() }
+
+                val bgColor = if (isDarkTheme) "#1C1B1F" else "#FFFFFF"
+                val textColor = if (isDarkTheme) "#E6E1E5" else "#1C1B1F"
+                val linkColor = if (isDarkTheme) "#D4A017" else "#8B6914"
+
+                val htmlDoc = """
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+                    <style>
+                      * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
+                      body {
+                        margin: 0; padding: 0;
+                        background: $bgColor;
+                        color: $textColor;
+                        font-family: -apple-system, Roboto, Arial, sans-serif;
+                        font-size: 15px;
+                        line-height: 1.6;
+                        word-wrap: break-word;
+                        overflow-wrap: break-word;
+                      }
+                      a { color: $linkColor; }
+                      img { max-width: 100%%; height: auto; }
+                      pre, code { white-space: pre-wrap; word-break: break-all; }
+                      table { max-width: 100%%; }
+                    </style>
+                    </head>
+                    <body>${email.bodyHtml}</body>
+                    </html>
+                """.trimIndent()
+
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            tag = email.id  // track which email is loaded
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    view.evaluateJavascript(
+                                        "(function(){ return document.documentElement.scrollHeight; })()"
+                                    ) { result ->
+                                        val px = result?.trim('"')?.toIntOrNull() ?: 0
+                                        if (px > 0) webViewHeightPx = px
+                                    }
+                                }
+                            }
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = false
+                                loadWithOverviewMode = true
+                                useWideViewPort = true
+                                setSupportZoom(false)
+                                builtInZoomControls = false
+                                displayZoomControls = false
+                                cacheMode = WebSettings.LOAD_NO_CACHE
+                            }
+                            isScrollContainer = false
+                            isVerticalScrollBarEnabled = false
+                            isHorizontalScrollBarEnabled = false
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                        }
+                    },
+                    update = { view ->
+                        // Only reload if a different email is now shown (tag mismatch)
+                        if (view.tag != email.id) {
+                            view.tag = email.id
+                            webViewHeightPx = 600
+                            view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(webViewHeightDp)
+                )
+            } else {
+                // Fallback: plain text
+                val displayText = when {
+                    email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
+                    email.snippet.isNotBlank() -> email.snippet
+                    else -> "(Письмо не содержит текста)"
+                }
+                Text(
+                    text = displayText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 24.sp
+                )
+            }
 
             // SLA indicator below email body - compact single row showing remaining time to answer (capped at 30 min)
             val isIncoming = email.folderId.contains("inbox", ignoreCase = true)

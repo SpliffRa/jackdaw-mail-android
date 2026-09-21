@@ -27,6 +27,29 @@ interface FolderDao {
     @Query("SELECT * FROM folders WHERE accountId = :accountId AND type = :type LIMIT 1")
     suspend fun getFolderByType(accountId: String, type: app.jackdaw.client.core.model.FolderType): FolderEntity?
 
-    @Query("DELETE FROM folders WHERE accountId = :accountId AND (name LIKE '%Календарь%' OR name LIKE '%Контакты%' OR name LIKE '%Recipient Cache%' OR name LIKE '%Задачи%' OR name LIKE '%Журнал%' OR name LIKE '%Дни рождения%')")
+    @Query("""
+        DELETE FROM folders 
+        WHERE accountId = :accountId AND (
+            name LIKE '%Календарь%' OR name LIKE '%Calendar%' OR
+            name LIKE '%Контакты%' OR name LIKE '%Contacts%' OR
+            name LIKE '%Recipient Cache%' OR
+            name LIKE '%Задачи%' OR name LIKE '%Tasks%' OR
+            name LIKE '%Журнал%' OR name LIKE '%Journal%' OR
+            name LIKE '%Дни рождения%' OR name LIKE '%Birthdays%' OR
+            name LIKE '%Conversation Action%' OR
+            name LIKE '%External Contacts%' OR name LIKE '%ExternalContacts%' OR
+            name LIKE '%Quick Step%' OR name LIKE '%Настройка быстрых%' OR
+            name LIKE '%Yammer%' OR
+            name LIKE '%Файлы%' OR name LIKE '%Files%' OR
+            name LIKE '%Sync Issues%' OR name LIKE '%Ошибки синхронизации%' OR
+            name LIKE '%Конфликты%' OR name LIKE '%Conflicts%' OR
+            name LIKE '%Локальные ошибки%' OR name LIKE '%Ошибки сервера%' OR
+            name LIKE '%Failures%' OR
+            name LIKE '%Заметки%' OR name LIKE '%Notes%' OR
+            name LIKE '%Организации%' OR
+            name LIKE '%RSS%' OR name LIKE '%Feeds%' OR
+            name LIKE '{%'
+        )
+    """)
     suspend fun cleanupNonMailFolders(accountId: String)
 }
