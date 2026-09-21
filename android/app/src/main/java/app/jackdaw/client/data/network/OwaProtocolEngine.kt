@@ -44,17 +44,43 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         val cookies = resolveCookies(account)
         val canary = resolveCanary(account, cookies)
-        val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindFolder")
-        val requestBody = buildFindFolderPayload()
+        val discoveredFolders = mutableMapOf<String, Folder>()
 
-        try {
-            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
-                ?: return@withContext emptyList()
-            parseFoldersFromFindFolderResponse(account, responseJson)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch folders from OWA endpoint $owaServiceUrl", e)
-            emptyList()
+        // 1. Try FindFolder (Deep then Shallow) to discover all custom folders
+        val findFolderUrl = buildOwaServiceUrl(serverUrl, "FindFolder")
+        for (traversal in listOf("Deep", "Shallow")) {
+            try {
+                val reqBody = buildFindFolderPayload(traversal)
+                val responseJson = executeOwaJsonPost(findFolderUrl, reqBody, cookies, canary, account)
+                if (responseJson != null) {
+                    val parsed = parseFoldersFromFindFolderResponse(account, responseJson)
+                    for (f in parsed) {
+                        discoveredFolders[f.id] = f
+                    }
+                    if (discoveredFolders.isNotEmpty()) break
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "FindFolder $traversal failed: ${e.message}")
+            }
         }
+
+        // 2. Query well-known distinguished folders via GetFolder (inbox, sentitems, deleteditems, drafts, archive)
+        // This guarantees standard folders like "Удаленные" with 300+ emails are always populated with accurate server counts!
+        try {
+            val getFolderUrl = buildOwaServiceUrl(serverUrl, "GetFolder")
+            val getFolderPayload = buildGetFolderDistinguishedPayload()
+            val responseJson = executeOwaJsonPost(getFolderUrl, getFolderPayload, cookies, canary, account)
+            if (responseJson != null) {
+                val parsed = parseFoldersFromFindFolderResponse(account, responseJson)
+                for (f in parsed) {
+                    discoveredFolders[f.id] = f
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "GetFolder distinguished folders query failed: ${e.message}")
+        }
+
+        discoveredFolders.values.toList()
     }
 
     override suspend fun fetchNewEmails(
@@ -260,6 +286,14 @@ class OwaProtocolEngine : MailProtocolEngine {
 
     private fun buildOwaServiceUrl(serverHost: String, action: String): String {
         var base = OwaAuthManager.normalizeOwaUrl(serverHost)
+        if (base.contains("/auth", ignoreCase = true)) {
+            val before = base.substringBefore("/auth")
+            base = if (before.endsWith("/owa") || before.endsWith("/owa/")) {
+                if (before.endsWith("/")) before else "$before/"
+            } else {
+                "${before.trimEnd('/')}/owa/"
+            }
+        }
         if (!base.endsWith("/")) base += "/"
         return "${base}service.svc?action=$action&EP=1"
     }
@@ -271,13 +305,27 @@ class OwaProtocolEngine : MailProtocolEngine {
         canary: String,
         account: MailAccount? = null
     ): JSONObject? {
-        val candidateUrls = listOf(
-            urlString,
-            urlString.substringBefore("&EP=1"),
-            urlString.replace("/owa/service.svc", "/service.svc")
-        ).distinct()
+        val cleanUrl = urlString
+            .replace(Regex("/owa/auth/.*service\\.svc", RegexOption.IGNORE_CASE), "/owa/service.svc")
+            .replace(Regex("/auth/.*service\\.svc", RegexOption.IGNORE_CASE), "/owa/service.svc")
 
-        for (candidateUrl in candidateUrls) {
+        val candidateUrls = mutableListOf(
+            cleanUrl,
+            cleanUrl.substringBefore("&EP=1"),
+            cleanUrl.replace("/owa/service.svc", "/service.svc")
+        )
+        if (cleanUrl.contains("cas.", ignoreCase = true)) {
+            val mailUrl = cleanUrl.replace("cas.", "mail.", ignoreCase = true)
+            candidateUrls.add(mailUrl)
+            candidateUrls.add(mailUrl.substringBefore("&EP=1"))
+            candidateUrls.add(mailUrl.replace("/owa/service.svc", "/service.svc"))
+        }
+
+        val effectiveCanary = canary.ifBlank {
+            OwaAuthManager.extractCanary(cookies).orEmpty()
+        }
+
+        for (candidateUrl in candidateUrls.distinct()) {
             try {
                 val url = URL(candidateUrl)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
@@ -291,9 +339,10 @@ class OwaProtocolEngine : MailProtocolEngine {
                     readTimeout = 20000
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("User-Agent", USER_AGENT)
-                    if (canary.isNotBlank()) {
-                        setRequestProperty("X-OWA-CANARY", canary)
-                        setRequestProperty("Action", url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem")
+                    val actionName = url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem"
+                    setRequestProperty("Action", actionName)
+                    if (effectiveCanary.isNotBlank()) {
+                        setRequestProperty("X-OWA-CANARY", effectiveCanary)
                     }
                     if (cookies.isNotBlank()) {
                         setRequestProperty("Cookie", cookies)
@@ -317,7 +366,10 @@ class OwaProtocolEngine : MailProtocolEngine {
                         return JSONObject(responseText)
                     }
                 } else {
-                    Log.w(TAG, "OWA service returned HTTP $code for $candidateUrl")
+                    val err = runCatching {
+                        BufferedReader(InputStreamReader(conn.errorStream ?: conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+                    }.getOrNull()
+                    Log.w(TAG, "OWA service returned HTTP $code for $candidateUrl. Error: ${err?.take(200)}")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Request to $candidateUrl failed: ${e.message}")
@@ -326,18 +378,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         return null
     }
 
-    private fun buildFindFolderPayload(): JSONObject {
-        val additionalProperties = JSONArray().apply {
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:DisplayName") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:TotalCount") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:UnreadCount") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "folder:FolderClass") })
-        }
-
+    private fun buildFindFolderPayload(traversal: String = "Deep"): JSONObject {
         val folderShape = JSONObject().apply {
             put("__type", "FolderResponseShape:#Exchange")
             put("BaseShape", "Default")
-            put("AdditionalProperties", additionalProperties)
         }
 
         val parentFolderIds = JSONArray().apply {
@@ -347,11 +391,19 @@ class OwaProtocolEngine : MailProtocolEngine {
             })
         }
 
+        val paging = JSONObject().apply {
+            put("__type", "IndexedPageView:#Exchange")
+            put("BasePoint", "Beginning")
+            put("Offset", 0)
+            put("MaxEntriesReturned", 100)
+        }
+
         val body = JSONObject().apply {
             put("__type", "FindFolderRequest:#Exchange")
             put("FolderShape", folderShape)
             put("ParentFolderIds", parentFolderIds)
-            put("Traversal", "Deep")
+            put("Traversal", traversal)
+            put("Paging", paging)
         }
 
         val header = JSONObject().apply {
@@ -366,6 +418,39 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
+    private fun buildGetFolderDistinguishedPayload(): JSONObject {
+        val folderShape = JSONObject().apply {
+            put("__type", "FolderResponseShape:#Exchange")
+            put("BaseShape", "Default")
+        }
+
+        val folderIds = JSONArray().apply {
+            for (distId in listOf("inbox", "sentitems", "deleteditems", "drafts", "archive", "junkemail")) {
+                put(JSONObject().apply {
+                    put("__type", "DistinguishedFolderId:#Exchange")
+                    put("Id", distId)
+                })
+            }
+        }
+
+        val body = JSONObject().apply {
+            put("__type", "GetFolderRequest:#Exchange")
+            put("FolderShape", folderShape)
+            put("FolderIds", folderIds)
+        }
+
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+
+        return JSONObject().apply {
+            put("__type", "GetFolderJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
     private fun buildGetItemPayload(itemIds: List<String>): JSONObject {
         val itemIdsArray = JSONArray()
         for (id in itemIds) {
@@ -375,19 +460,10 @@ class OwaProtocolEngine : MailProtocolEngine {
             })
         }
 
-        val additionalProperties = JSONArray().apply {
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Subject") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Body") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:TextBody") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:NormalizedBody") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Preview") })
-        }
-
         val itemShape = JSONObject().apply {
             put("__type", "ItemResponseShape:#Exchange")
             put("BaseShape", "Default")
             put("BodyType", "HTML")
-            put("AdditionalProperties", additionalProperties)
         }
 
         val body = JSONObject().apply {
@@ -798,10 +874,27 @@ class OwaProtocolEngine : MailProtocolEngine {
             if (displayName.isBlank()) continue
 
             val folderClass = folderObj.optString("FolderClass", "")
-            // Exclude calendars, contacts, and tasks from mail folder list
+            val lowerName = displayName.lowercase()
+            // Exclude calendars, contacts, tasks, and internal Exchange system folders from mail list
             if (folderClass.startsWith("IPF.Appointment") ||
                 folderClass.startsWith("IPF.Contact") ||
-                folderClass.startsWith("IPF.Task")
+                folderClass.startsWith("IPF.Task") ||
+                folderClass.startsWith("IPF.Configuration") ||
+                lowerName == "календарь" || lowerName == "calendar" ||
+                lowerName == "контакты" || lowerName == "contacts" ||
+                lowerName == "задачи" || lowerName == "tasks" ||
+                lowerName == "дни рождения" || lowerName == "журнал" ||
+                lowerName.startsWith("recipient cache") ||
+                lowerName.startsWith("gal contacts") ||
+                lowerName.startsWith("organizational contacts") ||
+                lowerName.startsWith("peoplecentric") ||
+                lowerName.startsWith("externalcontacts") ||
+                lowerName.startsWith("conversation action") ||
+                lowerName.startsWith("настройка быстрых") ||
+                lowerName.startsWith("корневая папка yammer") ||
+                lowerName.startsWith("ошибки синхронизации") ||
+                lowerName.startsWith("файлы") ||
+                lowerName.startsWith("{")
             ) {
                 continue
             }
@@ -849,15 +942,25 @@ class OwaProtocolEngine : MailProtocolEngine {
     private fun extractFoldersArray(response: JSONObject): JSONArray? {
         val body = response.optJSONObject("Body")
         val root = body ?: response
+        val combined = JSONArray()
 
         val responseMessages = root.optJSONObject("ResponseMessages")
         if (responseMessages != null) {
             val items = responseMessages.optJSONArray("Items")
             if (items != null && items.length() > 0) {
-                val first = items.optJSONObject(0)
-                val rootFolder = first?.optJSONObject("RootFolder")
-                val list = rootFolder?.optJSONArray("Folders") ?: first?.optJSONArray("Folders")
-                if (list != null) return list
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val rootFolder = item.optJSONObject("RootFolder")
+                    val list = rootFolder?.optJSONArray("Folders") ?: item.optJSONArray("Folders")
+                    if (list != null) {
+                        for (j in 0 until list.length()) {
+                            list.optJSONObject(j)?.let { combined.put(it) }
+                        }
+                    } else if (item.has("FolderId")) {
+                        combined.put(item)
+                    }
+                }
+                if (combined.length() > 0) return combined
             }
         }
 

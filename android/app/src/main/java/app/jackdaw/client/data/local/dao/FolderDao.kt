@@ -26,4 +26,7 @@ interface FolderDao {
 
     @Query("SELECT * FROM folders WHERE accountId = :accountId AND type = :type LIMIT 1")
     suspend fun getFolderByType(accountId: String, type: app.jackdaw.client.core.model.FolderType): FolderEntity?
+
+    @Query("DELETE FROM folders WHERE accountId = :accountId AND (name LIKE '%Календарь%' OR name LIKE '%Контакты%' OR name LIKE '%Recipient Cache%' OR name LIKE '%Задачи%' OR name LIKE '%Журнал%' OR name LIKE '%Дни рождения%')")
+    suspend fun cleanupNonMailFolders(accountId: String)
 }

@@ -41,10 +41,11 @@ object OwaAuthManager {
         val portPart = if (url.port != -1 && url.port != 443 && url.port != 80) ":${url.port}" else ""
         val path = url.path.trim('/')
 
-        return if (path.isBlank() || path.equals("owa", ignoreCase = true)) {
-            "${url.protocol}://$host$portPart/owa/"
-        } else {
-            "${url.protocol}://$host$portPart/$path/"
+        val pathLower = path.lowercase()
+        return when {
+            path.isBlank() || pathLower == "owa" || pathLower.startsWith("owa/") -> "${url.protocol}://$host$portPart/owa/"
+            pathLower.endsWith(".aspx") -> "${url.protocol}://$host$portPart/owa/"
+            else -> "${url.protocol}://$host$portPart/$path/"
         }
     }
 

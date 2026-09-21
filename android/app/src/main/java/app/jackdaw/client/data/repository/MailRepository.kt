@@ -305,6 +305,7 @@ class OfflineFirstMailRepository(
                 ?: return SyncResult(isSuccess = false, errorMessage = "Account not found")
 
             val account = accountEntity.toDomain()
+            android.util.Log.i("MailRepository", "syncAll started for account: ${account.email} on server ${account.serverHost}")
             val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "${account.id}_outbox"
             val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "${account.id}_sent"
             val inboxFolder = folderDao.getFolderByType(account.id, FolderType.INBOX)?.id ?: "${account.id}_inbox"
@@ -326,6 +327,7 @@ class OfflineFirstMailRepository(
             // 2. Discover and synchronize server folders (Inbox, Sent, Trash, Drafts, Archive, and all custom folders)
             try {
                 val remoteFolders = mailProtocolEngine.fetchFolders(account)
+                android.util.Log.i("MailRepository", "syncAll: discovered ${remoteFolders.size} remote folders: ${remoteFolders.map { "${it.name}(${it.totalCount})" }}")
                 if (remoteFolders.isNotEmpty()) {
                     val existingFolders = folderDao.getFoldersByAccount(account.id).first()
                     val existingMap = existingFolders.associateBy { it.id }
@@ -341,6 +343,7 @@ class OfflineFirstMailRepository(
                         )
                     }
                     folderDao.insertFolders(entitiesToSave)
+                    folderDao.cleanupNonMailFolders(account.id)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("MailRepository", "Failed to sync remote folders", e)
@@ -369,6 +372,7 @@ class OfflineFirstMailRepository(
                     try {
                         val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
                         if (newEmails.isNotEmpty()) {
+                            android.util.Log.i("MailRepository", "syncAll: folder ${folder.name} synced ${newEmails.size} emails")
                             val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = folder.id)) }
                             emailDao.insertEmails(emailEntities)
 
@@ -388,6 +392,7 @@ class OfflineFirstMailRepository(
                 // Fallback to inbox folder if folder list is not yet populated
                 val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
                 if (newEmails.isNotEmpty()) {
+                    android.util.Log.i("MailRepository", "syncAll: inbox fallback synced ${newEmails.size} emails")
                     val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = inboxFolder)) }
                     emailDao.insertEmails(emailEntities)
                     totalNewEmails += newEmails.size
@@ -400,6 +405,7 @@ class OfflineFirstMailRepository(
             val ninetyDaysAhead = now + 90L * 86400000L
             try {
                 val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
+                android.util.Log.i("MailRepository", "syncAll: fetched ${calendarEvents.size} calendar events from Exchange")
                 if (calendarEvents.isNotEmpty()) {
                     calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
                 }
