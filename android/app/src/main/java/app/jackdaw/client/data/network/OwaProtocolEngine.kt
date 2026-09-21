@@ -114,19 +114,51 @@ class OwaProtocolEngine : MailProtocolEngine {
         )
     }
 
+    private val trustAllSslSocketFactory: javax.net.ssl.SSLSocketFactory by lazy {
+        val trustAllCerts = arrayOf<javax.net.ssl.TrustManager>(object : javax.net.ssl.X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = arrayOf()
+        })
+        val sslContext = javax.net.ssl.SSLContext.getInstance("TLS")
+        sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+        sslContext.socketFactory
+    }
+
+    private val trustAllHostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+
     private fun resolveCookies(account: MailAccount): String {
+        val list = mutableListOf<String>()
         val saved = account.authSessionCookies.trim()
-        if (saved.isNotBlank()) return saved
+        if (saved.isNotBlank()) list.add(saved)
 
-        val fromManager = OwaAuthManager.getCookiesFromManager(account.serverHost).trim()
-        if (fromManager.isNotBlank()) return fromManager
+        val host = runCatching { URL(account.serverHost).host }.getOrNull()
+        if (!host.isNullOrBlank()) {
+            val cm = android.webkit.CookieManager.getInstance()
+            cm.getCookie("https://$host/owa/")?.let { if (it.isNotBlank()) list.add(it) }
+            cm.getCookie("https://$host/")?.let { if (it.isNotBlank()) list.add(it) }
+            cm.getCookie(account.serverHost)?.let { if (it.isNotBlank()) list.add(it) }
+        }
 
-        return ""
+        val map = mutableMapOf<String, String>()
+        for (cookieHeader in list) {
+            for (part in cookieHeader.split(";")) {
+                val kv = part.split("=", limit = 2)
+                if (kv.size == 2) {
+                    val k = kv[0].trim()
+                    val v = kv[1].trim()
+                    if (k.isNotBlank()) map[k] = v
+                }
+            }
+        }
+        return map.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 
     private fun resolveCanary(account: MailAccount, cookies: String): String {
-        if (account.authSessionToken.isNotBlank()) return account.authSessionToken
-        return OwaAuthManager.extractCanary(cookies) ?: "canary_${System.currentTimeMillis()}"
+        if (account.authSessionToken.isNotBlank() && !account.authSessionToken.startsWith("canary_web_")) {
+            return account.authSessionToken
+        }
+        return OwaAuthManager.extractCanary(cookies).orEmpty()
     }
 
     private fun buildOwaServiceUrl(serverHost: String, action: String): String {
@@ -141,43 +173,54 @@ class OwaProtocolEngine : MailProtocolEngine {
         cookies: String,
         canary: String
     ): JSONObject? {
-        val url = URL(urlString)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            connectTimeout = 12000
-            readTimeout = 15000
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("User-Agent", USER_AGENT)
-            if (canary.isNotBlank()) {
-                setRequestProperty("X-OWA-CANARY", canary)
-                setRequestProperty("Action", url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem")
+        val candidateUrls = listOf(
+            urlString,
+            urlString.substringBefore("&EP=1"),
+            urlString.replace("/owa/service.svc", "/service.svc")
+        ).distinct()
+
+        for (candidateUrl in candidateUrls) {
+            try {
+                val url = URL(candidateUrl)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    if (this is javax.net.ssl.HttpsURLConnection) {
+                        sslSocketFactory = trustAllSslSocketFactory
+                        hostnameVerifier = trustAllHostnameVerifier
+                    }
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 15000
+                    readTimeout = 20000
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("User-Agent", USER_AGENT)
+                    if (canary.isNotBlank()) {
+                        setRequestProperty("X-OWA-CANARY", canary)
+                        setRequestProperty("Action", url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem")
+                    }
+                    if (cookies.isNotBlank()) {
+                        setRequestProperty("Cookie", cookies)
+                    }
+                }
+
+                OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(jsonBody.toString())
+                    writer.flush()
+                }
+
+                val code = conn.responseCode
+                if (code in 200..299) {
+                    val responseText = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+                    if (responseText.isNotBlank()) {
+                        return JSONObject(responseText)
+                    }
+                } else {
+                    Log.w(TAG, "OWA service returned HTTP $code for $candidateUrl")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Request to $candidateUrl failed: ${e.message}")
             }
-            if (cookies.isNotBlank()) {
-                setRequestProperty("Cookie", cookies)
-            }
         }
-
-        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { writer ->
-            writer.write(jsonBody.toString())
-            writer.flush()
-        }
-
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            Log.w(TAG, "OWA service returned HTTP $code for $urlString")
-            return null
-        }
-
-        val responseText = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-        if (responseText.isBlank()) return null
-
-        return try {
-            JSONObject(responseText)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse JSON response: ${responseText.take(200)}", e)
-            null
-        }
+        return null
     }
 
     private fun buildFindItemEmailPayload(folderId: String): JSONObject {
@@ -196,10 +239,8 @@ class OwaProtocolEngine : MailProtocolEngine {
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:ToRecipients") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:IsRead") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:DateTimeReceived") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Preview") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:HasAttachments") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Importance") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Body") })
         }
 
         val itemShape = JSONObject().apply {
@@ -262,7 +303,6 @@ class OwaProtocolEngine : MailProtocolEngine {
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "calendar:Location") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "calendar:Organizer") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "calendar:IsAllDayEvent") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Body") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "calendar:LegacyFreeBusyStatus") })
         }
 

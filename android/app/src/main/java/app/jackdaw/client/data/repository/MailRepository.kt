@@ -322,7 +322,7 @@ class OfflineFirstMailRepository(
             }
 
             // 2. Fetch new emails from remote server
-            val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, System.currentTimeMillis() - 86400000)
+            val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
             if (newEmails.isNotEmpty()) {
                 val emailEntities = newEmails.map { EmailEntity.fromDomain(it) }
                 emailDao.insertEmails(emailEntities)

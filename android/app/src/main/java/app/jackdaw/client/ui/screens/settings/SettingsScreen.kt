@@ -1439,27 +1439,34 @@ fun SettingsScreen(
             },
             containerColor = MaterialTheme.colorScheme.surface
         )
-    }
 
-    if (showEditOwaLoginDialog && accountToEdit != null) {
-        val target = accountToEdit!!
-        val targetUrl = target.serverHost.ifBlank {
-            if (target.email.contains("@")) "https://${target.email.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
-        }
-        OwaWebLoginDialog(
-            initialOwaUrl = targetUrl,
-            initialEmail = target.email,
-            autoLoginUser = target.loginUser.ifBlank { target.email },
-            autoLoginPassword = target.savedPassword,
-            existingAccountId = target.id,
-            onDismissRequest = { showEditOwaLoginDialog = false },
-            onAccountAuthorized = { authorizedAccount ->
-                onUpdateAccount(authorizedAccount)
-                Toast.makeText(context, "Авторизация OWA обновлена", Toast.LENGTH_SHORT).show()
-                showEditOwaLoginDialog = false
-                accountToEdit = null
+        if (showEditOwaLoginDialog) {
+            val targetUrl = editServerHost.ifBlank { target.serverHost }.ifBlank {
+                if (editEmail.contains("@")) "https://${editEmail.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
             }
-        )
+            OwaWebLoginDialog(
+                initialOwaUrl = targetUrl,
+                initialEmail = editEmail.ifBlank { target.email },
+                autoLoginUser = editLoginUser.ifBlank { target.loginUser }.ifBlank { editEmail },
+                autoLoginPassword = editPassword.ifBlank { target.savedPassword },
+                existingAccountId = target.id,
+                onDismissRequest = { showEditOwaLoginDialog = false },
+                onAccountAuthorized = { authorizedAccount ->
+                    val updatedWithInputs = authorizedAccount.copy(
+                        displayName = editDisplayName.ifBlank { authorizedAccount.displayName },
+                        email = editEmail.ifBlank { authorizedAccount.email },
+                        loginUser = editLoginUser.ifBlank { authorizedAccount.loginUser },
+                        savedPassword = editPassword.ifBlank { authorizedAccount.savedPassword },
+                        serverHost = editServerHost.ifBlank { authorizedAccount.serverHost },
+                        protocol = editProtocol
+                    )
+                    onUpdateAccount(updatedWithInputs)
+                    Toast.makeText(context, "Авторизация OWA обновлена", Toast.LENGTH_SHORT).show()
+                    showEditOwaLoginDialog = false
+                    accountToEdit = null
+                }
+            )
+        }
     }
 
     // Delete confirmation dialog

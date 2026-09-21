@@ -309,6 +309,7 @@ class MailViewModel(
         viewModelScope.launch {
             repository.addAccount(account)
             selectAccount(account)
+            triggerSync()
         }
     }
 
@@ -318,6 +319,7 @@ class MailViewModel(
             if (currentAccount.value?.id == account.id) {
                 selectAccount(account)
             }
+            triggerSync()
         }
     }
 
