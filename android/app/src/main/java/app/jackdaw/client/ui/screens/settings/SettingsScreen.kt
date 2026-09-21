@@ -25,18 +25,30 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import app.jackdaw.client.core.designsystem.theme.SlaGoodGreen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +58,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -117,6 +130,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSelectAccount: (MailAccount) -> Unit,
     onAddAccount: (MailAccount) -> Unit,
+    onUpdateAccount: (MailAccount) -> Unit = {},
     onDeleteAccount: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -130,6 +144,9 @@ fun SettingsScreen(
     var activeSubfolder by remember { mutableStateOf<SettingsSubfolder?>(null) }
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var accountToDelete by remember { mutableStateOf<MailAccount?>(null) }
+    var accountToEdit by remember { mutableStateOf<MailAccount?>(null) }
+    var showEditOwaLoginDialog by remember { mutableStateOf(false) }
+
 
     // Settings switches
     var backgroundSyncEnabled by remember { mutableStateOf(true) }
@@ -421,11 +438,38 @@ fun SettingsScreen(
                                                         )
                                                     }
                                                 }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(if (account.isAuthorized) SlaGoodGreen.copy(alpha = 0.15f) else SlaUrgentRed.copy(alpha = 0.15f))
+                                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (account.isAuthorized) "✓ Авторизован" else "⚠ Требуется вход",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = if (account.isAuthorized) SlaGoodGreen else SlaUrgentRed,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 10.sp
+                                                    )
+                                                }
                                             }
                                             Text(
                                                 text = "${account.email} • ${account.protocol.displayName}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        IconButton(
+                                            onClick = { accountToEdit = account },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Edit,
+                                                contentDescription = "Настроить",
+                                                tint = JackdawAmber,
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
 
@@ -1004,6 +1048,9 @@ fun SettingsScreen(
     var showOwaWebLoginDialog by remember { mutableStateOf(false) }
     var newDisplayName by remember { mutableStateOf("") }
     var newEmail by remember { mutableStateOf("") }
+    var newLoginUser by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var isNewPasswordVisible by remember { mutableStateOf(false) }
     var newProtocol by remember { mutableStateOf(AccountProtocol.EXCHANGE_OWA) }
     var newServerHost by remember { mutableStateOf("") }
 
@@ -1012,7 +1059,7 @@ fun SettingsScreen(
             onDismissRequest = { showAddAccountDialog = false },
             title = { Text("Добавить учетную запись", color = MaterialTheme.colorScheme.onSurface) },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = newDisplayName,
                         onValueChange = { newDisplayName = it },
@@ -1025,6 +1072,33 @@ fun SettingsScreen(
                         value = newEmail,
                         onValueChange = { newEmail = it },
                         label = { Text("Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newLoginUser,
+                        onValueChange = { newLoginUser = it },
+                        label = { Text("Логин для авторизации (если отличается)") },
+                        placeholder = { Text("DOMAIN\\user или логин") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("Пароль для авто-входа") },
+                        trailingIcon = {
+                            IconButton(onClick = { isNewPasswordVisible = !isNewPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isNewPasswordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        visualTransformation = if (isNewPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1131,7 +1205,9 @@ fun SettingsScreen(
                                 protocol = newProtocol,
                                 isDefault = false,
                                 avatarColorHex = if (newProtocol == AccountProtocol.EXCHANGE_OWA) 0xFFF59E0BL else 0xFF10B981L,
-                                serverHost = newServerHost.trim()
+                                serverHost = newServerHost.trim(),
+                                loginUser = newLoginUser.trim(),
+                                savedPassword = newPassword
                             )
                             onAddAccount(createdAccount)
                             Toast.makeText(context, "Аккаунт ${createdAccount.email} добавлен", Toast.LENGTH_SHORT).show()
@@ -1160,12 +1236,228 @@ fun SettingsScreen(
         OwaWebLoginDialog(
             initialOwaUrl = targetUrl,
             initialEmail = newEmail,
+            autoLoginUser = newLoginUser.ifBlank { newEmail },
+            autoLoginPassword = newPassword,
             onDismissRequest = { showOwaWebLoginDialog = false },
             onAccountAuthorized = { owaAccount ->
                 onAddAccount(owaAccount)
                 Toast.makeText(context, "OWA аккаунт ${owaAccount.email} подключен", Toast.LENGTH_SHORT).show()
                 showOwaWebLoginDialog = false
                 showAddAccountDialog = false
+            }
+        )
+    }
+
+    // Edit Account Dialog
+    if (accountToEdit != null) {
+        val target = accountToEdit!!
+        var editDisplayName by remember(target.id) { mutableStateOf(target.displayName) }
+        var editEmail by remember(target.id) { mutableStateOf(target.email) }
+        var editLoginUser by remember(target.id) { mutableStateOf(target.loginUser) }
+        var editPassword by remember(target.id) { mutableStateOf(target.savedPassword) }
+        var editServerHost by remember(target.id) { mutableStateOf(target.serverHost) }
+        var editProtocol by remember(target.id) { mutableStateOf(target.protocol) }
+        var isEditPasswordVisible by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { accountToEdit = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = null,
+                        tint = JackdawAmber,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Настройка учетной записи", color = MaterialTheme.colorScheme.onSurface)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    // Status Badge
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (target.isAuthorized) SlaGoodGreen.copy(alpha = 0.15f) else SlaUrgentRed.copy(alpha = 0.15f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (target.isAuthorized) Icons.Rounded.CheckCircle else Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = if (target.isAuthorized) SlaGoodGreen else SlaUrgentRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (target.isAuthorized) "Сессия активна (вход выполнен)" else "Не авторизован (требуется вход)",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (target.isAuthorized) SlaGoodGreen else SlaUrgentRed
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = editDisplayName,
+                        onValueChange = { editDisplayName = it },
+                        label = { Text("Имя пользователя") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editEmail,
+                        onValueChange = { editEmail = it },
+                        label = { Text("Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editLoginUser,
+                        onValueChange = { editLoginUser = it },
+                        label = { Text("Логин для входа (Exchange / SSO)") },
+                        placeholder = { Text("DOMAIN\\user или логин") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editPassword,
+                        onValueChange = { editPassword = it },
+                        label = { Text("Пароль для авто-входа") },
+                        trailingIcon = {
+                            IconButton(onClick = { isEditPasswordVisible = !isEditPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (isEditPasswordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = null
+                                )
+                            }
+                        },
+                        visualTransformation = if (isEditPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editServerHost,
+                        onValueChange = { editServerHost = it },
+                        label = { Text("Адрес OWA сервера или URL") },
+                        placeholder = { Text("https://mail.company.ru/owa") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Протокол подключения:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = { editProtocol = AccountProtocol.EXCHANGE_OWA },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editProtocol == AccountProtocol.EXCHANGE_OWA) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (editProtocol == AccountProtocol.EXCHANGE_OWA) Color.Black else MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("OWA", fontSize = 11.sp, maxLines = 1)
+                        }
+                        Button(
+                            onClick = { editProtocol = AccountProtocol.EXCHANGE_EWS },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editProtocol == AccountProtocol.EXCHANGE_EWS) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (editProtocol == AccountProtocol.EXCHANGE_EWS) Color.Black else MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Exchange", fontSize = 11.sp, maxLines = 1)
+                        }
+                        Button(
+                            onClick = { editProtocol = AccountProtocol.IMAP },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editProtocol == AccountProtocol.IMAP) JackdawAmber else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (editProtocol == AccountProtocol.IMAP) Color.Black else MaterialTheme.colorScheme.onSurface
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("IMAP", fontSize = 11.sp, maxLines = 1)
+                        }
+                    }
+
+                    if (editProtocol == AccountProtocol.EXCHANGE_OWA) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { showEditOwaLoginDialog = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = JackdawAmber.copy(alpha = 0.18f),
+                                contentColor = JackdawAmber
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Rounded.Language, contentDescription = null, modifier = Modifier.size(16.dp), tint = JackdawAmber)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Пройти веб-вход OWA (SSO / MFA)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val updated = target.copy(
+                            displayName = editDisplayName.ifBlank { editEmail.substringBefore("@") },
+                            email = editEmail.trim(),
+                            loginUser = editLoginUser.trim(),
+                            savedPassword = editPassword,
+                            serverHost = editServerHost.trim(),
+                            protocol = editProtocol
+                        )
+                        onUpdateAccount(updated)
+                        Toast.makeText(context, "Настройки аккаунта сохранены", Toast.LENGTH_SHORT).show()
+                        accountToEdit = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = JackdawAmber, contentColor = Color.Black)
+                ) {
+                    Text("Сохранить", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { accountToEdit = null }) {
+                    Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+
+    if (showEditOwaLoginDialog && accountToEdit != null) {
+        val target = accountToEdit!!
+        val targetUrl = target.serverHost.ifBlank {
+            if (target.email.contains("@")) "https://${target.email.substringAfter("@")}/owa" else "https://mail.company.ru/owa"
+        }
+        OwaWebLoginDialog(
+            initialOwaUrl = targetUrl,
+            initialEmail = target.email,
+            autoLoginUser = target.loginUser.ifBlank { target.email },
+            autoLoginPassword = target.savedPassword,
+            existingAccountId = target.id,
+            onDismissRequest = { showEditOwaLoginDialog = false },
+            onAccountAuthorized = { authorizedAccount ->
+                onUpdateAccount(authorizedAccount)
+                Toast.makeText(context, "Авторизация OWA обновлена", Toast.LENGTH_SHORT).show()
+                showEditOwaLoginDialog = false
+                accountToEdit = null
             }
         )
     }

@@ -81,8 +81,23 @@ class CalendarViewModel(
         initialValue = emptySet()
     )
 
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
     fun setAccountId(accountId: String?) {
         _currentAccountId.value = accountId
+    }
+
+    fun syncCalendar(account: app.jackdaw.client.core.model.MailAccount) {
+        if (_isSyncing.value) return
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                calendarRepository.syncCalendar(account)
+            } finally {
+                _isSyncing.value = false
+            }
+        }
     }
 
     fun selectDate(date: LocalDate) {
@@ -92,6 +107,7 @@ class CalendarViewModel(
     fun jumpToToday() {
         _selectedDate.value = LocalDate.now()
     }
+
 
     fun saveEvent(
         title: String,

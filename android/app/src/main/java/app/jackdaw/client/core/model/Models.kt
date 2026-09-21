@@ -16,8 +16,15 @@ data class MailAccount(
     val isDefault: Boolean = false,
     val avatarColorHex: Long = 0xFFF59E0BL,
     val serverHost: String = "",
-    val authSessionToken: String = ""
-)
+    val authSessionToken: String = "",
+    val authSessionCookies: String = "",
+    val loginUser: String = "",
+    val savedPassword: String = ""
+) {
+    val isAuthorized: Boolean
+        get() = authSessionToken.isNotBlank() || authSessionCookies.isNotBlank()
+}
+
 
 enum class FolderType {
     INBOX,

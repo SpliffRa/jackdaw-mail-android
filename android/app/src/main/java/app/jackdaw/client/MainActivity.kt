@@ -423,6 +423,10 @@ fun JackdawMainApp(
                         viewModel.addAccount(newAccount)
                         onToast("Аккаунт ${newAccount.displayName} добавлен")
                     },
+                    onUpdateAccount = { updatedAccount ->
+                        viewModel.updateAccount(updatedAccount)
+                        onToast("Аккаунт ${updatedAccount.displayName} обновлен")
+                    },
                     onDeleteAccount = { accountId ->
                         viewModel.deleteAccount(accountId)
                         onToast("Аккаунт удален")

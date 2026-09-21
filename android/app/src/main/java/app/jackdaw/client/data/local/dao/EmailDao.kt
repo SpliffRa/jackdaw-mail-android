@@ -75,4 +75,10 @@ interface EmailDao {
 
     @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC LIMIT :limit")
     suspend fun getRecentEmails(accountId: String, limit: Int): List<EmailEntity>
+
+    @Query("SELECT COUNT(*) FROM emails WHERE folderId = :folderId AND isRead = 0")
+    suspend fun getFolderUnreadCount(folderId: String): Int
+
+    @Query("SELECT COUNT(*) FROM emails WHERE folderId = :folderId")
+    suspend fun getFolderTotalCount(folderId: String): Int
 }

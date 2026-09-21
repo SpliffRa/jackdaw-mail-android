@@ -9,6 +9,7 @@ import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.data.local.JackdawDatabase
 import app.jackdaw.client.data.local.entity.AccountEntity
 import app.jackdaw.client.data.local.entity.AttachmentEntity
+import app.jackdaw.client.data.local.entity.CalendarEventEntity
 import app.jackdaw.client.data.local.entity.EmailEntity
 import app.jackdaw.client.data.local.entity.FolderEntity
 import app.jackdaw.client.data.network.MailProtocolEngine
@@ -41,6 +42,7 @@ interface MailRepository {
     suspend fun queueEmailForSending(email: EmailMessage)
     suspend fun sendEmail(email: EmailMessage)
     suspend fun addAccount(account: MailAccount)
+    suspend fun updateAccount(account: MailAccount)
     suspend fun deleteAccount(accountId: String)
     suspend fun syncAll(accountId: String): SyncResult
     suspend fun initializeSampleDataIfEmpty()
@@ -50,13 +52,15 @@ interface MailRepository {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class OfflineFirstMailRepository(
     private val database: JackdawDatabase,
-    private val mailProtocolEngine: MailProtocolEngine = MockNetworkSyncEngine()
+    private val mailProtocolEngine: MailProtocolEngine = app.jackdaw.client.data.network.OwaProtocolEngine()
 ) : MailRepository {
 
     private val accountDao = database.accountDao()
     private val folderDao = database.folderDao()
     private val emailDao = database.emailDao()
     private val attachmentDao = database.attachmentDao()
+    private val calendarEventDao = database.calendarEventDao()
+
 
     override fun getAccounts(): Flow<List<MailAccount>> {
         return accountDao.getAllAccounts().map { entities ->
@@ -281,7 +285,12 @@ class OfflineFirstMailRepository(
         folderDao.insertFolders(standardFolders.map { FolderEntity.fromDomain(it) })
     }
 
+    override suspend fun updateAccount(account: MailAccount) {
+        accountDao.insertAccount(AccountEntity.fromDomain(account))
+    }
+
     override suspend fun deleteAccount(accountId: String) {
+        calendarEventDao.deleteEventsByAccount(accountId)
         emailDao.deleteEmailsByAccount(accountId)
         folderDao.deleteFoldersByAccount(accountId)
         accountDao.deleteAccount(accountId)
@@ -294,8 +303,9 @@ class OfflineFirstMailRepository(
                 ?: return SyncResult(isSuccess = false, errorMessage = "Account not found")
 
             val account = accountEntity.toDomain()
-            val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "outbox"
-            val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "sent"
+            val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "${account.id}_outbox"
+            val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "${account.id}_sent"
+            val inboxFolder = folderDao.getFolderByType(account.id, FolderType.INBOX)?.id ?: "${account.id}_inbox"
 
             // 1. Process pending outgoing emails (Outbox)
             val pendingEmails = emailDao.getPendingOutgoingEmails()
@@ -312,7 +322,7 @@ class OfflineFirstMailRepository(
             }
 
             // 2. Fetch new emails from remote server
-            val newEmails = mailProtocolEngine.fetchNewEmails(account, "inbox", System.currentTimeMillis() - 86400000)
+            val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, System.currentTimeMillis() - 86400000)
             if (newEmails.isNotEmpty()) {
                 val emailEntities = newEmails.map { EmailEntity.fromDomain(it) }
                 emailDao.insertEmails(emailEntities)
@@ -325,8 +335,23 @@ class OfflineFirstMailRepository(
                 }
             }
 
-            // 3. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
+            // 3. Fetch calendar meetings & events from remote server
             val now = System.currentTimeMillis()
+            val thirtyDaysAgo = now - 30L * 86400000L
+            val ninetyDaysAhead = now + 90L * 86400000L
+            val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
+            if (calendarEvents.isNotEmpty()) {
+                calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
+            }
+
+            // 4. Update folder unread and total counters
+            for (fId in listOf(inboxFolder, sentFolder, outboxFolder)) {
+                val unread = emailDao.getFolderUnreadCount(fId)
+                val total = emailDao.getFolderTotalCount(fId)
+                folderDao.updateCounts(fId, unread, total)
+            }
+
+            // 5. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
             val allEmails = emailDao.getAllEmails(accountId).first()
             for (item in allEmails) {
                 if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE && item.slaSeverity != SlaSeverity.COMPLETED) {
@@ -360,6 +385,7 @@ class OfflineFirstMailRepository(
                 sentMessagesCount = sentCount,
                 syncedAtTimestamp = System.currentTimeMillis()
             )
+
         } catch (e: Exception) {
             SyncResult(
                 isSuccess = false,

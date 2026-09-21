@@ -22,6 +22,16 @@ class MockNetworkSyncEngine : MailProtocolEngine {
         return emptyList()
     }
 
+    override suspend fun fetchCalendarEvents(
+        account: MailAccount,
+        startRange: Long,
+        endRange: Long
+    ): List<app.jackdaw.client.core.model.CalendarEvent> {
+        delay(200)
+        return emptyList()
+    }
+
+
     override suspend fun sendMessage(account: MailAccount, email: EmailMessage): SendResult {
         // Simulate SMTP / Exchange protocol transmission delay
         delay(600)

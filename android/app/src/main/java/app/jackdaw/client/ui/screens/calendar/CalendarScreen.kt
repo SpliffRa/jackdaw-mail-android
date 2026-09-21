@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.VideoCall
 import androidx.compose.material3.Card
@@ -89,11 +90,13 @@ fun CalendarScreen(
     val selectedDate by viewModel.selectedDate.collectAsState()
     val events by viewModel.selectedDateEvents.collectAsState()
     val datesWithEvents by viewModel.datesWithEvents.collectAsState()
-
     var showCreateDialog by remember { mutableStateOf(false) }
+    val isSyncing by viewModel.isSyncing.collectAsState()
+
 
     LaunchedEffect(currentAccount.id) {
         viewModel.setAccountId(currentAccount.id)
+        viewModel.syncCalendar(currentAccount)
     }
 
     val monthYearFormatter = remember { DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru")) }
@@ -126,7 +129,7 @@ fun CalendarScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Header: Drawer button, Month & Year, "Сегодня" button
+            // Header: Drawer button, Month & Year, "Сегодня" button, Sync button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -151,35 +154,51 @@ fun CalendarScreen(
                     )
                 }
 
-                // Quick Jump to Today Button
-                val isTodaySelected = selectedDate == LocalDate.now()
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (isTodaySelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { viewModel.jumpToToday() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Quick Jump to Today Button
+                    val isTodaySelected = selectedDate == LocalDate.now()
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isTodaySelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { viewModel.jumpToToday() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Rounded.Today,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isTodaySelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Сегодня",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isTodaySelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    IconButton(
+                        onClick = { viewModel.syncCalendar(currentAccount) },
+                        enabled = !isSyncing
                     ) {
                         Icon(
-                            Icons.Rounded.Today,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = if (isTodaySelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Сегодня",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isTodaySelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            imageVector = androidx.compose.material.icons.Icons.Rounded.Sync,
+                            contentDescription = "Синхронизировать встречи",
+                            tint = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
             }
+
 
             // Horizontal Date Strip (Outlook Style Week Row)
             CalendarDateStrip(

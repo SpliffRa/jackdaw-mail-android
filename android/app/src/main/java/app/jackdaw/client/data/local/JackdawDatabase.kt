@@ -18,6 +18,9 @@ import app.jackdaw.client.data.local.entity.EmailEntity
 import app.jackdaw.client.data.local.entity.EmailFtsEntity
 import app.jackdaw.client.data.local.entity.FolderEntity
 
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
 @Database(
     entities = [
         AccountEntity::class,
@@ -27,7 +30,7 @@ import app.jackdaw.client.data.local.entity.FolderEntity
         AttachmentEntity::class,
         CalendarEventEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -42,13 +45,24 @@ abstract class JackdawDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: JackdawDatabase? = null
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE accounts ADD COLUMN authSessionCookies TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN loginUser TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE accounts ADD COLUMN savedPassword TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): JackdawDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     JackdawDatabase::class.java,
                     "jackdaw_mail.db"
-                ).fallbackToDestructiveMigration().build()
+                )
+                    .addMigrations(MIGRATION_4_5)
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

@@ -312,6 +312,16 @@ class MailViewModel(
         }
     }
 
+    fun updateAccount(account: MailAccount) {
+        viewModelScope.launch {
+            repository.updateAccount(account)
+            if (currentAccount.value?.id == account.id) {
+                selectAccount(account)
+            }
+        }
+    }
+
+
     fun deleteAccount(accountId: String) {
         viewModelScope.launch {
             val allAccounts = accounts.value

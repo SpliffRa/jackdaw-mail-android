@@ -64,12 +64,18 @@ import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import app.jackdaw.client.data.auth.OwaAuthManager
 import java.net.URL
 
+import androidx.compose.material.icons.rounded.Key
+import org.json.JSONObject
+
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun OwaWebLoginDialog(
     initialOwaUrl: String,
     initialEmail: String = "",
+    autoLoginUser: String = "",
+    autoLoginPassword: String = "",
+    existingAccountId: String? = null,
     onDismissRequest: () -> Unit,
     onAccountAuthorized: (MailAccount) -> Unit
 ) {
@@ -86,6 +92,40 @@ fun OwaWebLoginDialog(
     var capturedCookies by remember { mutableStateOf("") }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
+    fun injectCredentials(webView: WebView?) {
+        val userVal = autoLoginUser.ifBlank { initialEmail }.trim()
+        val passVal = autoLoginPassword
+        if (userVal.isBlank() && passVal.isBlank()) return
+
+        val escapedUser = JSONObject.quote(userVal)
+        val escapedPass = JSONObject.quote(passVal)
+
+        val js = """
+            (function() {
+                function setInputValue(sel, val) {
+                    if (!val) return false;
+                    var elements = document.querySelectorAll(sel);
+                    var filled = false;
+                    for (var i = 0; i < elements.length; i++) {
+                        var el = elements[i];
+                        if (el && (!el.value || el.value === '')) {
+                            el.focus();
+                            el.value = val;
+                            el.dispatchEvent(new Event('input', { bubbles: true }));
+                            el.dispatchEvent(new Event('change', { bubbles: true }));
+                            filled = true;
+                        }
+                    }
+                    return filled;
+                }
+                setInputValue('input#username, input#userNameInput, input#loginfmt, input#email, input[name="username"], input[name="UserName"], input[name="login"], input[name="loginfmt"], input[type="email"]', $escapedUser);
+                setInputValue('input#password, input#passwordInput, input#passwd, input[name="password"], input[name="Password"], input[name="passwd"], input[type="password"]', $escapedPass);
+            })();
+        """.trimIndent()
+
+        webView?.evaluateJavascript(js, null)
+    }
+
     fun completeAuthorization() {
         val email = if (initialEmail.isNotBlank()) {
             initialEmail.trim()
@@ -96,17 +136,21 @@ fun OwaWebLoginDialog(
         val canary = OwaAuthManager.extractCanary(capturedCookies) ?: "canary_web_${System.currentTimeMillis()}"
 
         val account = MailAccount(
-            id = "acc_owa_${System.currentTimeMillis()}",
+            id = existingAccountId ?: "acc_owa_${System.currentTimeMillis()}",
             email = email,
             displayName = email.substringBefore("@"),
             protocol = AccountProtocol.EXCHANGE_OWA,
             isDefault = false,
             avatarColorHex = 0xFFF59E0BL,
             serverHost = normalizedUrl,
-            authSessionToken = canary
+            authSessionToken = canary,
+            authSessionCookies = capturedCookies,
+            loginUser = autoLoginUser,
+            savedPassword = autoLoginPassword
         )
         onAccountAuthorized(account)
     }
+
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -159,6 +203,15 @@ fun OwaWebLoginDialog(
                         }
                     },
                     actions = {
+                        if (autoLoginUser.isNotBlank() || autoLoginPassword.isNotBlank()) {
+                            IconButton(onClick = { injectCredentials(webViewRef) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Key,
+                                    contentDescription = "Автозаполнение",
+                                    tint = JackdawAmber
+                                )
+                            }
+                        }
                         IconButton(onClick = { webViewRef?.reload() }) {
                             Icon(
                                 imageVector = Icons.Rounded.Refresh,
@@ -283,6 +336,7 @@ fun OwaWebLoginDialog(
                                                 sessionDetected = true
                                             }
                                         }
+                                        injectCredentials(view)
                                     }
 
                                     override fun shouldOverrideUrlLoading(

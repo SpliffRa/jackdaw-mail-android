@@ -69,6 +69,7 @@ fun SetupAccountScreen(
     var selectedProtocol by remember { mutableStateOf(AccountProtocol.EXCHANGE_OWA) }
     var displayName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var loginUser by remember { mutableStateOf("") }
     var serverHost by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
@@ -239,6 +240,25 @@ fun SetupAccountScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    // Login / Username for Exchange / SSO
+                    OutlinedTextField(
+                        value = loginUser,
+                        onValueChange = { loginUser = it },
+                        label = { Text("Логин для авторизации (если отличается)") },
+                        placeholder = { Text("DOMAIN\\user или логин") },
+                        leadingIcon = {
+                            Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = JackdawAmber,
+                            focusedLabelColor = JackdawAmber
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     // Server Host / OWA URL
                     OutlinedTextField(
                         value = serverHost,
@@ -338,7 +358,9 @@ fun SetupAccountScreen(
                         protocol = selectedProtocol,
                         isDefault = true,
                         avatarColorHex = if (selectedProtocol == AccountProtocol.EXCHANGE_OWA) 0xFFF59E0BL else 0xFF10B981L,
-                        serverHost = serverHost.trim()
+                        serverHost = serverHost.trim(),
+                        loginUser = loginUser.trim(),
+                        savedPassword = password
                     )
                     onAccountAdded(createdAccount)
                 },
@@ -389,6 +411,8 @@ fun SetupAccountScreen(
         OwaWebLoginDialog(
             initialOwaUrl = targetUrl,
             initialEmail = email,
+            autoLoginUser = loginUser.ifBlank { email },
+            autoLoginPassword = password,
             onDismissRequest = { showOwaWebLoginDialog = false },
             onAccountAuthorized = { owaAccount ->
                 onAccountAdded(owaAccount)

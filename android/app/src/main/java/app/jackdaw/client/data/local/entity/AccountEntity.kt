@@ -15,7 +15,10 @@ data class AccountEntity(
     val isDefault: Boolean = false,
     val avatarColorHex: Long = 0xFFF59E0BL,
     val serverHost: String = "",
-    val authSessionToken: String = ""
+    val authSessionToken: String = "",
+    val authSessionCookies: String = "",
+    val loginUser: String = "",
+    val savedPassword: String = ""
 ) {
     fun toDomain(): MailAccount = MailAccount(
         id = id,
@@ -25,7 +28,10 @@ data class AccountEntity(
         isDefault = isDefault,
         avatarColorHex = avatarColorHex,
         serverHost = serverHost,
-        authSessionToken = authSessionToken
+        authSessionToken = authSessionToken,
+        authSessionCookies = authSessionCookies,
+        loginUser = loginUser,
+        savedPassword = savedPassword
     )
 
     companion object {
@@ -37,7 +43,10 @@ data class AccountEntity(
             isDefault = domain.isDefault,
             avatarColorHex = domain.avatarColorHex,
             serverHost = domain.serverHost,
-            authSessionToken = domain.authSessionToken
+            authSessionToken = domain.authSessionToken,
+            authSessionCookies = domain.authSessionCookies,
+            loginUser = domain.loginUser,
+            savedPassword = domain.savedPassword
         )
     }
 }
