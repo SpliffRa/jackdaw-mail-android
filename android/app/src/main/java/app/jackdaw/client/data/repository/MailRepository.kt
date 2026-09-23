@@ -115,7 +115,8 @@ class OfflineFirstMailRepository(
             } else {
                 combine(emailEntities.map { entity ->
                     attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        entity.toDomain(attachments.map { it.toDomain() })
+                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+                        entity.toDomain(distinctAtts)
                     }
                 }) { emailsArray -> emailsArray.toList() }
             }
@@ -129,7 +130,8 @@ class OfflineFirstMailRepository(
             } else {
                 combine(emailEntities.map { entity ->
                     attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        entity.toDomain(attachments.map { it.toDomain() })
+                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+                        entity.toDomain(distinctAtts)
                     }
                 }) { emailsArray -> emailsArray.toList() }
             }
@@ -142,7 +144,8 @@ class OfflineFirstMailRepository(
                 flowOf(null)
             } else {
                 attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                    entity.toDomain(attachments.map { it.toDomain() })
+                    val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+                    entity.toDomain(distinctAtts)
                 }
             }
         }
@@ -155,7 +158,8 @@ class OfflineFirstMailRepository(
             } else {
                 combine(emailEntities.map { entity ->
                     attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        entity.toDomain(attachments.map { it.toDomain() })
+                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+                        entity.toDomain(distinctAtts)
                     }
                 }) { emailsArray -> emailsArray.toList() }
             }
@@ -175,7 +179,8 @@ class OfflineFirstMailRepository(
             } else {
                 combine(emailEntities.map { entity ->
                     attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        entity.toDomain(attachments.map { it.toDomain() })
+                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+                        entity.toDomain(distinctAtts)
                     }
                 }) { emailsArray -> emailsArray.toList() }
             }
@@ -337,7 +342,16 @@ class OfflineFirstMailRepository(
                     val existingFolders = folderDao.getFoldersByAccount(account.id).first()
                     val existingMap = existingFolders.associateBy { it.id }
                     val entitiesToSave = remoteFolders.map { rf ->
-                        val existing = existingMap[rf.id]
+                        val canonicalId = when (rf.type) {
+                            FolderType.INBOX -> "${account.id}_inbox"
+                            FolderType.SENT -> "${account.id}_sent"
+                            FolderType.DRAFTS -> "${account.id}_drafts"
+                            FolderType.ARCHIVE -> "${account.id}_archive"
+                            FolderType.OUTBOX -> "${account.id}_outbox"
+                            FolderType.TRASH -> "${account.id}_trash"
+                            else -> rf.id
+                        }
+                        val existing = existingMap[canonicalId] ?: existingMap[rf.id]
                         val defaultOrder = when (rf.type) {
                             FolderType.INBOX -> 0
                             FolderType.SENT -> 1
@@ -349,9 +363,9 @@ class OfflineFirstMailRepository(
                             FolderType.CUSTOM -> 100
                         }
                         FolderEntity(
-                            id = rf.id,
+                            id = canonicalId,
                             accountId = account.id,
-                            name = rf.name,
+                            name = if (rf.type == FolderType.INBOX) "Входящие" else rf.name,
                             type = rf.type,
                             unreadCount = if (rf.unreadCount > 0) rf.unreadCount else (existing?.unreadCount ?: 0),
                             totalCount = if (rf.totalCount > 0) rf.totalCount else (existing?.totalCount ?: 0),
@@ -361,6 +375,22 @@ class OfflineFirstMailRepository(
                     }
                     folderDao.insertFolders(entitiesToSave)
                     folderDao.cleanupNonMailFolders(account.id)
+
+                    // Reassign emails from duplicate raw folders and purge them
+                    for (f in existingFolders) {
+                        val canonicalTarget = when (f.type) {
+                            FolderType.INBOX -> if (f.id != "${account.id}_inbox") "${account.id}_inbox" else null
+                            FolderType.SENT -> if (f.id != "${account.id}_sent") "${account.id}_sent" else null
+                            FolderType.DRAFTS -> if (f.id != "${account.id}_drafts") "${account.id}_drafts" else null
+                            FolderType.TRASH -> if (f.id != "${account.id}_trash") "${account.id}_trash" else null
+                            FolderType.ARCHIVE -> if (f.id != "${account.id}_archive") "${account.id}_archive" else null
+                            else -> null
+                        }
+                        if (canonicalTarget != null) {
+                            emailDao.reassignFolderEmails(account.id, f.id, canonicalTarget)
+                            folderDao.deleteFolder(f.id)
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.e("MailRepository", "Failed to sync remote folders", e)
@@ -395,12 +425,20 @@ class OfflineFirstMailRepository(
                             val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = folder.id)) }
                             emailDao.insertEmails(emailEntities)
 
+                            for (email in newEmails) {
+                                if (email.attachments.isNotEmpty()) {
+                                    attachmentDao.deleteAttachmentsForEmail(email.id)
+                                }
+                            }
                             val attachments = newEmails.flatMap { email ->
                                 email.attachments.map { AttachmentEntity.fromDomain(it, email.id) }
                             }
                             if (attachments.isNotEmpty()) {
                                 attachmentDao.insertAttachments(attachments)
                             }
+                            try {
+                                attachmentDao.deduplicateAttachments()
+                            } catch (_: Exception) {}
                             totalNewEmails += newEmails.size
                             if (!folder.isMuted) {
                                 unmutedNewEmails += newEmails.size
@@ -476,12 +514,21 @@ class OfflineFirstMailRepository(
                 }
             }
 
+            val diagError = app.jackdaw.client.data.network.OwaSyncDiagnostics.lastError
+            val isOwa = account.protocol == app.jackdaw.client.core.model.AccountProtocol.EXCHANGE_OWA
+            val reportSuccess = if (isOwa && totalNewEmails == 0 && diagError != null && app.jackdaw.client.data.network.OwaSyncDiagnostics.lastHttpCode != 200) {
+                false
+            } else {
+                true
+            }
+
             SyncResult(
-                isSuccess = true,
+                isSuccess = reportSuccess,
                 newMessagesCount = totalNewEmails,
                 unmutedNewMessagesCount = unmutedNewEmails,
                 sentMessagesCount = sentCount,
-                syncedAtTimestamp = System.currentTimeMillis()
+                syncedAtTimestamp = System.currentTimeMillis(),
+                errorMessage = if (!reportSuccess) diagError else null
             )
 
         } catch (e: Exception) {

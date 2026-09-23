@@ -26,6 +26,8 @@ import java.util.UUID
 import android.util.Base64
 import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.FolderType
+import app.jackdaw.client.core.util.cleanEmailPreview
+import app.jackdaw.client.core.util.cleanEmailSubject
 
 class OwaProtocolEngine : MailProtocolEngine {
 
@@ -80,7 +82,10 @@ class OwaProtocolEngine : MailProtocolEngine {
             Log.w(TAG, "GetFolder distinguished folders query failed: ${e.message}")
         }
 
-        discoveredFolders.values.toList()
+        val list = discoveredFolders.values.toList()
+        OwaSyncDiagnostics.lastFoldersCount = list.size
+        OwaSyncDiagnostics.lastFolderNames = list.map { "${it.name} (${it.unreadCount}/${it.totalCount})" }
+        list
     }
 
     data class EmailFullDetails(
@@ -120,7 +125,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                 ?: return@withContext emptyList()
 
             val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
-            if (emails.isNotEmpty()) {
+            val finalEmails = if (emails.isNotEmpty()) {
                 // Fetch full metadata (From, To, Subject, Body) via GetItem
                 val detailsMap = fetchEmailDetails(account, emails.map { it.id })
                 emails.map { email ->
@@ -179,8 +184,11 @@ class OwaProtocolEngine : MailProtocolEngine {
             } else {
                 emptyList()
             }
+            OwaSyncDiagnostics.lastEmailsFetchedCount = finalEmails.size
+            finalEmails
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl", e)
+            OwaSyncDiagnostics.recordError("FindItem", owaServiceUrl, 0, e.message ?: "Exception")
             emptyList()
         }
     }
@@ -242,11 +250,11 @@ class OwaProtocolEngine : MailProtocolEngine {
                         preview.isNotBlank() -> preview
                         else -> ""
                     }
-                    val snippet = preview.ifBlank { cleanText.take(150) }
+                    val snippet = (preview.ifBlank { cleanText.take(150) }).cleanEmailPreview()
 
                     resultMap[id] = EmailFullDetails(
                         id = id,
-                        subject = subject.ifBlank { null },
+                        subject = subject.ifBlank { null }?.cleanEmailSubject(),
                         senderName = senderName.ifBlank { null },
                         senderEmail = senderEmail.ifBlank { null },
                         toRecipients = if (toRecipientsList.isNotEmpty()) toRecipientsList else null,
@@ -433,6 +441,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         sslSocketFactory = trustAllSslSocketFactory
                         hostnameVerifier = trustAllHostnameVerifier
                     }
+                    instanceFollowRedirects = false
                     requestMethod = "POST"
                     doOutput = true
                     connectTimeout = 15000
@@ -469,6 +478,11 @@ class OwaProtocolEngine : MailProtocolEngine {
                 if (code in 200..299) {
                     val responseText = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
                     if (responseText.isNotBlank()) {
+                        if (responseText.trimStart().startsWith("<")) {
+                            Log.w(TAG, "OWA endpoint returned HTML page instead of JSON (session expired, HTTP $code)")
+                            OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сервер вернул страницу входа (сессия истекла)")
+                            return null
+                        }
                         val json = JSONObject(responseText)
                         val respMessages = json.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
                         val firstMsg = respMessages?.optJSONObject(0)
@@ -476,11 +490,16 @@ class OwaProtocolEngine : MailProtocolEngine {
                             val errCode = firstMsg.optString("ResponseCode")
                             val errMsg = firstMsg.optString("MessageText")
                             Log.w(TAG, "OWA Exchange error for $actionName ($candidateUrl): $errCode - $errMsg")
+                            OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Exchange: $errCode - $errMsg")
+                        } else {
+                            OwaSyncDiagnostics.recordSuccess(actionName, candidateUrl, code, "OK ($actionName)")
                         }
                         return json
                     }
-                } else if ((code == 401 || code == 440 || code == 302) && !isRetryAfterAuth && account != null) {
-                    Log.w(TAG, "OWA session expired (HTTP $code). Attempting silent FBA re-authentication...")
+                } else if ((code == 401 || code == 440 || code == 302 || code == 301) && !isRetryAfterAuth && account != null) {
+                    val redirectLoc = conn.getHeaderField("Location").orEmpty()
+                    Log.w(TAG, "OWA session expired or redirected (HTTP $code to $redirectLoc). Attempting silent FBA re-authentication...")
+                    OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сессия истекла (HTTP $code). Редирект: $redirectLoc")
                     if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authResult = kotlinx.coroutines.runBlocking {
                             OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
@@ -495,6 +514,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         BufferedReader(InputStreamReader(conn.errorStream ?: conn.inputStream, Charsets.UTF_8)).use { it.readText() }
                     }.getOrNull()
                     Log.w(TAG, "OWA service returned HTTP $code for $candidateUrl. Error: ${err?.take(200)}")
+                    OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "HTTP $code: ${err?.take(120)}")
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Request to $candidateUrl failed: ${e.message}")
@@ -654,24 +674,12 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("MaxEntriesReturned", 100)
         }
 
-        val sortOrder = JSONArray().apply {
-            put(JSONObject().apply {
-                put("__type", "SortResults:#Exchange")
-                put("Order", "Descending")
-                put("Path", JSONObject().apply {
-                    put("__type", "PropertyUri:#Exchange")
-                    put("FieldURI", "item:DateTimeReceived")
-                })
-            })
-        }
-
         val body = JSONObject().apply {
             put("__type", "FindItemRequest:#Exchange")
             put("ItemShape", itemShape)
             put("ParentFolderIds", parentFolderIds)
             put("Traversal", "Shallow")
             put("Paging", paging)
-            put("SortOrder", sortOrder)
         }
 
         val header = JSONObject().apply {
@@ -835,18 +843,36 @@ class OwaProtocolEngine : MailProtocolEngine {
             val hasAttachments = itemObj.optBoolean("HasAttachments", false)
             val importanceStr = itemObj.optString("Importance", "Normal")
 
-            val attachments = if (hasAttachments) {
-                listOf(
+            val attachmentsList = mutableListOf<Attachment>()
+            val attachmentsArray = itemObj.optJSONArray("Attachments")
+            if (attachmentsArray != null && attachmentsArray.length() > 0) {
+                for (a in 0 until attachmentsArray.length()) {
+                    val attObj = attachmentsArray.optJSONObject(a) ?: continue
+                    val attId = attObj.optJSONObject("AttachmentId")?.optString("Id")
+                        ?: attObj.optString("Id", "${itemId}_att_$a")
+                    val name = attObj.optString("Name", "Вложение").ifBlank { "Вложение" }
+                    val size = attObj.optLong("Size", 24500L)
+                    val mime = attObj.optString("ContentType", "application/octet-stream")
+                    attachmentsList.add(
+                        Attachment(
+                            id = attId,
+                            fileName = name,
+                            sizeBytes = size,
+                            mimeType = mime
+                        )
+                    )
+                }
+            } else if (hasAttachments) {
+                attachmentsList.add(
                     Attachment(
-                        id = "att_${UUID.randomUUID().toString().take(8)}",
+                        id = "${itemId}_att_0",
                         fileName = "Вложение",
                         sizeBytes = 24500L,
                         mimeType = "application/octet-stream"
                     )
                 )
-            } else {
-                emptyList()
             }
+            val attachments = attachmentsList.distinctBy { "${it.fileName}_${it.sizeBytes}" }
 
             val slaSeverity = if (!isRead) {
                 val ageMinutes = (System.currentTimeMillis() - receivedAt) / 60000L
@@ -868,8 +894,8 @@ class OwaProtocolEngine : MailProtocolEngine {
                 senderName = senderName.ifBlank { senderEmail.substringBefore("@") },
                 senderEmail = senderEmail.ifBlank { "unknown@corp.mail" },
                 toRecipients = toRecipientsList,
-                subject = subject,
-                snippet = preview.ifBlank { bodyValue.take(160) },
+                subject = subject.cleanEmailSubject(),
+                snippet = (preview.ifBlank { bodyValue.take(160) }).cleanEmailPreview(),
                 bodyText = bodyValue,
                 bodyHtml = if (bodyValue.contains("<")) bodyValue else "<p>${bodyValue.replace("\n", "<br/>")}</p>",
                 timestamp = receivedAt,

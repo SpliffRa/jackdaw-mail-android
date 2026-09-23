@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.EditNote
@@ -35,6 +37,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockReset
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -71,6 +74,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.SwitchColors
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -93,6 +98,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.BuildConfig
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
+import app.jackdaw.client.core.designsystem.theme.jackdawSwitchColors
 import app.jackdaw.client.core.designsystem.theme.SlaUrgentRed
 import app.jackdaw.client.core.designsystem.theme.ThemeMode
 import app.jackdaw.client.core.model.AccountProtocol
@@ -132,6 +138,7 @@ fun SettingsScreen(
     onAddAccount: (MailAccount) -> Unit,
     onUpdateAccount: (MailAccount) -> Unit = {},
     onDeleteAccount: (String) -> Unit,
+    onTriggerSync: ((onResult: (String) -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -517,7 +524,7 @@ fun SettingsScreen(
                                     Switch(
                                         checked = backgroundSyncEnabled,
                                         onCheckedChange = { backgroundSyncEnabled = it },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                        colors = jackdawSwitchColors()
                                     )
                                 }
 
@@ -537,7 +544,7 @@ fun SettingsScreen(
                                     Switch(
                                         checked = wifiOnlyEnabled,
                                         onCheckedChange = { wifiOnlyEnabled = it },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                        colors = jackdawSwitchColors()
                                     )
                                 }
 
@@ -557,7 +564,7 @@ fun SettingsScreen(
                                     Switch(
                                         checked = slaAlertsEnabled,
                                         onCheckedChange = { slaAlertsEnabled = it },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                        colors = jackdawSwitchColors()
                                     )
                                 }
                             }
@@ -588,7 +595,7 @@ fun SettingsScreen(
                                             notificationsEnabled = it
                                             soundManager.isNotificationsEnabled = it
                                         },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                        colors = jackdawSwitchColors()
                                     )
                                 }
 
@@ -619,7 +626,7 @@ fun SettingsScreen(
                                                 incomingSound = it
                                                 soundManager.isIncomingSoundEnabled = it
                                             },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                            colors = jackdawSwitchColors()
                                         )
                                     }
                                 }
@@ -684,7 +691,7 @@ fun SettingsScreen(
                                                 sentSound = it
                                                 soundManager.isSentSoundEnabled = it
                                             },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                            colors = jackdawSwitchColors()
                                         )
                                     }
                                 }
@@ -716,7 +723,7 @@ fun SettingsScreen(
                                                 slaSound = it
                                                 soundManager.isSlaSoundEnabled = it
                                             },
-                                            colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                            colors = jackdawSwitchColors()
                                         )
                                     }
                                 }
@@ -747,7 +754,7 @@ fun SettingsScreen(
                                             isSignatureEnabled = it
                                             signatureManager.isSignatureEnabled = it
                                         },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = JackdawAmber, checkedTrackColor = JackdawAmber.copy(alpha = 0.4f))
+                                        colors = jackdawSwitchColors()
                                     )
                                 }
 

@@ -13,11 +13,16 @@ import androidx.core.app.NotificationManagerCompat
 import app.jackdaw.client.MainActivity
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.SlaSeverity
+import app.jackdaw.client.core.util.cleanEmailPreview
+import app.jackdaw.client.core.util.cleanEmailSubject
+import java.util.concurrent.ConcurrentLinkedDeque
 
 class NotificationHelper(private val context: Context) {
 
     private val notificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    private val recentEmailSubjects = ConcurrentLinkedDeque<Pair<String, String>>()
 
     init {
         createNotificationChannels()
@@ -72,6 +77,15 @@ class NotificationHelper(private val context: Context) {
         val soundManager = SoundNotificationManager.getInstance(context)
         if (!soundManager.isNotificationsEnabled) return
 
+        val cleanSubj = email.subject.cleanEmailSubject()
+        val cleanSnip = email.snippet.cleanEmailPreview()
+        val sender = email.senderName.ifBlank { email.senderEmail }
+
+        recentEmailSubjects.addFirst(sender to cleanSubj)
+        while (recentEmailSubjects.size > 8) {
+            recentEmailSubjects.removeLast()
+        }
+
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("EXTRA_EMAIL_ID", email.id)
@@ -85,10 +99,11 @@ class NotificationHelper(private val context: Context) {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_INCOMING_MAIL)
             .setSmallIcon(android.R.drawable.ic_dialog_email)
-            .setContentTitle(email.senderName.ifBlank { email.senderEmail })
-            .setContentText(email.subject)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("${email.subject}\n\n${email.snippet}"))
+            .setContentTitle(sender)
+            .setContentText(cleanSubj)
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$cleanSubj\n\n$cleanSnip"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setGroup(GROUP_KEY_INCOMING_EMAILS)
             .setNumber(unreadCount)
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setAutoCancel(true)
@@ -96,8 +111,43 @@ class NotificationHelper(private val context: Context) {
             .setContentIntent(pendingIntent)
             .build()
 
+        val summaryLaunchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val summaryPendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            summaryLaunchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val totalDisplayCount = unreadCount.coerceAtLeast(recentEmailSubjects.size)
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle("Входящие ($totalDisplayCount)")
+            .setSummaryText("Jackdaw Mail")
+
+        recentEmailSubjects.take(6).forEach { (s, sub) ->
+            inboxStyle.addLine("$s: $sub")
+        }
+
+        val summaryNotification = NotificationCompat.Builder(context, CHANNEL_INCOMING_MAIL)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle("Jackdaw Mail")
+            .setContentText(if (totalDisplayCount > 1) "$totalDisplayCount новых писем" else "$sender: $cleanSubj")
+            .setStyle(inboxStyle)
+            .setGroup(GROUP_KEY_INCOMING_EMAILS)
+            .setGroupSummary(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setNumber(totalDisplayCount)
+            .setContentIntent(summaryPendingIntent)
+            .build()
+
         try {
-            NotificationManagerCompat.from(context).notify(email.id.hashCode(), notification)
+            val manager = NotificationManagerCompat.from(context)
+            manager.notify(email.id.hashCode(), notification)
+            manager.notify(SUMMARY_NOTIFICATION_ID, summaryNotification)
         } catch (_: SecurityException) {
             // Permission not yet granted
         }
@@ -158,6 +208,8 @@ class NotificationHelper(private val context: Context) {
     companion object {
         const val CHANNEL_INCOMING_MAIL = "jackdaw_incoming_v6"
         const val CHANNEL_SLA_ALERTS = "jackdaw_sla_alerts_v6"
+        const val GROUP_KEY_INCOMING_EMAILS = "app.jackdaw.client.EMAILS"
+        const val SUMMARY_NOTIFICATION_ID = 99901
 
         @Volatile
         private var instance: NotificationHelper? = null

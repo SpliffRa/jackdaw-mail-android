@@ -439,6 +439,9 @@ fun JackdawMainApp(
                     onDeleteAccount = { accountId ->
                         viewModel.deleteAccount(accountId)
                         onToast("Аккаунт удален")
+                    },
+                    onTriggerSync = { onDone ->
+                        viewModel.triggerSync(onDone)
                     }
                 )
             }

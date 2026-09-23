@@ -157,7 +157,8 @@ fun CreateEditEventDialog(
                     )
                     Switch(
                         checked = isAllDay,
-                        onCheckedChange = { isAllDay = it }
+                        onCheckedChange = { isAllDay = it },
+                        colors = app.jackdaw.client.core.designsystem.theme.jackdawSwitchColors()
                     )
                 }
 

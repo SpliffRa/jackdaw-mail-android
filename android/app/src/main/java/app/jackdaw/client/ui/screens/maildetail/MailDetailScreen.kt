@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.jackdaw.client.core.util.cleanEmailPreview
+import app.jackdaw.client.core.util.cleanEmailSubject
 import androidx.compose.ui.graphics.luminance
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -243,7 +245,7 @@ fun MailDetailScreen(
         ) {
             // Email Subject
             Text(
-                text = email.subject,
+                text = email.subject.cleanEmailSubject(),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -344,12 +346,10 @@ fun MailDetailScreen(
                     }
                 }
 
-                // In WebView CSS pixels match dp when viewport is device-width.
-                // We add buffer padding so footer and signature are never clipped.
-                var webViewHeightPx by remember(email.id, effectiveDark) { mutableIntStateOf(500) }
-                val webViewHeightDp = (webViewHeightPx + 48).coerceAtLeast(150).dp
+                // Dynamic height measurement of exact content to eliminate empty space
+                var webViewHeightPx by remember(email.id, effectiveDark) { mutableIntStateOf(60) }
+                val webViewHeightDp = (webViewHeightPx + 16).coerceAtLeast(36).dp
 
-                val bgColor = if (effectiveDark) "#1C1B1F" else "#FFFFFF"
                 val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
                 val linkColor = if (effectiveDark) "#FFB74D" else "#1976D2"
 
@@ -362,13 +362,19 @@ fun MailDetailScreen(
                     <style>
                       * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
                       html, body {
-                        margin: 0; padding: 4px 0;
-                        background: $bgColor !important;
+                        margin: 0; padding: 0;
+                        background: transparent !important;
                         color: $textColor !important;
                         font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
                         font-size: 15px;
                         line-height: 1.55;
                         word-break: normal;
+                      }
+                      #jackdaw-content-root {
+                        margin: 0;
+                        padding: 10px 12px;
+                        width: 100%%;
+                        box-sizing: border-box;
                       }
                       /* Remove underlines and border artifacts on all links and grammar/spell spans */
                       a, a *, u, u *, .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom"], span[style*="text-decoration"] {
@@ -404,7 +410,7 @@ fun MailDetailScreen(
 
                         var isDark = $effectiveDark;
                         if (isDark) {
-                          var all = document.querySelectorAll('body, body *');
+                          var all = document.querySelectorAll('#jackdaw-content-root, #jackdaw-content-root *');
                           for (var j = 0; j < all.length; j++) {
                             var el = all[j];
                             if (el.tagName === 'A' || el.closest('a')) continue;
@@ -436,7 +442,7 @@ fun MailDetailScreen(
                       window.onload = adaptContent;
                     </script>
                     </head>
-                    <body>${email.bodyHtml}</body>
+                    <body><div id="jackdaw-content-root">${email.bodyHtml}</div></body>
                     </html>
                 """.trimIndent()
 
@@ -449,7 +455,7 @@ fun MailDetailScreen(
                                 override fun onPageFinished(view: WebView, url: String) {
                                     view.evaluateJavascript("adaptContent();") { }
                                     view.evaluateJavascript(
-                                        "(function(){ return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight); })()"
+                                        "(function(){ var r = document.getElementById('jackdaw-content-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : Math.ceil(document.body.scrollHeight); })()"
                                     ) { result ->
                                         val px = result?.trim('"')?.toIntOrNull() ?: 0
                                         if (px > 0) webViewHeightPx = px
@@ -469,27 +475,24 @@ fun MailDetailScreen(
                             isScrollContainer = false
                             isVerticalScrollBarEnabled = false
                             isHorizontalScrollBarEnabled = false
-                            setBackgroundColor(if (forceLightMode) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
                         }
                     },
                     update = { view ->
                         if (view.tag != viewTag) {
                             view.tag = viewTag
-                            webViewHeightPx = 500
-                            view.setBackgroundColor(if (forceLightMode) android.graphics.Color.WHITE else android.graphics.Color.TRANSPARENT)
+                            webViewHeightPx = 60
+                            view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(
-                            if (forceLightMode) {
-                                Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color.White)
-                                    .padding(8.dp)
-                            } else Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (forceLightMode) Color.White
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
                         .height(webViewHeightDp)
                 )
@@ -501,7 +504,7 @@ fun MailDetailScreen(
                     else -> "(Письмо не содержит текста)"
                 }
                 Text(
-                    text = displayText,
+                    text = displayText.cleanEmailPreview(),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     lineHeight = 24.sp
@@ -753,14 +756,14 @@ fun MailDetailScreen(
                                         else -> "(Письмо не содержит текста)"
                                     }
                                     Text(
-                                        text = threadDisplayText,
+                                        text = threadDisplayText.cleanEmailPreview(),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         lineHeight = 20.sp
                                     )
                                 } else {
                                     Text(
-                                        text = threadMsg.snippet,
+                                        text = threadMsg.snippet.cleanEmailPreview(),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2

@@ -37,7 +37,11 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.People
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.ViewWeek
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.VideoCall
 import androidx.compose.material3.Card
@@ -74,10 +78,12 @@ import app.jackdaw.client.core.model.MailAccount
 import app.jackdaw.client.ui.viewmodel.CalendarViewModel
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun CalendarScreen(
@@ -92,6 +98,14 @@ fun CalendarScreen(
     val datesWithEvents by viewModel.datesWithEvents.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     val isSyncing by viewModel.isSyncing.collectAsState()
+    var isMonthView by remember { mutableStateOf(false) }
+    var displayedMonth by remember { mutableStateOf(YearMonth.from(selectedDate)) }
+
+    LaunchedEffect(selectedDate) {
+        if (!isMonthView) {
+            displayedMonth = YearMonth.from(selectedDate)
+        }
+    }
 
 
     LaunchedEffect(currentAccount.id) {
@@ -155,6 +169,41 @@ fun CalendarScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Month / Week View Toggle Button
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isMonthView) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable {
+                                isMonthView = !isMonthView
+                                if (isMonthView) {
+                                    displayedMonth = YearMonth.from(selectedDate)
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isMonthView) Icons.Rounded.ViewWeek else Icons.Rounded.CalendarMonth,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isMonthView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isMonthView) "Неделя" else "Месяц",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isMonthView) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
                     // Quick Jump to Today Button
                     val isTodaySelected = selectedDate == LocalDate.now()
                     Surface(
@@ -162,7 +211,10 @@ fun CalendarScreen(
                         color = if (isTodaySelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .clickable { viewModel.jumpToToday() }
+                            .clickable {
+                                viewModel.jumpToToday()
+                                displayedMonth = YearMonth.now()
+                            }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -191,7 +243,7 @@ fun CalendarScreen(
                         enabled = !isSyncing
                     ) {
                         Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Rounded.Sync,
+                            imageVector = Icons.Rounded.Sync,
                             contentDescription = "Синхронизировать встречи",
                             tint = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurface
                         )
@@ -200,12 +252,25 @@ fun CalendarScreen(
             }
 
 
-            // Horizontal Date Strip (Outlook Style Week Row)
-            CalendarDateStrip(
-                selectedDate = selectedDate,
-                datesWithEvents = datesWithEvents,
-                onDateSelected = { viewModel.selectDate(it) }
-            )
+            // Calendar View: Month Grid or Horizontal Date Strip
+            AnimatedVisibility(visible = isMonthView) {
+                CalendarMonthView(
+                    currentMonth = displayedMonth,
+                    selectedDate = selectedDate,
+                    datesWithEvents = datesWithEvents,
+                    onDateSelected = { viewModel.selectDate(it) },
+                    onPreviousMonth = { displayedMonth = displayedMonth.minusMonths(1) },
+                    onNextMonth = { displayedMonth = displayedMonth.plusMonths(1) }
+                )
+            }
+
+            AnimatedVisibility(visible = !isMonthView) {
+                CalendarDateStrip(
+                    selectedDate = selectedDate,
+                    datesWithEvents = datesWithEvents,
+                    onDateSelected = { viewModel.selectDate(it) }
+                )
+            }
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
@@ -414,6 +479,162 @@ fun CalendarDateStrip(
                     )
                 } else {
                     Spacer(modifier = Modifier.height(5.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarMonthView(
+    currentMonth: YearMonth,
+    selectedDate: LocalDate,
+    datesWithEvents: Set<LocalDate>,
+    onDateSelected: (LocalDate) -> Unit,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val monthTitleFormatter = remember { DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru")) }
+    val today = remember { LocalDate.now() }
+    val dayNames = remember { listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс") }
+
+    val daysInMonth = currentMonth.lengthOfMonth()
+    val firstDayOfWeek = currentMonth.atDay(1).dayOfWeek.value // 1 (Mon) to 7 (Sun)
+    val leadingEmptyDays = firstDayOfWeek - 1
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        // Month switcher header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onPreviousMonth, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    contentDescription = "Предыдущий месяц",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = currentMonth.format(monthTitleFormatter).replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            IconButton(onClick = onNextMonth, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = "Следующий месяц",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Weekday labels
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            dayNames.forEachIndexed { i, dayName ->
+                val isWeekend = i >= 5
+                Text(
+                    text = dayName,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isWeekend) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(36.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Grid of dates
+        val totalSlots = leadingEmptyDays + daysInMonth
+        val rows = (totalSlots + 6) / 7
+
+        for (row in 0 until rows) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                for (col in 0 until 7) {
+                    val slotIndex = row * 7 + col
+                    val dayOfMonth = slotIndex - leadingEmptyDays + 1
+
+                    if (dayOfMonth in 1..daysInMonth) {
+                        val date = currentMonth.atDay(dayOfMonth)
+                        val isSelected = date == selectedDate
+                        val isToday = date == today
+                        val hasEvents = datesWithEvents.contains(date)
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isSelected -> MaterialTheme.colorScheme.primary
+                                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .then(
+                                    if (isToday && !isSelected) {
+                                        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .clickable { onDateSelected(date) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = dayOfMonth.toString(),
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                    color = when {
+                                        isSelected -> MaterialTheme.colorScheme.onPrimary
+                                        isToday -> MaterialTheme.colorScheme.primary
+                                        col >= 5 -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                        else -> MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                                if (hasEvents) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(4.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.onPrimary else JackdawAmber
+                                            )
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Empty slot
+                        Spacer(modifier = Modifier.size(36.dp))
+                    }
                 }
             }
         }

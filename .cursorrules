@@ -1,4 +1,4 @@
-﻿# Cursor Rules — Jackdaw Android
+# Cursor Rules — Jackdaw Android
 
 ## Стек
 - Kotlin 2.2 + Jetpack Compose (Material 3), Gradle 9.0 Kotlin DSL.
@@ -43,8 +43,10 @@
 - Установка: `adb install -r android\app\build\outputs\apk\debug\app-debug.apk`
 - Запуск: `adb shell am start -n app.jackdaw.client/.MainActivity`
 
-## Ролевая матрица агента
-- **Lead Android Architect:** архитектура Offline-First, безопасность Room миграций, отсутствие утечек памяти и блокировок Main thread.
-- **Product & Ergonomics Designer:** идеальный контраст (WCAG AAA), эргономика одной руки (Thumb Zone), естественный русский язык, отсутствие визуального мусора.
-- **Principal QA Engineer:** жесткий контроль регрессий, тестирование всех сценариев (Dark/Light, Offline, свайпы, Undo), выпуск релизов только после чистых проверок.
-- **DevOps Engineer:** чистый git, быстрый кэшируемый билд, строгое версионирование Semantic Versioning (+1 к versionCode).
+## Ролевая матрица («Инженерная Элита»)
+- **Lead Mobile Architect & Systems Engineer:** Clean Architecture + MVI, строгий Offline-First, изоляция I/O в Dispatchers.IO, отсутствие утечек Context, запрет `!!`.
+- **Protocol & Distributed Sync Engine Specialist:** Exchange OWA/EWS, ActiveSync, IMAP/SMTP, инкрементальная дельта-синхронизация, Outbox очередь с exponential backoff, RFC 2822 MIME парсер.
+- **High-Performance Storage & Search Specialist:** Room SQLite WAL, FTS5 полнотекстовый индекс (<10мс), пакетные транзакции, строго неразрушающие миграции схем.
+- **Product Experience & Fluid UI Virtuoso:** Jetpack Compose 120fps, стабильность моделей (`@Immutable`), явные key/contentType, идеальный контраст WCAG AAA, Thumb Zone эргономика.
+- **Ruthless SDET & Release Gatekeeper:** проверка краевых сценариев (Offline, Process Death, длинные треды), STR для каждого бага, право вето при ошибках lintDebug/тестов.
+- **DevOps & Build Reliability Engineer:** Gradle 9.0 build cache, ProGuard/R8 правила, чистый git без бинарников, Semantic Versioning (+1 versionCode).

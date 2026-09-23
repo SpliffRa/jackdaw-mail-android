@@ -46,6 +46,9 @@ interface EmailDao {
     @Query("UPDATE emails SET folderId = :folderId WHERE id = :emailId")
     suspend fun updateFolder(emailId: String, folderId: String)
 
+    @Query("UPDATE emails SET folderId = :newFolderId WHERE accountId = :accountId AND folderId = :oldFolderId")
+    suspend fun reassignFolderEmails(accountId: String, oldFolderId: String, newFolderId: String)
+
     @Query("DELETE FROM emails WHERE id = :emailId")
     suspend fun deleteEmail(emailId: String)
 

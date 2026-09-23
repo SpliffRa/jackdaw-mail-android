@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
+import app.jackdaw.client.core.util.cleanEmailPreview
+import app.jackdaw.client.core.util.cleanEmailSubject
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -173,7 +175,7 @@ fun EmailCard(
                 Spacer(modifier = Modifier.height(1.dp))
 
                 Text(
-                    text = email.subject,
+                    text = email.subject.cleanEmailSubject(),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (!email.isRead) FontWeight.SemiBold else FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -182,7 +184,7 @@ fun EmailCard(
                 )
 
                 Text(
-                    text = email.snippet,
+                    text = email.snippet.cleanEmailPreview(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

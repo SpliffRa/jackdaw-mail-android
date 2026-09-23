@@ -135,20 +135,6 @@ fun MailListScreen(
 
     val unreadCount = emails.count { !it.isRead }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "sync_rotation")
-    val syncRotation by if (isSyncing) {
-        infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 900, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "sync_spin"
-        )
-    } else {
-        remember { mutableStateOf(0f) }
-    }
 
     val filteredEmails = emails.filter { email ->
         when (selectedFilter) {
@@ -244,14 +230,6 @@ fun MailListScreen(
                                     tint = Color(0xFFEF4444)
                                 )
                             }
-                        }
-                        IconButton(onClick = onSyncClick) {
-                            Icon(
-                                imageVector = Icons.Rounded.Sync,
-                                contentDescription = "Синхронизировать",
-                                tint = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.rotate(syncRotation)
-                            )
                         }
                         IconButton(onClick = { isSearchActive = true }) {
                             Icon(Icons.Rounded.Search, contentDescription = "Поиск", tint = MaterialTheme.colorScheme.onSurface)

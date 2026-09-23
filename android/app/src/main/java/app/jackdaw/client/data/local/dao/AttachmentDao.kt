@@ -20,4 +20,7 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE emailId IN (SELECT id FROM emails WHERE accountId = :accountId AND folderId = :folderId)")
     suspend fun deleteAttachmentsInFolder(accountId: String, folderId: String)
+
+    @Query("DELETE FROM attachments WHERE rowid NOT IN (SELECT MIN(rowid) FROM attachments GROUP BY emailId, fileName, sizeBytes)")
+    suspend fun deduplicateAttachments()
 }
