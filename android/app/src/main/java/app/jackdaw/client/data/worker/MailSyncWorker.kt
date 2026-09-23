@@ -44,7 +44,10 @@ class MailSyncWorker(
                 if (syncResult.newMessagesCount > 0) {
                     val latestEmails = database.emailDao().getRecentEmails(account.id, syncResult.newMessagesCount)
                     for (emailEntity in latestEmails) {
-                        notificationHelper.showNewEmailNotification(emailEntity.toDomain(emptyList()))
+                        val folder = database.folderDao().getFolderById(emailEntity.folderId)
+                        if (folder?.isMuted != true) {
+                            notificationHelper.showNewEmailNotification(emailEntity.toDomain(emptyList()))
+                        }
                     }
                 }
             }

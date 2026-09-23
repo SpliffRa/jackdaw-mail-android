@@ -52,7 +52,8 @@ data class Folder(
     val type: FolderType,
     val unreadCount: Int = 0,
     val totalCount: Int = 0,
-    val displayOrder: Int = 0
+    val displayOrder: Int = 0,
+    val isMuted: Boolean = false
 )
 
 enum class SlaSeverity {

@@ -351,7 +351,7 @@ fun MailDetailScreen(
 
                 val bgColor = if (effectiveDark) "#1C1B1F" else "#FFFFFF"
                 val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
-                val linkColor = if (effectiveDark) "#D4A017" else "#8B6914"
+                val linkColor = if (effectiveDark) "#FFB74D" else "#1976D2"
 
                 val htmlDoc = """
                     <!DOCTYPE html>
@@ -363,14 +363,22 @@ fun MailDetailScreen(
                       * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
                       html, body {
                         margin: 0; padding: 4px 0;
-                        background: $bgColor;
-                        color: $textColor;
+                        background: $bgColor !important;
+                        color: $textColor !important;
                         font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
                         font-size: 15px;
                         line-height: 1.55;
                         word-break: normal;
                       }
-                      a { color: $linkColor; word-break: break-all; }
+                      /* Remove underlines and border artifacts on all links and grammar/spell spans */
+                      a, a *, u, u *, .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom"], span[style*="text-decoration"] {
+                        color: $linkColor !important;
+                        text-decoration: none !important;
+                        text-decoration-line: none !important;
+                        text-decoration-color: transparent !important;
+                        border-bottom: none !important;
+                        box-shadow: none !important;
+                      }
                       img { max-width: 100%% !important; height: auto !important; }
                       /* Hide broken CID attachments */
                       img[src^="cid:"], img[src=""] { display: none !important; }
@@ -380,6 +388,53 @@ fun MailDetailScreen(
                       blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid ${if (effectiveDark) "#444" else "#ccc"}; color: ${if (effectiveDark) "#aaa" else "#666"}; }
                       hr { border: none; border-top: 1px solid ${if (effectiveDark) "#333" else "#ddd"}; margin: 12px 0; }
                     </style>
+                    <script>
+                      function adaptContent() {
+                        var linksAndDecorations = document.querySelectorAll('a, a *, u, u *, .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom"], span[style*="text-decoration"]');
+                        for (var i = 0; i < linksAndDecorations.length; i++) {
+                          var d = linksAndDecorations[i];
+                          d.style.setProperty('text-decoration', 'none', 'important');
+                          d.style.setProperty('text-decoration-line', 'none', 'important');
+                          d.style.setProperty('border-bottom', 'none', 'important');
+                          d.style.setProperty('box-shadow', 'none', 'important');
+                          if (d.tagName === 'A' || d.closest('a')) {
+                            d.style.setProperty('color', '$linkColor', 'important');
+                          }
+                        }
+
+                        var isDark = $effectiveDark;
+                        if (isDark) {
+                          var all = document.querySelectorAll('body, body *');
+                          for (var j = 0; j < all.length; j++) {
+                            var el = all[j];
+                            if (el.tagName === 'A' || el.closest('a')) continue;
+                            var cs = window.getComputedStyle(el);
+                            var c = cs.color;
+                            var match = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                            if (match) {
+                              var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                              var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                              if (brightness < 140) {
+                                el.style.setProperty('color', '#E6E1E5', 'important');
+                              }
+                            }
+                            var bg = cs.backgroundColor;
+                            if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                              var bgMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                              if (bgMatch) {
+                                var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
+                                var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
+                                if (bgBrightness > 160) {
+                                  el.style.setProperty('background-color', 'transparent', 'important');
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                      document.addEventListener('DOMContentLoaded', adaptContent);
+                      window.onload = adaptContent;
+                    </script>
                     </head>
                     <body>${email.bodyHtml}</body>
                     </html>
@@ -392,6 +447,7 @@ fun MailDetailScreen(
                             tag = viewTag
                             webViewClient = object : WebViewClient() {
                                 override fun onPageFinished(view: WebView, url: String) {
+                                    view.evaluateJavascript("adaptContent();") { }
                                     view.evaluateJavascript(
                                         "(function(){ return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, document.body.offsetHeight); })()"
                                     ) { result ->

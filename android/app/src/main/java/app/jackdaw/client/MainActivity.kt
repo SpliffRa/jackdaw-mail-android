@@ -175,6 +175,9 @@ fun JackdawMainApp(
                 onReorderFolders = { orderedIds ->
                     viewModel.reorderFolders(orderedIds)
                 },
+                onToggleMuteFolder = { folder ->
+                    viewModel.toggleFolderMute(folder.id)
+                },
                 onOpenCalendar = {
                     scope.launch { drawerState.close() }
                     if (currentRoute != Screen.Calendar.route) {

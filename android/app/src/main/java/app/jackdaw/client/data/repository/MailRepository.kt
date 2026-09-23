@@ -50,6 +50,7 @@ interface MailRepository {
     suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>?
     fun getTotalUnreadCount(): Flow<Int>
     suspend fun reorderFolders(orderedIds: List<String>)
+    suspend fun toggleFolderMute(folderId: String)
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -354,7 +355,8 @@ class OfflineFirstMailRepository(
                             type = rf.type,
                             unreadCount = if (rf.unreadCount > 0) rf.unreadCount else (existing?.unreadCount ?: 0),
                             totalCount = if (rf.totalCount > 0) rf.totalCount else (existing?.totalCount ?: 0),
-                            displayOrder = existing?.displayOrder ?: defaultOrder
+                            displayOrder = existing?.displayOrder ?: defaultOrder,
+                            isMuted = existing?.isMuted ?: false
                         )
                     }
                     folderDao.insertFolders(entitiesToSave)
@@ -383,6 +385,7 @@ class OfflineFirstMailRepository(
                 .filter { it.type != FolderType.OUTBOX && it.type != FolderType.SLA_ALERTS }
 
             var totalNewEmails = 0
+            var unmutedNewEmails = 0
             if (foldersToSync.isNotEmpty()) {
                 for (folder in foldersToSync) {
                     try {
@@ -399,6 +402,9 @@ class OfflineFirstMailRepository(
                                 attachmentDao.insertAttachments(attachments)
                             }
                             totalNewEmails += newEmails.size
+                            if (!folder.isMuted) {
+                                unmutedNewEmails += newEmails.size
+                            }
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("MailRepository", "Error syncing folder ${folder.name} (${folder.id})", e)
@@ -412,6 +418,7 @@ class OfflineFirstMailRepository(
                     val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = inboxFolder)) }
                     emailDao.insertEmails(emailEntities)
                     totalNewEmails += newEmails.size
+                    unmutedNewEmails += newEmails.size
                 }
             }
 
@@ -472,6 +479,7 @@ class OfflineFirstMailRepository(
             SyncResult(
                 isSuccess = true,
                 newMessagesCount = totalNewEmails,
+                unmutedNewMessagesCount = unmutedNewEmails,
                 sentMessagesCount = sentCount,
                 syncedAtTimestamp = System.currentTimeMillis()
             )
@@ -512,6 +520,11 @@ class OfflineFirstMailRepository(
         orderedIds.forEachIndexed { index, folderId ->
             folderDao.updateFolderOrder(folderId, index)
         }
+    }
+
+    override suspend fun toggleFolderMute(folderId: String) {
+        val folder = folderDao.getFolderById(folderId) ?: return
+        folderDao.updateFolderMute(folderId, !folder.isMuted)
     }
 }
 

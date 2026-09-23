@@ -115,7 +115,7 @@ enum class SettingsSubfolder(
     ACCOUNTS("Учетные записи", "Управление подключенными почтовыми ящиками", Icons.Rounded.AccountCircle),
     SYNC_SLA("Синхронизация и SLA", "Фоновая проверка, Wi-Fi и контроль 30 минут", Icons.Rounded.Sync),
     NOTIFICATIONS_SOUND("Уведомления и звуки", "Громкость и сигналы оповещений", Icons.Rounded.Notifications),
-    SIGNATURE("Шаблон подписи", "Точный текст подписи для писем и ответов", Icons.Rounded.EditNote),
+    SIGNATURE("Подпись", "Текст подписи для писем и ответов", Icons.Rounded.EditNote),
     READ_STATUS("Пометка прочитанных (Outlook)", "Правила смены статуса прочтения писем", Icons.Rounded.MarkEmailRead),
     ABOUT("О приложении и обновления", "Версия клиента, проверка и установка APK", Icons.Rounded.Info)
 }
@@ -762,7 +762,7 @@ fun SettingsScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            "Точный шаблон подписи:",
+                                            "Текст подписи:",
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onSurface
@@ -771,7 +771,7 @@ fun SettingsScreen(
                                             onClick = {
                                                 val reset = signatureManager.resetToOutlookTemplate(currentAccountObj)
                                                 signatureText = reset
-                                                Toast.makeText(context, "Установлен стандартный шаблон ответа", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Установлен стандартный шаблон подписи", Toast.LENGTH_SHORT).show()
                                             }
                                         ) {
                                             Text("По умолчанию", style = MaterialTheme.typography.labelSmall, color = JackdawAmber)
@@ -799,32 +799,8 @@ fun SettingsScreen(
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("Теги:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        listOf("{name}", "{email}", "{app}").forEach { tag ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                    .clickable {
-                                                        signatureText = if (signatureText.isBlank()) tag else "$signatureText $tag"
-                                                        signatureManager.setSignature(currentAccountObj, signatureText)
-                                                    }
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                            ) {
-                                                Text(text = tag, style = MaterialTheme.typography.labelSmall, color = JackdawAmber, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        "Заданный шаблон подписи будет автоматически подгружаться внизу ваших сообщений без лишних цитат и заголовков.",
+                                        "Подпись будет автоматически добавляться в конец исходящих писем и ответов.",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

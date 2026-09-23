@@ -14,7 +14,8 @@ data class FolderEntity(
     val type: FolderType,
     val unreadCount: Int = 0,
     val totalCount: Int = 0,
-    val displayOrder: Int = 0
+    val displayOrder: Int = 0,
+    val isMuted: Boolean = false
 ) {
     fun toDomain(): Folder = Folder(
         id = id,
@@ -23,7 +24,8 @@ data class FolderEntity(
         type = type,
         unreadCount = unreadCount,
         totalCount = totalCount,
-        displayOrder = displayOrder
+        displayOrder = displayOrder,
+        isMuted = isMuted
     )
 
     companion object {
@@ -34,7 +36,8 @@ data class FolderEntity(
             type = domain.type,
             unreadCount = domain.unreadCount,
             totalCount = domain.totalCount,
-            displayOrder = domain.displayOrder
+            displayOrder = domain.displayOrder,
+            isMuted = domain.isMuted
         )
     }
 }

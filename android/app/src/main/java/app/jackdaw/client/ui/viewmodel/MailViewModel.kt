@@ -141,7 +141,7 @@ class MailViewModel(
                     if (!_isSyncing.value) {
                         val result = repository.syncAll(acc.id)
                         _lastSyncTimestamp.value = System.currentTimeMillis()
-                        if (result.isSuccess && result.newMessagesCount > 0) {
+                        if (result.isSuccess && result.unmutedNewMessagesCount > 0) {
                             try {
                                 app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
                                     app.jackdaw.client.JackdawApp.instance
@@ -185,7 +185,7 @@ class MailViewModel(
             _lastSyncTimestamp.value = System.currentTimeMillis()
 
             val msg = if (result.isSuccess) {
-                if (result.newMessagesCount > 0) {
+                if (result.unmutedNewMessagesCount > 0) {
                     try {
                         app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
                             app.jackdaw.client.JackdawApp.instance
@@ -384,6 +384,12 @@ class MailViewModel(
     fun reorderFolders(orderedIds: List<String>) {
         viewModelScope.launch {
             repository.reorderFolders(orderedIds)
+        }
+    }
+
+    fun toggleFolderMute(folderId: String) {
+        viewModelScope.launch {
+            repository.toggleFolderMute(folderId)
         }
     }
 

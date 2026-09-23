@@ -38,6 +38,9 @@ interface FolderDao {
     @Query("UPDATE folders SET displayOrder = :displayOrder WHERE id = :id")
     suspend fun updateFolderOrder(id: String, displayOrder: Int)
 
+    @Query("UPDATE folders SET isMuted = :isMuted WHERE id = :id")
+    suspend fun updateFolderMute(id: String, isMuted: Boolean)
+
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteFolder(id: String)
 
