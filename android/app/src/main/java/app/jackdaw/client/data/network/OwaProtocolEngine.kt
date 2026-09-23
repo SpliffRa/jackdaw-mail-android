@@ -83,6 +83,21 @@ class OwaProtocolEngine : MailProtocolEngine {
         discoveredFolders.values.toList()
     }
 
+    data class EmailFullDetails(
+        val id: String,
+        val subject: String?,
+        val senderName: String?,
+        val senderEmail: String?,
+        val toRecipients: List<String>?,
+        val isRead: Boolean?,
+        val receivedAt: Long?,
+        val hasAttachments: Boolean?,
+        val importance: String?,
+        val bodyText: String,
+        val bodyHtml: String,
+        val snippet: String
+    )
+
     override suspend fun fetchNewEmails(
         account: MailAccount,
         folderId: String,
@@ -106,18 +121,56 @@ class OwaProtocolEngine : MailProtocolEngine {
 
             val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
             if (emails.isNotEmpty()) {
-                // Fetch full HTML and plain text bodies via GetItem
-                val bodies = fetchEmailBodies(account, emails.map { it.id })
+                // Fetch full metadata (From, To, Subject, Body) via GetItem
+                val detailsMap = fetchEmailDetails(account, emails.map { it.id })
                 emails.map { email ->
-                    val pair = bodies[email.id]
-                    if (pair != null) {
-                        val bodyText = pair.first.ifBlank { email.bodyText }
-                        val bodyHtml = pair.second.ifBlank { email.bodyHtml }
-                        val snippet = pair.first.take(150).ifBlank { email.snippet }
+                    val details = detailsMap[email.id]
+                    if (details != null) {
+                        val senderName = details.senderName ?: email.senderName
+                        val senderEmail = details.senderEmail ?: email.senderEmail
+                        val toRecipients = details.toRecipients ?: email.toRecipients
+                        val subject = details.subject ?: email.subject
+                        val bodyText = details.bodyText.ifBlank { email.bodyText }
+                        val bodyHtml = details.bodyHtml.ifBlank { email.bodyHtml }
+                        val snippet = details.snippet.ifBlank { email.snippet }
+                        val isRead = details.isRead ?: email.isRead
+                        val timestamp = details.receivedAt ?: email.timestamp
+                        val hasAttachments = details.hasAttachments ?: email.hasAttachments
+                        val isStarred = (details.importance ?: "").equals("High", ignoreCase = true) || email.isStarred
+
+                        val slaSeverity = if (!isRead) {
+                            val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
+                            when {
+                                ageMinutes > 30 -> SlaSeverity.BREACHED
+                                ageMinutes > 20 -> SlaSeverity.URGENT
+                                ageMinutes > 10 -> SlaSeverity.WARNING
+                                else -> SlaSeverity.NORMAL
+                            }
+                        } else {
+                            SlaSeverity.COMPLETED
+                        }
+
+                        val rawHtml = details.bodyHtml.ifBlank { email.bodyHtml.orEmpty() }
+                        val safeHtml = if (rawHtml.contains("<")) rawHtml else "<p>${bodyText.replace("\n", "<br/>")}</p>"
+                        val newSla = SlaInfo(
+                            severity = slaSeverity,
+                            deadlineTimestamp = timestamp + (30 * 60 * 1000L),
+                            remainingLabel = "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                        )
+
                         email.copy(
+                            senderName = senderName,
+                            senderEmail = senderEmail,
+                            toRecipients = toRecipients,
+                            subject = subject,
                             bodyText = bodyText,
-                            bodyHtml = bodyHtml,
-                            snippet = snippet
+                            bodyHtml = safeHtml,
+                            snippet = snippet,
+                            isRead = isRead,
+                            isStarred = isStarred,
+                            timestamp = timestamp,
+                            hasAttachments = hasAttachments,
+                            slaInfo = newSla
                         )
                     } else {
                         email
@@ -132,10 +185,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
-    override suspend fun fetchEmailBodies(
+    suspend fun fetchEmailDetails(
         account: MailAccount,
         itemIds: List<String>
-    ): Map<String, Pair<String, String>> = withContext(Dispatchers.IO) {
+    ): Map<String, EmailFullDetails> = withContext(Dispatchers.IO) {
         if (itemIds.isEmpty()) return@withContext emptyMap()
         val serverUrl = account.serverHost.trim()
         if (serverUrl.isBlank()) return@withContext emptyMap()
@@ -144,7 +197,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         val canary = resolveCanary(account, cookies)
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "GetItem")
 
-        val resultMap = mutableMapOf<String, Pair<String, String>>()
+        val resultMap = mutableMapOf<String, EmailFullDetails>()
 
         // Chunk in batches of 20 to conform with Exchange JSON-RPC limits
         for (chunk in itemIds.chunked(20)) {
@@ -155,6 +208,27 @@ class OwaProtocolEngine : MailProtocolEngine {
                 for (j in 0 until items.length()) {
                     val item = items.optJSONObject(j) ?: continue
                     val id = item.optJSONObject("ItemId")?.optString("Id") ?: continue
+                    val subject = item.optString("Subject", "")
+
+                    val fromObj = item.optJSONObject("From")?.optJSONObject("Mailbox")
+                    val senderName = fromObj?.optString("Name", "").orEmpty()
+                    val senderEmail = fromObj?.optString("EmailAddress", "").orEmpty()
+
+                    val toRecipientsList = mutableListOf<String>()
+                    val toRecipientsArray = item.optJSONArray("ToRecipients")
+                    if (toRecipientsArray != null) {
+                        for (k in 0 until toRecipientsArray.length()) {
+                            val addr = toRecipientsArray.optJSONObject(k)?.optJSONObject("Mailbox")?.optString("EmailAddress")
+                            if (!addr.isNullOrBlank()) toRecipientsList.add(addr)
+                        }
+                    }
+
+                    val isRead = if (item.has("IsRead")) item.optBoolean("IsRead") else null
+                    val dateStr = item.optString("DateTimeReceived", "")
+                    val receivedAt = if (dateStr.isNotBlank()) parseIsoTimestamp(dateStr) else null
+                    val hasAttachments = if (item.has("HasAttachments")) item.optBoolean("HasAttachments") else null
+                    val importance = item.optString("Importance", "")
+
                     val bodyObj = item.optJSONObject("Body")
                     val bodyHtml = bodyObj?.optString("Value", "").orEmpty()
                     val textBody = item.optJSONObject("TextBody")?.optString("Value", "").orEmpty()
@@ -168,14 +242,37 @@ class OwaProtocolEngine : MailProtocolEngine {
                         preview.isNotBlank() -> preview
                         else -> ""
                     }
-                    resultMap[id] = Pair(cleanText, bodyHtml)
+                    val snippet = preview.ifBlank { cleanText.take(150) }
+
+                    resultMap[id] = EmailFullDetails(
+                        id = id,
+                        subject = subject.ifBlank { null },
+                        senderName = senderName.ifBlank { null },
+                        senderEmail = senderEmail.ifBlank { null },
+                        toRecipients = if (toRecipientsList.isNotEmpty()) toRecipientsList else null,
+                        isRead = isRead,
+                        receivedAt = receivedAt,
+                        hasAttachments = hasAttachments,
+                        importance = importance.ifBlank { null },
+                        bodyText = cleanText,
+                        bodyHtml = bodyHtml,
+                        snippet = snippet
+                    )
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to fetch email bodies chunk: ${e.message}")
+                Log.w(TAG, "Failed to fetch email details chunk: ${e.message}")
             }
         }
 
         resultMap
+    }
+
+    override suspend fun fetchEmailBodies(
+        account: MailAccount,
+        itemIds: List<String>
+    ): Map<String, Pair<String, String>> = withContext(Dispatchers.IO) {
+        val details = fetchEmailDetails(account, itemIds)
+        details.mapValues { Pair(it.value.bodyText, it.value.bodyHtml) }
     }
 
     override suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? {
@@ -303,7 +400,8 @@ class OwaProtocolEngine : MailProtocolEngine {
         jsonBody: JSONObject,
         cookies: String,
         canary: String,
-        account: MailAccount? = null
+        account: MailAccount? = null,
+        isRetryAfterAuth: Boolean = false
     ): JSONObject? {
         val cleanUrl = urlString
             .replace(Regex("/owa/auth/.*service\\.svc", RegexOption.IGNORE_CASE), "/owa/service.svc")
@@ -321,13 +419,15 @@ class OwaProtocolEngine : MailProtocolEngine {
             candidateUrls.add(mailUrl.replace("/owa/service.svc", "/service.svc"))
         }
 
+        val effectiveCookies = cookies
         val effectiveCanary = canary.ifBlank {
-            OwaAuthManager.extractCanary(cookies).orEmpty()
+            OwaAuthManager.extractCanary(effectiveCookies).orEmpty()
         }
 
         for (candidateUrl in candidateUrls.distinct()) {
             try {
                 val url = URL(candidateUrl)
+                val actionName = url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem"
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     if (this is javax.net.ssl.HttpsURLConnection) {
                         sslSocketFactory = trustAllSslSocketFactory
@@ -339,13 +439,19 @@ class OwaProtocolEngine : MailProtocolEngine {
                     readTimeout = 20000
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("User-Agent", USER_AGENT)
-                    val actionName = url.query?.substringAfter("action=")?.substringBefore("&") ?: "FindItem"
                     setRequestProperty("Action", actionName)
                     if (effectiveCanary.isNotBlank()) {
                         setRequestProperty("X-OWA-CANARY", effectiveCanary)
                     }
-                    if (cookies.isNotBlank()) {
-                        setRequestProperty("Cookie", cookies)
+                    if (effectiveCookies.isNotBlank()) {
+                        setRequestProperty("Cookie", effectiveCookies)
+                    }
+                    if (account != null && account.email.isNotBlank()) {
+                        setRequestProperty("x-anchormailbox", account.email.trim())
+                    }
+                    val jsonStr = jsonBody.toString()
+                    if (jsonStr.length < 512) {
+                        setRequestProperty("x-owa-urlpostdata", java.net.URLEncoder.encode(jsonStr, "UTF-8"))
                     }
                     if (account != null && account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
@@ -363,7 +469,26 @@ class OwaProtocolEngine : MailProtocolEngine {
                 if (code in 200..299) {
                     val responseText = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
                     if (responseText.isNotBlank()) {
-                        return JSONObject(responseText)
+                        val json = JSONObject(responseText)
+                        val respMessages = json.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                        val firstMsg = respMessages?.optJSONObject(0)
+                        if (firstMsg?.optString("ResponseClass") == "Error") {
+                            val errCode = firstMsg.optString("ResponseCode")
+                            val errMsg = firstMsg.optString("MessageText")
+                            Log.w(TAG, "OWA Exchange error for $actionName ($candidateUrl): $errCode - $errMsg")
+                        }
+                        return json
+                    }
+                } else if ((code == 401 || code == 440 || code == 302) && !isRetryAfterAuth && account != null) {
+                    Log.w(TAG, "OWA session expired (HTTP $code). Attempting silent FBA re-authentication...")
+                    if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                        val authResult = kotlinx.coroutines.runBlocking {
+                            OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
+                        }
+                        if (authResult.isSuccess) {
+                            Log.i(TAG, "Silent FBA re-auth succeeded! Retrying request...")
+                            return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
+                        }
                     }
                 } else {
                     val err = runCatching {
@@ -497,8 +622,6 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         val additionalProperties = JSONArray().apply {
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Subject") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:From") })
-            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:ToRecipients") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:IsRead") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:DateTimeReceived") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:HasAttachments") })

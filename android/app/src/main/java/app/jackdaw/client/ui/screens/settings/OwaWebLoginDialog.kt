@@ -265,8 +265,6 @@ fun OwaWebLoginDialog(
                                 "BaseShape": "IdOnly",
                                 "AdditionalProperties": [
                                     { "__type": "PropertyUri:#Exchange", "FieldURI": "item:Subject" },
-                                    { "__type": "PropertyUri:#Exchange", "FieldURI": "message:From" },
-                                    { "__type": "PropertyUri:#Exchange", "FieldURI": "message:ToRecipients" },
                                     { "__type": "PropertyUri:#Exchange", "FieldURI": "message:IsRead" },
                                     { "__type": "PropertyUri:#Exchange", "FieldURI": "item:DateTimeReceived" },
                                     { "__type": "PropertyUri:#Exchange", "FieldURI": "item:HasAttachments" },

@@ -129,17 +129,25 @@ class MailViewModel(
         }
         // Real-time foreground sync polling ticker (25s intervals)
         viewModelScope.launch {
-            delay(2000)
-            currentAccount.value?.let { acc ->
-                if (!_isSyncing.value) {
-                    repository.syncAll(acc.id)
+            var firstSyncDone = false
+            currentAccount.collect { acc ->
+                if (acc != null && !firstSyncDone && !_isSyncing.value) {
+                    firstSyncDone = true
+                    _isSyncing.value = true
+                    val result = repository.syncAll(acc.id)
+                    _isSyncing.value = false
+                    _lastSyncTimestamp.value = System.currentTimeMillis()
                 }
             }
+        }
+        viewModelScope.launch {
             while (isActive) {
                 delay(25000)
                 currentAccount.value?.let { acc ->
                     if (!_isSyncing.value) {
+                        _isSyncing.value = true
                         val result = repository.syncAll(acc.id)
+                        _isSyncing.value = false
                         _lastSyncTimestamp.value = System.currentTimeMillis()
                         if (result.isSuccess && result.unmutedNewMessagesCount > 0) {
                             try {

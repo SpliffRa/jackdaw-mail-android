@@ -58,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.util.DateGroup
@@ -384,53 +385,59 @@ fun MailListScreen(
                 }
             }
 
-            // Emails LazyColumn
-            if (filteredEmails.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "Писем не найдено",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "В этой папке нет сообщений",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+            // Emails LazyColumn with Pull-to-Refresh
+            PullToRefreshBox(
+                isRefreshing = isSyncing,
+                onRefresh = onSyncClick,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (filteredEmails.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "Писем не найдено",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "В этой папке нет сообщений",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                }
-            } else {
-                val groupedEmails = remember(filteredEmails) {
-                    filteredEmails.groupBy { DateGrouping.getGroup(it.timestamp) }
-                }
+                } else {
+                    val groupedEmails = remember(filteredEmails) {
+                        filteredEmails.groupBy { DateGrouping.getGroup(it.timestamp) }
+                    }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    DateGroup.values().forEach { group ->
-                        val emailsInGroup = groupedEmails[group]
-                        if (!emailsInGroup.isNullOrEmpty()) {
-                            item(key = "header_${group.name}") {
-                                DateSectionHeader(title = group.title, count = emailsInGroup.size)
-                            }
-                            items(emailsInGroup, key = { it.id }) { email ->
-                                SwipeableEmailCard(
-                                    email = email,
-                                    onClick = { onEmailClick(email) },
-                                    onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
-                                    onSwipeArchive = { onSwipeArchive(email) },
-                                    onSwipeDelete = { emailToDeletePending = email }
-                                )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        DateGroup.values().forEach { group ->
+                            val emailsInGroup = groupedEmails[group]
+                            if (!emailsInGroup.isNullOrEmpty()) {
+                                item(key = "header_${group.name}") {
+                                    DateSectionHeader(title = group.title, count = emailsInGroup.size)
+                                }
+                                items(emailsInGroup, key = { it.id }) { email ->
+                                    SwipeableEmailCard(
+                                        email = email,
+                                        onClick = { onEmailClick(email) },
+                                        onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
+                                        onSwipeArchive = { onSwipeArchive(email) },
+                                        onSwipeDelete = { emailToDeletePending = email }
+                                    )
+                                }
                             }
                         }
                     }
