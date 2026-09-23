@@ -1,45 +1,50 @@
-# Cursor Rules — Jackdaw Android
+﻿# Cursor Rules — Jackdaw Android
 
 ## Стек
-- Kotlin + Jetpack Compose (Material 3), Gradle Kotlin DSL.
-- minSdk 26, targetSdk 34, compileSdk 34.
+- Kotlin 2.2 + Jetpack Compose (Material 3), Gradle 9.0 Kotlin DSL.
+- minSdk 26, targetSdk 35, compileSdk 35.
 - Clean Architecture + MVI/MVVM (Offline-First).
-- База данных: Room SQLite + FTS4/FTS5.
+- База данных: Room SQLite + FTS5 (WAL mode).
 - Фоновые задачи: WorkManager.
-- Сеть & Протоколы: OkHttp / Ktor / IMAP / EWS.
+- Сеть & Протоколы: Exchange OWA / EWS / ActiveSync / IMAP.
 - Асинхронность: Kotlin Coroutines + Flow (StateFlow / SharedFlow).
 
 ## Структура пакетов (`android/app/src/main/java/app/jackdaw/client/`)
 - `core/`
   - `designsystem/` — тема, цвета (Amber `#F59E0B`, Charcoal `#0B0F14`), типографика.
   - `model/` — доменные модели (Account, Email, Folder, Attachment, SLA).
+  - `notification/` — `SoundNotificationManager`, `NotificationHelper`, `LauncherBadgeManager`.
+  - `signature/` — `SignatureManager` (шаблоны и чистые подписи).
+  - `readstatus/` — `ReadStatusManager` (правила прочтения).
   - `update/` — менеджер обновлений (OTA через GitHub Releases & FileProvider).
 - `data/`
-  - `local/` — Room DB (`JackdawDatabase`), Entity (`AccountEntity`, `EmailEntity`, `EmailFtsEntity`), DAO, конвертеры.
-  - `network/` — движки протоколов (`MailProtocolEngine`, `MockNetworkSyncEngine`, `SyncResult`).
-  - `repository/` — `MailRepository`, `OfflineFirstMailRepository`.
+  - `local/` — Room DB (`JackdawDatabase`), Entity (`AccountEntity`, `EmailEntity`, `EmailFtsEntity`, `FolderEntity`), DAO.
+  - `network/` — движки протоколов (`MailProtocolEngine`, `OwaProtocolEngine`, `SyncResult`).
+  - `repository/` — `MailRepository`, `OfflineFirstMailRepository`, `CalendarRepository`.
   - `worker/` — `MailSyncWorker`, планировщик фоновой синхронизации `SyncScheduler`.
 - `ui/`
-  - `components/` — `EmailCard`, `FolderDrawer`, `SlaBadge`.
+  - `components/` — `EmailCard`, `FolderDrawer`, `SlaBadge`, `OutlookBottomBar`.
   - `navigation/` — роутинг и навигация Jetpack Compose.
-  - `screens/` — `maillist`, `maildetail`, `compose`, `settings`.
-  - `viewmodel/` — `MailViewModel`, `MailUiState`.
+  - `screens/` — `maillist`, `maildetail`, `compose`, `calendar`, `settings`, `setup`.
+  - `viewmodel/` — `MailViewModel`, `CalendarViewModel`.
 
 ## Правила кода
-- Никаких `!!`. Использовать `requireNotNull`, `?: return`, `Result`.
+- Никаких `!!`. Использовать `requireNotNull`, `?: return`, `Result<T>`.
 - UI не обращается к БД напрямую — только через `MailRepository` / `MailViewModel`.
 - Compose: стабильные модели, `LazyColumn` с `key`, оптимизация рекомпозиций.
 - `StateFlow` для UI-состояния, `SharedFlow` для однократных событий (Snackbar, навигация).
 - Бизнес-логика в domain/repository, не в Composable функциях.
 - Безопасность: чувствительные данные (токены/пароли) не логировать в открытом виде.
 
-## Сборка и проверка (Windows PowerShell)
-- Сборка: `cd android; .\gradlew.bat assembleDebug`
+## Сборка и верификация (Windows PowerShell)
+- Полная проверка линтером: `cd android; .\gradlew.bat lintDebug`
+- Модульные тесты: `.\gradlew.bat testDebugUnitTest`
+- Сборка debug APK: `.\gradlew.bat assembleDebug`
 - Установка: `adb install -r android\app\build\outputs\apk\debug\app-debug.apk`
 - Запуск: `adb shell am start -n app.jackdaw.client/.MainActivity`
 
-## Роль Lead QA («Лучший из лучших тестировщиков»)
-- **Эмпатия к человеку:** Оценивать UI/UX глазами придирчивого пользователя. Читаемость на солнце, контраст по WCAG AAA, удобство одной рукой, отсутствие визуального шума.
-- **Доскональное покрытие:** Проверка темной/светлой темы, свайпов во всех папках (Inbox, Archive, Trash), обратимости действий (Undo), краевых случаев сети (Offline/Doze).
-- **Директивы разработчикам:** Не просто жаловаться, а формулировать четкие предписания: Слой/Файл/Причина + Четкие критерии приемки (Acceptance Criteria).
-- **Право вето:** Никаких релизов при наличии регрессий или сломанных сценариев.
+## Ролевая матрица агента
+- **Lead Android Architect:** архитектура Offline-First, безопасность Room миграций, отсутствие утечек памяти и блокировок Main thread.
+- **Product & Ergonomics Designer:** идеальный контраст (WCAG AAA), эргономика одной руки (Thumb Zone), естественный русский язык, отсутствие визуального мусора.
+- **Principal QA Engineer:** жесткий контроль регрессий, тестирование всех сценариев (Dark/Light, Offline, свайпы, Undo), выпуск релизов только после чистых проверок.
+- **DevOps Engineer:** чистый git, быстрый кэшируемый билд, строгое версионирование Semantic Versioning (+1 к versionCode).

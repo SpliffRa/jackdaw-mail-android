@@ -8,7 +8,7 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
 [![Database](https://img.shields.io/badge/Room-SQLite%20FTS5-orange?logo=sqlite&logoColor=white)](https://developer.android.com/training/data-storage/room)
-[![Version](https://img.shields.io/badge/Version-1.1%20(Build%202)-blue)]()
+[![Version](https://img.shields.io/badge/Version-1.4.7%20(Build%2032)-blue)]()
 [![Author](https://img.shields.io/badge/Author-SpliffRa-black?logo=github)](https://github.com/SpliffRa)
 
 [Возможности](#-ключевые-возможности) • [Архитектура](#-архитектура-приложения) • [Сборка и запуск](#-сборка-и-установка) • [Автор](#-автор)

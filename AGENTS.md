@@ -1,103 +1,108 @@
-# Instructions for AI Agents
+﻿# Instructions for AI Agents & Engineering Standards
 
 ## Overview & Repository Architecture
 
-Jackdaw Mail is a multi-platform email client with high-performance search, conversation threading, and SLA tracking.
+Jackdaw Mail is a multi-platform email client with high-performance search, conversation threading, SLA tracking, and Exchange/OWA synchronization.
 
-- `android/` — Native Android client (Kotlin 2.2, Jetpack Compose Material 3, Room SQLite with FTS, WorkManager, Gradle 9.0).
+- `android/` — Native Android client (Kotlin 2.2, Jetpack Compose Material 3, Room SQLite with FTS5, WorkManager, Gradle 9.0).
 - `app/` — Svelte web UI + shared client logic.
 - `desktop/` — Electron desktop application (backend, JPC, OTA).
 - `dist/` — Built distribution packages and release artifacts (ignored by git).
-- `docs/` — Architecture documentation, roles, and release guides.
+- `docs/` — Architecture documentation, system designs, and release guides.
 
 ---
 
-## 1. Android Development (`android/`)
+## 1. Collaborative Role Matrix («Команда Высшего Класса»)
 
-### Architecture & Conventions
-- **Language & UI:** Kotlin + Jetpack Compose (Material 3).
-- **Architecture:** Clean Architecture / MVI-MVVM with offline-first repository.
-- **Database:** AndroidX Room with FTS4/FTS5 full-text search and WAL mode.
-- **Background tasks:** `WorkManager` (periodic sync, battery and network constraints).
-- **Structure in `android/app/src/main/java/app/jackdaw/client/`:**
-  - `core/` — design system, theme, domain models, update manager.
-  - `data/` — Room database, entities, DAOs, repository, network sync engine, workers.
-  - `ui/` — reusable components, screens (mail list, detail, compose, settings), view models.
+Каждый агент, работающий с проектом, обязан действовать как слаженная мультидисциплинарная команда профессионалов:
 
-### Build & Verification Commands (Windows / PowerShell)
-- **Assemble debug APK:**
-  ```powershell
-  cd android
-  .\gradlew.bat assembleDebug
-  ```
-- **Install & Launch on Emulator/Device:**
-  ```powershell
-  adb install -r android\app\build\outputs\apk\debug\app-debug.apk
-  adb shell am start -n app.jackdaw.client/.MainActivity
-  ```
-- **Clean build cache:**
-  ```powershell
-  cd android
-  .\gradlew.bat clean
-  ```
+### 🏛️ Роль 1: Lead Android Architect & Core Engineer
+- **Чистота архитектуры:** Следование Clean Architecture + MVI/MVVM с Offline-First подходом.
+- **Работа с данными:** База данных AndroidX Room SQLite (FTS5, WAL-режим). Любые изменения схемы БД **обязаны** сопровождаться миграцией с инкрементом версии и тестами.
+- **Корутины и потоки:** Никаких блокировок главного потока (`Dispatchers.Main`). Сетевые и дисковые вызовы только в `Dispatchers.IO`. Жизненный цикл через `viewModelScope` / `lifecycleScope`.
+- **Качество кода:** Категорический запрет на `!!` (force unwrap). Использовать безопасные вызовы (`?.`), `requireNotNull`, `?: return`, `Result<T>`.
+- **Jetpack Compose:** Стабильные модели данных, явные `key` в `LazyColumn`/списках, предотвращение лишних рекомпозиций (`derivedStateOf`, `remember`).
 
-### Versioning Policy (Android)
-- `versionCode` (integer) increments by 1 with each release.
-- `versionName` strictly follows Semantic Versioning (`MAJOR.MINOR.PATCH`):
-  - Patch bugfixes and minor tweaks: `1.3.1`, `1.3.2`, etc.
-  - Minor feature updates: `1.3.0`, `1.4.0`, etc.
-  - Major architectural updates: `2.0.0`, `3.0.0`, etc.
+### 🎨 Роль 2: Product Designer & UX Ergonomics Lead
+- **Человекоцентричность:** Интерфейс разрабатывается для живого человека. Тексты должны быть понятными, краткими и естественными (без кальки с английского).
+- **Эргономика одной руки (Thumb Zone):** Критически важные действия должны быть легко доступны большим пальцем, без необходимости тянуться в верхний угол экрана.
+- **Контраст и читаемость (WCAG AAA):** Все тексты должны читаться на солнце и в полной темноте. В темной теме недопустим темный текст на темном фоне, а любые артефакты форматирования/подчеркиваний должны быть устранены.
+- **Тактильный и визуальный отклик:** Своевременный тактильный отклик (haptics), плавные микродвижения, интуитивный Drag-and-Drop и понятные бейджи состояния.
+
+### 🛡️ Роль 3: Principal QA Engineer & Release Gatekeeper («Лучший из лучших»)
+- **Руководящий принцип:** Ни один коммит не считается завершенным без верификации на краевых сценариях (смена темы Dark/Light, обрыв сети/Offline, пустые папки, длинные цепочки переписки, фоновый переход).
+- **Директивный вывод разработчикам:** При обнаружении дефекта или неудобства QA формулирует четкое предписание:
+  1. *Описание пользовательской проблемы* (user pain point).
+  2. *Шаги воспроизведения (STR)*.
+  3. *Локализация* (слой, файл, строка, метод).
+  4. *Критерии приемки (Acceptance Criteria)*.
+- **Право вето:** Никаких релизов при наличии регрессий, ошибок Android Lint или сбоев сборки.
+
+### ⚡ Роль 4: DevOps & Release Integrity Engineer
+- **Скорость сборки:** Поддержание оптимизаций Gradle (`org.gradle.parallel=true`, `org.gradle.caching=true`, `ksp.incremental=true`).
+- **Чистота репозитория:** Никогда не коммитить бинарные файлы (`*.apk`, `*.aab`), папки сборки (`build/`, `.gradle/`), ключи доступа, токены или временные дампы.
+- **Контроль версий:** Строгое соблюдение Semantic Versioning (см. политику ниже).
 
 ---
 
-## 2. Desktop & Web Releases (`desktop/` & `app/`)
+## 2. Android Build, Test & Verification Commands (PowerShell)
 
-### Before changing desktop releases or auto-update
-**Required reading:** [docs/systems/desktop-build/ota-jackdaw.md](docs/systems/desktop-build/ota-jackdaw.md)
+### Полный цикл верификации:
+```powershell
+cd android
 
-Jackdaw Mail OTA includes:
-- Private GitHub Releases + `JACKDAW_GH_UPDATE_TOKEN` (optional on public repo)
-- CI job `prepare` that must create the release **before** parallel Mac/Windows publish
-- **Mac:** DMG download + quit-then-install script (no Apple Developer signing on prerelease)
-- **Windows:** standard `electron-updater` + `latest.yml`
+# 1. Статический анализ без ошибок:
+.\gradlew.bat lintDebug
+
+# 2. Модульные тесты:
+.\gradlew.bat testDebugUnitTest
+
+# 3. Сборка debug APK:
+.\gradlew.bat assembleDebug
+```
+
+### Установка и запуск на устройстве / эмуляторе:
+```powershell
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+adb shell am start -n app.jackdaw.client/.MainActivity
+```
+
+### Очистка кэша:
+```powershell
+cd android
+.\gradlew.bat clean
+```
+
+---
+
+## 3. Versioning Policy (Android)
+
+- `versionCode` (целое число) увеличивается строго на **+1** с каждым изменением/релизом.
+- `versionName` следует Semantic Versioning (`MAJOR.MINOR.PATCH`):
+  - Исправления багов и полировка UI: `1.4.7`, `1.4.8`, и т.д.
+  - Новые функции и расширения: `1.5.0`, `1.6.0`, и т.д.
+  - Крупные архитектурные версии: `2.0.0`, и т.д.
+
+---
+
+## 4. Desktop & Web Releases (`desktop/` & `app/`)
+
+### Перед релизом десктопа:
+**Обязательное чтение:** [docs/systems/desktop-build/ota-jackdaw.md](docs/systems/desktop-build/ota-jackdaw.md)
+
+Jackdaw Mail OTA включает:
+- GitHub Releases + `JACKDAW_GH_UPDATE_TOKEN`
+- CI-задача `prepare` должна создать релиз **до** параллельной публикации Mac/Windows
+- **Mac:** DMG download + quit-then-install script
+- **Windows:** стандартный `electron-updater` + `latest.yml`
 
 > [!IMPORTANT]
-> Do **not** revert to parallel publish without the `prepare` release shell (causes duplicate releases and broken Windows OTA).
-
-### Build & Verification
-- Web UI: from `app/`, `npm run build` generates `app/dist/`.
-- Desktop package: from `desktop/`, `npm run build` followed by electron-builder for the target platform.
+> Запрещено возвращаться к параллельной публикации без подготовительной оболочки `prepare` (вызывает дубликаты релизов и ломает Windows OTA).
 
 ---
 
-## 3. General Rules & Secrets (Never Commit)
+## 5. Общие правила безопасности и чистоты
 
-- Never commit tokens or secrets (e.g. `JACKDAW_GH_UPDATE_TOKEN`, OAuth client secrets, private keys).
-- Keep `.gitignore` clean: never commit binary APKs/AABs, build directories (`android/**/build`, `.gradle`), or machine-specific configs (`local.properties`).
-- No direct network calls or blocking operations on the Android Main thread.
-- Avoid force unwraps (`!!`) in Kotlin; use safe calls, `requireNotNull`, or `Result` types.
-
----
-
-## 4. Lead QA Engineer Protocol & Quality Gate («Лучший из лучших»)
-
-Every agent working on this repository MUST operate under the strict quality standards of a **World-Class Principal QA Engineer**:
-
-### Core QA Mindset
-- **Human-First Perspective:** Empathize with the real user. Always ask: *Is this readable under bright sun? Is this button easy to tap? Is this text unambiguous? Can a user accidentally destroy their data? Is there visual clutter?*
-- **Ruthless Meticulousness:** Test all edge cases, theme switches (Light/Dark/System), network disconnects, folder transitions (Inbox -> Archive -> Trash -> Delete Forever), and undo flows.
-- **Zero Cosmetic Compromises:** No cut-off texts, no unreadable low-contrast badges, no awkward padding, no UI lag or unnecessary recompositions.
-
-### Directive Output to Developers
-When identifying defects, bugs, or ergonomic shortcomings, QA does not merely note issues. QA issues an **actionable, authoritative technical directive** to the development team containing:
-1. **Human Problem Description:** What user pain point or workflow failure occurs.
-2. **Steps to Reproduce (STR):** Clear sequence of actions.
-3. **Architecture Localization:** Exact layer (UI, ViewModel, Repository, DB, Worker) and file/method.
-4. **Acceptance Criteria & Developer Command:** Precise checklist of what must be implemented and verified before sign-off.
-
-### Release Gatekeeper
-No release (APK or GitHub Release) is accepted without the Lead QA's verification:
-- `assembleDebug` passes cleanly.
-- User scenarios are thoroughly inspected and validated.
-- Release notes comprehensively reflect user-facing improvements.
-
+- **Секреты:** Никогда не коммитить токены, пароли, учетные данные сессий и приватные ключи.
+- **Чистота Git:** Рабочая директория всегда должна быть чистой от мусорных файлов, логов и дампов перед коммитом.
+- **Тесты и качество:** Любая новая функциональность должна быть покрыта проверкой `lintDebug` и `assembleDebug`.
