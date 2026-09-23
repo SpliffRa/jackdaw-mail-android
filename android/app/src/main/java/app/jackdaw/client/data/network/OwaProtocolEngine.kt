@@ -28,6 +28,11 @@ import app.jackdaw.client.core.model.Folder
 import app.jackdaw.client.core.model.FolderType
 import app.jackdaw.client.core.util.cleanEmailPreview
 import app.jackdaw.client.core.util.cleanEmailSubject
+import android.webkit.CookieManager
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
+import org.xml.sax.InputSource
+import org.w3c.dom.Element
 
 class OwaProtocolEngine : MailProtocolEngine {
 
@@ -80,6 +85,15 @@ class OwaProtocolEngine : MailProtocolEngine {
             }
         } catch (e: Exception) {
             Log.w(TAG, "GetFolder distinguished folders query failed: ${e.message}")
+        }
+
+        // Silent EWS SOAP fallback if OWA discovered no folders
+        if (discoveredFolders.isEmpty()) {
+            Log.i(TAG, "OWA FindFolder returned 0 folders, silently trying EWS FindFolder...")
+            val ewsFolders = fetchFoldersViaEws(account)
+            for (f in ewsFolders) {
+                discoveredFolders[f.id] = f
+            }
         }
 
         val list = discoveredFolders.values.toList()
@@ -182,14 +196,26 @@ class OwaProtocolEngine : MailProtocolEngine {
                     }
                 }
             } else {
-                emptyList()
+                // Silent EWS SOAP fallback if OWA FindItem returned 0 emails
+                Log.i(TAG, "OWA FindItem returned 0 emails for $folderId, silently trying EWS SOAP...")
+                val ewsEmails = fetchEmailsViaEws(account, folderId)
+                if (ewsEmails.isNotEmpty()) {
+                    OwaSyncDiagnostics.recordSuccess("FindItem(EWS)", buildEwsUrl(serverUrl), 200, "EWS synced ${ewsEmails.size} emails")
+                }
+                ewsEmails
             }
             OwaSyncDiagnostics.lastEmailsFetchedCount = finalEmails.size
             finalEmails
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl", e)
-            OwaSyncDiagnostics.recordError("FindItem", owaServiceUrl, 0, e.message ?: "Exception")
-            emptyList()
+            Log.w(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl, silently trying EWS SOAP...", e)
+            val ewsEmails = fetchEmailsViaEws(account, folderId)
+            if (ewsEmails.isNotEmpty()) {
+                OwaSyncDiagnostics.recordSuccess("FindItem(EWS)", buildEwsUrl(serverUrl), 200, "EWS fallback synced ${ewsEmails.size} emails")
+            } else {
+                OwaSyncDiagnostics.recordError("FindItem", owaServiceUrl, 0, e.message ?: "Exception")
+            }
+            OwaSyncDiagnostics.lastEmailsFetchedCount = ewsEmails.size
+            ewsEmails
         }
     }
 
@@ -285,7 +311,11 @@ class OwaProtocolEngine : MailProtocolEngine {
 
     override suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? {
         val bodies = fetchEmailBodies(account, listOf(itemId))
-        return bodies[itemId]
+        val body = bodies[itemId]
+        if (body != null && (body.first.isNotBlank() || body.second.isNotBlank())) {
+            return body
+        }
+        return fetchEmailBodyViaEws(account, itemId)
     }
 
     override suspend fun fetchCalendarEvents(
@@ -498,8 +528,21 @@ class OwaProtocolEngine : MailProtocolEngine {
                     }
                 } else if ((code == 401 || code == 440 || code == 302 || code == 301) && !isRetryAfterAuth && account != null) {
                     val redirectLoc = conn.getHeaderField("Location").orEmpty()
-                    Log.w(TAG, "OWA session expired or redirected (HTTP $code to $redirectLoc). Attempting silent FBA re-authentication...")
+                    Log.w(TAG, "OWA session expired or redirected (HTTP $code to $redirectLoc). Attempting silent session recovery...")
                     OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сессия истекла (HTTP $code). Редирект: $redirectLoc")
+
+                    // 1. Silent recovery via system CookieManager
+                    if (!isRetryAfterAuth) {
+                        val cm = runCatching { CookieManager.getInstance() }.getOrNull()
+                        val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
+                        if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
+                            Log.i(TAG, "Silent cookie recovery from CookieManager succeeded! Retrying request...")
+                            val freshCanary = OwaAuthManager.extractCanary(freshCookies).orEmpty()
+                            return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
+                        }
+                    }
+
+                    // 2. Silent FBA direct auth if credentials saved
                     if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authResult = kotlinx.coroutines.runBlocking {
                             OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
@@ -1222,5 +1265,347 @@ class OwaProtocolEngine : MailProtocolEngine {
             html.replace(Regex("<[^>]*>"), " ").replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), "")
                 .replace(Regex("\\s+"), " ").trim()
         }
+    }
+
+    // ==========================================
+    // Silent EWS (Exchange Web Services) Engine
+    // ==========================================
+
+    fun buildEwsUrl(serverHost: String): String {
+        val base = serverHost.trim().trimEnd('/')
+        val lower = base.lowercase()
+        val owaIdx = lower.indexOf("/owa")
+        val authIdx = lower.indexOf("/auth")
+        val root = when {
+            owaIdx != -1 -> base.substring(0, owaIdx)
+            authIdx != -1 -> base.substring(0, authIdx)
+            else -> base
+        }
+        return "$root/EWS/Exchange.asmx"
+    }
+
+    private fun executeEwsSoapPost(
+        serverUrl: String,
+        soapAction: String,
+        soapBody: String,
+        account: MailAccount
+    ): String? {
+        val ewsUrl = buildEwsUrl(serverUrl)
+        val candidateUrls = listOf(
+            ewsUrl,
+            ewsUrl.replace("/EWS/", "/ews/"),
+            ewsUrl.replace("/owa/", "/").replace("/OWA/", "/")
+        ).distinct()
+
+        val cookies = resolveCookies(account)
+
+        for (candidate in candidateUrls) {
+            try {
+                val url = URL(candidate)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    if (this is javax.net.ssl.HttpsURLConnection) {
+                        sslSocketFactory = trustAllSslSocketFactory
+                        hostnameVerifier = trustAllHostnameVerifier
+                    }
+                    instanceFollowRedirects = true
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 15000
+                    readTimeout = 20000
+                    setRequestProperty("Content-Type", "text/xml; charset=utf-8")
+                    setRequestProperty("SOAPAction", "\"http://schemas.microsoft.com/exchange/services/2006/messages/$soapAction\"")
+                    setRequestProperty("User-Agent", USER_AGENT)
+                    if (account.email.isNotBlank()) {
+                        setRequestProperty("x-anchormailbox", account.email.trim())
+                    }
+                    if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                        val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
+                        val authBase64 = Base64.encodeToString(authStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                        setRequestProperty("Authorization", "Basic $authBase64")
+                    }
+                    if (cookies.isNotBlank()) {
+                        setRequestProperty("Cookie", cookies)
+                    }
+                }
+
+                OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(soapBody) }
+                val code = conn.responseCode
+                if (code in 200..299) {
+                    val resp = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+                    if (resp.contains("ResponseClass=\"Success\"") || resp.contains("<m:Items>") || resp.contains("<t:Message>") || resp.contains("<m:Folders>")) {
+                        Log.i(TAG, "EWS SOAP $soapAction success on $candidate")
+                        return resp
+                    }
+                } else {
+                    Log.w(TAG, "EWS SOAP $candidate returned HTTP $code")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "EWS SOAP $candidate failed: ${e.message}")
+            }
+        }
+        return null
+    }
+
+    suspend fun fetchEmailsViaEws(account: MailAccount, folderId: String): List<EmailMessage> = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) return@withContext emptyList()
+
+        val target = when {
+            folderId.endsWith("inbox", ignoreCase = true) || folderId.equals("inbox", ignoreCase = true) -> "inbox"
+            folderId.endsWith("sent", ignoreCase = true) || folderId.equals("sentitems", ignoreCase = true) -> "sentitems"
+            folderId.endsWith("drafts", ignoreCase = true) || folderId.equals("drafts", ignoreCase = true) -> "drafts"
+            folderId.endsWith("trash", ignoreCase = true) || folderId.endsWith("deleted", ignoreCase = true) || folderId.equals("deleteditems", ignoreCase = true) -> "deleteditems"
+            folderId.endsWith("archive", ignoreCase = true) || folderId.equals("archive", ignoreCase = true) -> "archive"
+            folderId.endsWith("junk", ignoreCase = true) || folderId.equals("junkemail", ignoreCase = true) -> "junkemail"
+            else -> folderId
+        }
+
+        val isDist = target in listOf("inbox", "sentitems", "drafts", "deleteditems", "archive", "junkemail")
+        val folderXml = if (isDist) """<t:DistinguishedFolderId Id="$target" />""" else """<t:FolderId Id="$target" />"""
+
+        val soapBody = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                           xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                           xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Header>
+                <t:RequestServerVersion Version="Exchange2013" />
+              </soap:Header>
+              <soap:Body>
+                <m:FindItem Traversal="Shallow">
+                  <m:ItemShape>
+                    <t:BaseShape>AllProperties</t:BaseShape>
+                  </m:ItemShape>
+                  <m:IndexedPageItemView MaxEntriesReturned="50" Offset="0" BasePoint="Beginning" />
+                  <m:ParentFolderIds>
+                    $folderXml
+                  </m:ParentFolderIds>
+                </m:FindItem>
+              </soap:Body>
+            </soap:Envelope>
+        """.trimIndent()
+
+        val xmlResp = executeEwsSoapPost(serverUrl, "FindItem", soapBody, account) ?: return@withContext emptyList()
+        parseEwsMessagesXml(account, folderId, xmlResp)
+    }
+
+    fun parseEwsMessagesXml(account: MailAccount, folderId: String, xmlText: String): List<EmailMessage> {
+        val result = mutableListOf<EmailMessage>()
+        try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(InputSource(StringReader(xmlText)))
+
+            val messageNodes = doc.getElementsByTagNameNS("*", "Message")
+            val count = messageNodes.length
+            for (i in 0 until count) {
+                val elem = messageNodes.item(i) as? Element ?: continue
+                val itemId = (elem.getElementsByTagNameNS("*", "ItemId").item(0) as? Element)?.getAttribute("Id").orEmpty()
+                if (itemId.isBlank()) continue
+
+                fun getChildText(tag: String): String {
+                    val list = elem.getElementsByTagNameNS("*", tag)
+                    return if (list.length > 0) list.item(0).textContent?.trim().orEmpty() else ""
+                }
+
+                val subject = getChildText("Subject")
+                val dateTimeReceived = getChildText("DateTimeReceived")
+                val isRead = getChildText("IsRead").equals("true", ignoreCase = true)
+                val hasAttachments = getChildText("HasAttachments").equals("true", ignoreCase = true)
+                val importance = getChildText("Importance")
+                val bodyText = getChildText("Body")
+
+                var senderName = ""
+                var senderEmail = ""
+                val fromNodes = elem.getElementsByTagNameNS("*", "From")
+                if (fromNodes.length > 0) {
+                    val fromElem = fromNodes.item(0) as? Element
+                    if (fromElem != null) {
+                        val nameList = fromElem.getElementsByTagNameNS("*", "Name")
+                        if (nameList.length > 0) senderName = nameList.item(0).textContent?.trim().orEmpty()
+                        val emailList = fromElem.getElementsByTagNameNS("*", "EmailAddress")
+                        if (emailList.length > 0) senderEmail = emailList.item(0).textContent?.trim().orEmpty()
+                    }
+                }
+
+                val timestamp = parseIsoTimestamp(dateTimeReceived)
+                val cleanSub = subject.cleanEmailSubject()
+                val cleanSnip = (if (bodyText.isNotBlank()) stripHtml(bodyText).take(150) else cleanSub).cleanEmailPreview()
+                val slaSeverity = if (!isRead) {
+                    val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
+                    when {
+                        ageMinutes > 30 -> SlaSeverity.BREACHED
+                        ageMinutes > 20 -> SlaSeverity.URGENT
+                        ageMinutes > 10 -> SlaSeverity.WARNING
+                        else -> SlaSeverity.NORMAL
+                    }
+                } else SlaSeverity.COMPLETED
+
+                val targetFolderId = if (folderId.isNotBlank()) folderId else "${account.id}_inbox"
+                result.add(
+                    EmailMessage(
+                        id = itemId,
+                        accountId = account.id,
+                        folderId = targetFolderId,
+                        threadId = "th_${itemId.takeLast(12)}",
+                        senderName = senderName.ifBlank { senderEmail.substringBefore("@", "Коллега") },
+                        senderEmail = senderEmail.ifBlank { "unknown@corp.mail" },
+                        toRecipients = listOf(account.email),
+                        subject = cleanSub,
+                        snippet = cleanSnip,
+                        bodyText = bodyText,
+                        bodyHtml = if (bodyText.contains("<")) bodyText else "<p>${bodyText.replace("\n", "<br/>")}</p>",
+                        timestamp = timestamp,
+                        isRead = isRead,
+                        isStarred = importance.equals("High", ignoreCase = true),
+                        hasAttachments = hasAttachments,
+                        attachments = emptyList(),
+                        slaInfo = SlaInfo(
+                            severity = slaSeverity,
+                            deadlineTimestamp = timestamp + (30 * 60 * 1000L),
+                            remainingLabel = "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                        ),
+                        deliveryStatus = DeliveryStatus.SENT
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "EWS XML parse error: ${e.message}")
+        }
+        return result
+    }
+
+    suspend fun fetchFoldersViaEws(account: MailAccount): List<Folder> = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) return@withContext emptyList()
+        val soapBody = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                           xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                           xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Header>
+                <t:RequestServerVersion Version="Exchange2013" />
+              </soap:Header>
+              <soap:Body>
+                <m:FindFolder Traversal="Deep">
+                  <m:FolderShape>
+                    <t:BaseShape>Default</t:BaseShape>
+                  </m:FolderShape>
+                  <m:ParentFolderIds>
+                    <t:DistinguishedFolderId Id="msgfolderroot" />
+                  </m:ParentFolderIds>
+                </m:FindFolder>
+              </soap:Body>
+            </soap:Envelope>
+        """.trimIndent()
+
+        val respXml = executeEwsSoapPost(serverUrl, "FindFolder", soapBody, account) ?: return@withContext emptyList()
+        parseEwsFoldersXml(account, respXml)
+    }
+
+    fun parseEwsFoldersXml(account: MailAccount, xmlText: String): List<Folder> {
+        val result = mutableListOf<Folder>()
+        try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(InputSource(StringReader(xmlText)))
+
+            val folderNodes = doc.getElementsByTagNameNS("*", "Folder")
+            val count = folderNodes.length
+            for (i in 0 until count) {
+                val elem = folderNodes.item(i) as? Element ?: continue
+                val folderId = (elem.getElementsByTagNameNS("*", "FolderId").item(0) as? Element)?.getAttribute("Id").orEmpty()
+                val displayName = elem.getElementsByTagNameNS("*", "DisplayName").item(0)?.textContent?.trim().orEmpty()
+                val unreadCount = elem.getElementsByTagNameNS("*", "UnreadCount").item(0)?.textContent?.trim()?.toIntOrNull() ?: 0
+                val totalCount = elem.getElementsByTagNameNS("*", "TotalCount").item(0)?.textContent?.trim()?.toIntOrNull() ?: 0
+
+                if (folderId.isNotBlank() && displayName.isNotBlank()) {
+                    val lower = displayName.lowercase()
+                    val folderType = when {
+                        lower.contains("входящ") || lower == "inbox" -> FolderType.INBOX
+                        lower.contains("отправлен") || lower == "sent items" || lower == "sent" -> FolderType.SENT
+                        lower.contains("черновик") || lower == "drafts" -> FolderType.DRAFTS
+                        lower.contains("удал") || lower.contains("корзин") || lower == "deleted items" || lower == "trash" -> FolderType.TRASH
+                        lower.contains("архив") || lower == "archive" -> FolderType.ARCHIVE
+                        else -> FolderType.CUSTOM
+                    }
+                    val canonicalId = when (folderType) {
+                        FolderType.INBOX -> "${account.id}_inbox"
+                        FolderType.SENT -> "${account.id}_sent"
+                        FolderType.DRAFTS -> "${account.id}_drafts"
+                        FolderType.TRASH -> "${account.id}_trash"
+                        FolderType.ARCHIVE -> "${account.id}_archive"
+                        else -> folderId
+                    }
+                    result.add(
+                        Folder(
+                            id = canonicalId,
+                            accountId = account.id,
+                            name = displayName,
+                            type = folderType,
+                            unreadCount = unreadCount,
+                            totalCount = totalCount
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "EWS Folders XML parse error: ${e.message}")
+        }
+        return result
+    }
+
+    suspend fun fetchEmailBodyViaEws(account: MailAccount, itemId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) return@withContext null
+        val soapBody = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                           xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                           xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+              <soap:Header>
+                <t:RequestServerVersion Version="Exchange2013" />
+              </soap:Header>
+              <soap:Body>
+                <m:GetItem>
+                  <m:ItemShape>
+                    <t:BaseShape>Default</t:BaseShape>
+                    <t:IncludeMimeContent>false</t:IncludeMimeContent>
+                    <t:BodyType>HTML</t:BodyType>
+                  </m:ItemShape>
+                  <m:ItemIds>
+                    <t:ItemId Id="$itemId" />
+                  </m:ItemIds>
+                </m:GetItem>
+              </soap:Body>
+            </soap:Envelope>
+        """.trimIndent()
+
+        val respXml = executeEwsSoapPost(serverUrl, "GetItem", soapBody, account) ?: return@withContext null
+        parseEwsBodyXml(respXml)
+    }
+
+    private fun parseEwsBodyXml(xmlText: String): Pair<String, String>? {
+        try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(InputSource(StringReader(xmlText)))
+            val bodyNodes = doc.getElementsByTagNameNS("*", "Body")
+            if (bodyNodes.length > 0) {
+                val bodyHtml = bodyNodes.item(0)?.textContent.orEmpty()
+                if (bodyHtml.isNotBlank()) {
+                    return Pair(stripHtml(bodyHtml), bodyHtml)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "EWS Body XML parse error: ${e.message}")
+        }
+        return null
     }
 }

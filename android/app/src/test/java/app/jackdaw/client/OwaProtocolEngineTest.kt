@@ -1,6 +1,7 @@
 package app.jackdaw.client
 
 import app.jackdaw.client.data.auth.OwaAuthManager
+import app.jackdaw.client.data.network.OwaProtocolEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -49,4 +50,125 @@ class OwaProtocolEngineTest {
         assertEquals(0, compareVersions("1.4.8", "1.4.8"))
         assertTrue(compareVersions("1.4.6", "1.4.8") < 0)
     }
+
+    @Test
+    fun testBuildEwsUrl() {
+        val engine = OwaProtocolEngine()
+        assertEquals("https://mail.corp.com/EWS/Exchange.asmx", engine.buildEwsUrl("https://mail.corp.com/owa/"))
+        assertEquals("https://mail.corp.com/EWS/Exchange.asmx", engine.buildEwsUrl("https://mail.corp.com/owa"))
+        assertEquals("https://mail.corp.com/EWS/Exchange.asmx", engine.buildEwsUrl("https://mail.corp.com/owa/auth/logon.aspx"))
+        assertEquals("https://mail.corp.com/EWS/Exchange.asmx", engine.buildEwsUrl("https://mail.corp.com"))
+        assertEquals("mail.corp.com/EWS/Exchange.asmx", engine.buildEwsUrl("mail.corp.com"))
+    }
+
+    @Test
+    fun testParseEwsMessagesXml() {
+        val xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+              <s:Body>
+                <m:FindItemResponse xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                                    xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">
+                  <m:ResponseMessages>
+                    <m:FindItemResponseMessage ResponseClass="Success">
+                      <m:ResponseCode>NoError</m:ResponseCode>
+                      <m:RootFolder TotalItemsInView="1" IncludesLastItemInRange="true">
+                        <t:Items>
+                          <t:Message>
+                            <t:ItemId Id="AQMkAD" ChangeKey="CQAAAB" />
+                            <t:Subject>Тестовое письмо от руководства</t:Subject>
+                            <t:DateTimeReceived>2026-09-23T18:30:00Z</t:DateTimeReceived>
+                            <t:HasAttachments>false</t:HasAttachments>
+                            <t:From>
+                              <t:Mailbox>
+                                <t:Name>Иван Иванов</t:Name>
+                                <t:EmailAddress>i.ivanov@corp.mail</t:EmailAddress>
+                              </t:Mailbox>
+                            </t:From>
+                            <t:IsRead>false</t:IsRead>
+                            <t:Body BodyType="Text">Коллеги, добрый день. Напоминаю о встрече в 19:00.</t:Body>
+                          </t:Message>
+                        </t:Items>
+                      </m:RootFolder>
+                    </m:FindItemResponseMessage>
+                  </m:ResponseMessages>
+                </m:FindItemResponse>
+              </s:Body>
+            </s:Envelope>
+        """.trimIndent()
+
+        val account = app.jackdaw.client.core.model.MailAccount(
+            id = "acc_1",
+            email = "user@corp.mail",
+            displayName = "User",
+            serverHost = "https://mail.corp.mail/owa"
+        )
+
+        val engine = OwaProtocolEngine()
+        val messages = engine.parseEwsMessagesXml(account, "acc_1_inbox", xml)
+        assertEquals(1, messages.size)
+        val msg = messages[0]
+        assertEquals("AQMkAD", msg.id)
+        assertEquals("Тестовое письмо от руководства", msg.subject)
+        assertEquals("Иван Иванов", msg.senderName)
+        assertEquals("i.ivanov@corp.mail", msg.senderEmail)
+        assertFalse(msg.isRead)
+        assertTrue(msg.bodyText.contains("Коллеги, добрый день"))
+    }
+
+    @Test
+    fun testParseEwsFoldersXml() {
+        val xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+              <s:Body>
+                <m:FindFolderResponse xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                                      xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">
+                  <m:ResponseMessages>
+                    <m:FindFolderResponseMessage ResponseClass="Success">
+                      <m:ResponseCode>NoError</m:ResponseCode>
+                      <m:RootFolder TotalItemsInView="2" IncludesLastItemInRange="true">
+                        <t:Folders>
+                          <t:Folder>
+                            <t:FolderId Id="fld_inbox_123" ChangeKey="AQAA" />
+                            <t:DisplayName>Входящие</t:DisplayName>
+                            <t:TotalCount>42</t:TotalCount>
+                            <t:UnreadCount>5</t:UnreadCount>
+                          </t:Folder>
+                          <t:Folder>
+                            <t:FolderId Id="fld_sent_456" ChangeKey="AQAA" />
+                            <t:DisplayName>Отправленные</t:DisplayName>
+                            <t:TotalCount>15</t:TotalCount>
+                            <t:UnreadCount>0</t:UnreadCount>
+                          </t:Folder>
+                        </t:Folders>
+                      </m:RootFolder>
+                    </m:FindFolderResponseMessage>
+                  </m:ResponseMessages>
+                </m:FindFolderResponse>
+              </s:Body>
+            </s:Envelope>
+        """.trimIndent()
+
+        val account = app.jackdaw.client.core.model.MailAccount(
+            id = "acc_1",
+            email = "user@corp.mail",
+            displayName = "User",
+            serverHost = "https://mail.corp.mail/owa"
+        )
+
+        val engine = OwaProtocolEngine()
+        val folders = engine.parseEwsFoldersXml(account, xml)
+        assertEquals(2, folders.size)
+        assertEquals("acc_1_inbox", folders[0].id)
+        assertEquals(app.jackdaw.client.core.model.FolderType.INBOX, folders[0].type)
+        assertEquals(5, folders[0].unreadCount)
+        assertEquals(42, folders[0].totalCount)
+
+        assertEquals("acc_1_sent", folders[1].id)
+        assertEquals(app.jackdaw.client.core.model.FolderType.SENT, folders[1].type)
+        assertEquals(0, folders[1].unreadCount)
+        assertEquals(15, folders[1].totalCount)
+    }
 }
+
