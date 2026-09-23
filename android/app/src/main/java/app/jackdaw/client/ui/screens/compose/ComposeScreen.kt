@@ -149,7 +149,6 @@ fun ComposeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
                 title = {
                     Text(
                         text = if (initialSubject.isNotBlank()) "Ответ на письмо" else "Новое письмо",

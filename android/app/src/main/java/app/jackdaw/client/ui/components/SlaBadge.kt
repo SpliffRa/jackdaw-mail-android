@@ -56,6 +56,14 @@ fun SlaBadge(
             if (isDark) SlaGoodGreen else Color(0xFF047857)
         }
 
+        val completedText = if (isLate) {
+            "Ответ дан с опозданием"
+        } else if (slaInfo.remainingLabel.isBlank() || slaInfo.remainingLabel.contains("мин", ignoreCase = true)) {
+            "Ответ дан вовремя"
+        } else {
+            slaInfo.remainingLabel
+        }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = modifier
@@ -71,7 +79,7 @@ fun SlaBadge(
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = slaInfo.remainingLabel.ifBlank { "Ответ дан вовремя" },
+                text = completedText,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor
@@ -145,6 +153,14 @@ fun SlaBadge(
             if (isDark) SlaGoodGreen else Color(0xFF047857)
         }
 
+        val completedText = if (isLate) {
+            "Ответ дан с опозданием"
+        } else if (sla.remainingLabel.isBlank() || sla.remainingLabel.contains("мин", ignoreCase = true)) {
+            "Ответ дан вовремя"
+        } else {
+            sla.remainingLabel
+        }
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = modifier
@@ -160,7 +176,7 @@ fun SlaBadge(
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = sla.remainingLabel.ifBlank { "Ответ дан вовремя" },
+                text = completedText,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = textColor

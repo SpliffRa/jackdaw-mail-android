@@ -148,7 +148,6 @@ fun MailListScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
                 title = {
                     if (isSearchActive) {
                         OutlinedTextField(

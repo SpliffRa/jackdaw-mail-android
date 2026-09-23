@@ -198,7 +198,6 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
                 title = {
                     Text(
                         text = activeSubfolder?.title ?: "Настройки",

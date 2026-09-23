@@ -113,6 +113,14 @@ fun FolderDrawer(
         }
     }
 
+    androidx.compose.runtime.DisposableEffect(isReorderMode) {
+        onDispose {
+            if (isReorderMode) {
+                onReorderFolders(reorderList.map { it.id })
+            }
+        }
+    }
+
     ModalDrawerSheet(
         modifier = modifier
             .width(310.dp)
@@ -123,6 +131,15 @@ fun FolderDrawer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (isReorderMode) {
+                        onReorderFolders(reorderList.map { it.id })
+                        isReorderMode = false
+                    }
+                }
                 .verticalScroll(scrollState, enabled = (draggedId == null))
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
@@ -415,7 +432,43 @@ fun FolderDrawer(
                                 }
                             )
                             .then(
-                                if (!isReorderMode) {
+                                if (isReorderMode) {
+                                    Modifier.pointerInput(folder.id) {
+                                        detectVerticalDragGestures(
+                                            onDragStart = {
+                                                draggedId = folder.id
+                                                dragOffsetY = 0f
+                                            },
+                                            onDragEnd = {
+                                                draggedId = null
+                                                dragOffsetY = 0f
+                                                onReorderFolders(reorderList.map { it.id })
+                                            },
+                                            onDragCancel = {
+                                                draggedId = null
+                                                dragOffsetY = 0f
+                                            },
+                                            onVerticalDrag = { change, dragAmount ->
+                                                change.consume()
+                                                dragOffsetY += dragAmount
+                                                val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
+                                                if (currentIdx != -1) {
+                                                    if (dragOffsetY > itemHeightPx * 0.5f && currentIdx < reorderList.size - 1) {
+                                                        val item = reorderList.removeAt(currentIdx)
+                                                        reorderList.add(currentIdx + 1, item)
+                                                        dragOffsetY -= itemHeightPx
+                                                        onReorderFolders(reorderList.map { it.id })
+                                                    } else if (dragOffsetY < -itemHeightPx * 0.5f && currentIdx > 0) {
+                                                        val item = reorderList.removeAt(currentIdx)
+                                                        reorderList.add(currentIdx - 1, item)
+                                                        dragOffsetY += itemHeightPx
+                                                        onReorderFolders(reorderList.map { it.id })
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                } else {
                                     Modifier.combinedClickable(
                                         onClick = { onSelectFolder(folder) },
                                         onLongClick = {
@@ -428,8 +481,6 @@ fun FolderDrawer(
                                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     )
-                                } else {
-                                    Modifier
                                 }
                             )
                             .padding(
@@ -524,116 +575,24 @@ fun FolderDrawer(
                             }
                         }
 
-                        // In reorder mode: clear step up / down buttons AND smooth drag/swipe handle
+                        // In reorder mode: show clean Drag Handle on the right
                         if (isReorderMode) {
                             Spacer(modifier = Modifier.width(6.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(
+                                        if (isBeingDragged) JackdawAmber.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                    ),
+                                contentAlignment = Alignment.Center
                             ) {
-                                val canMoveUp = index > 0
-                                val canMoveDown = index < reorderList.size - 1
-
-                                // Step Up Button
-                                Surface(
-                                    onClick = {
-                                        if (canMoveUp) {
-                                            val item = reorderList.removeAt(index)
-                                            reorderList.add(index - 1, item)
-                                            onReorderFolders(reorderList.map { it.id })
-                                        }
-                                    },
-                                    enabled = canMoveUp,
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (canMoveUp) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(26.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.KeyboardArrowUp,
-                                            contentDescription = "Вверх",
-                                            tint = if (canMoveUp) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-
-                                // Step Down Button
-                                Surface(
-                                    onClick = {
-                                        if (canMoveDown) {
-                                            val item = reorderList.removeAt(index)
-                                            reorderList.add(index + 1, item)
-                                            onReorderFolders(reorderList.map { it.id })
-                                        }
-                                    },
-                                    enabled = canMoveDown,
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = if (canMoveDown) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(26.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                                            contentDescription = "Вниз",
-                                            tint = if (canMoveDown) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-
-                                // Interactive Swipe/Drag Handle
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            if (isBeingDragged) JackdawAmber.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                        )
-                                        .pointerInput(folder.id) {
-                                            detectVerticalDragGestures(
-                                                onDragStart = {
-                                                    draggedId = folder.id
-                                                    dragOffsetY = 0f
-                                                },
-                                                onDragEnd = {
-                                                    draggedId = null
-                                                    dragOffsetY = 0f
-                                                    onReorderFolders(reorderList.map { it.id })
-                                                },
-                                                onDragCancel = {
-                                                    draggedId = null
-                                                    dragOffsetY = 0f
-                                                },
-                                                onVerticalDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dragOffsetY += dragAmount
-                                                    val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
-                                                    if (currentIdx != -1) {
-                                                        if (dragOffsetY > itemHeightPx * 0.5f && currentIdx < reorderList.size - 1) {
-                                                            val item = reorderList.removeAt(currentIdx)
-                                                            reorderList.add(currentIdx + 1, item)
-                                                            dragOffsetY -= itemHeightPx
-                                                            onReorderFolders(reorderList.map { it.id })
-                                                        } else if (dragOffsetY < -itemHeightPx * 0.5f && currentIdx > 0) {
-                                                            val item = reorderList.removeAt(currentIdx)
-                                                            reorderList.add(currentIdx - 1, item)
-                                                            dragOffsetY += itemHeightPx
-                                                            onReorderFolders(reorderList.map { it.id })
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.DragHandle,
-                                        contentDescription = "Перетащить свайпом",
-                                        tint = if (isBeingDragged) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.DragHandle,
+                                    contentDescription = "Перетащить свайпом",
+                                    tint = if (isBeingDragged) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     }

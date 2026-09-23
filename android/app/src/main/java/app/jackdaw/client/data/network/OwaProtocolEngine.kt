@@ -174,7 +174,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         val newSla = SlaInfo(
                             severity = slaSeverity,
                             deadlineTimestamp = timestamp + (30 * 60 * 1000L),
-                            remainingLabel = "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                            remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
                         )
 
                         email.copy(
@@ -949,7 +949,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                 slaInfo = SlaInfo(
                     severity = slaSeverity,
                     deadlineTimestamp = receivedAt + (30 * 60 * 1000L),
-                    remainingLabel = "${((receivedAt + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                    remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((receivedAt + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
                 ),
                 deliveryStatus = DeliveryStatus.SENT
             )
@@ -1465,7 +1465,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         slaInfo = SlaInfo(
                             severity = slaSeverity,
                             deadlineTimestamp = timestamp + (30 * 60 * 1000L),
-                            remainingLabel = "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                            remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
                         ),
                         deliveryStatus = DeliveryStatus.SENT
                     )

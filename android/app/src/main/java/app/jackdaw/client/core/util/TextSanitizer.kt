@@ -41,6 +41,42 @@ object TextSanitizer {
             .trim()
         return cleaned.ifBlank { "(Без темы)" }
     }
+
+    /**
+     * Checks if the given address string is a Microsoft Exchange X.500 / LegacyExchangeDN path
+     * e.g., </O=SMARTDS/OU=EXCHANGE ADMINISTRATIVE GROUP (FYDIBOHF23SPDLT)/CN=RECIPIENTS/CN=USER831CE13E>.
+     */
+    fun isExchangeLegacyDn(address: String?): Boolean {
+        if (address.isNullOrBlank()) return false
+        val trimmed = address.trim().trim('<', '>', '"', '\'')
+        return trimmed.startsWith("/O=", ignoreCase = true) ||
+               trimmed.startsWith("/o=", ignoreCase = true) ||
+               (trimmed.contains("/OU=", ignoreCase = true) && trimmed.contains("/CN=", ignoreCase = true))
+    }
+
+    /**
+     * Cleans an email address for display in the UI.
+     * Replaces internal Exchange X.500 paths with clean account email in Sent items,
+     * or suppresses them in received emails so raw LDAP paths are never shown.
+     */
+    fun cleanEmailAddress(
+        address: String?,
+        isSentFolder: Boolean = false,
+        accountEmail: String? = null
+    ): String {
+        if (address.isNullOrBlank()) {
+            return if (isSentFolder && !accountEmail.isNullOrBlank()) accountEmail.trim() else ""
+        }
+        val clean = address.trim().trim('<', '>', '"', '\'')
+        if (isExchangeLegacyDn(clean)) {
+            return if (isSentFolder && !accountEmail.isNullOrBlank()) {
+                accountEmail.trim()
+            } else {
+                ""
+            }
+        }
+        return clean
+    }
 }
 
 /**
@@ -52,3 +88,9 @@ fun String?.cleanEmailPreview(): String = TextSanitizer.cleanPreview(this)
  * Extension property for quick cleaning of subjects.
  */
 fun String?.cleanEmailSubject(): String = TextSanitizer.cleanSubject(this)
+
+/**
+ * Extension function for sanitizing email address display.
+ */
+fun String?.cleanDisplayEmail(isSentFolder: Boolean = false, accountEmail: String? = null): String =
+    TextSanitizer.cleanEmailAddress(this, isSentFolder, accountEmail)

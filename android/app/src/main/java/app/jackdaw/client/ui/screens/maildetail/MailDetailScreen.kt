@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.util.cleanEmailPreview
 import app.jackdaw.client.core.util.cleanEmailSubject
+import app.jackdaw.client.core.util.cleanDisplayEmail
+import app.jackdaw.client.core.model.MailAccount
 import androidx.compose.ui.graphics.luminance
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -111,6 +113,7 @@ private data class SlaItemVisuals(
 fun MailDetailScreen(
     email: EmailMessage,
     threadEmails: List<EmailMessage> = emptyList(),
+    currentAccount: MailAccount? = null,
     onBack: () -> Unit,
     onReply: (EmailMessage) -> Unit,
     onDelete: (EmailMessage) -> Unit,
@@ -123,6 +126,16 @@ fun MailDetailScreen(
     val dateFormat = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale("ru"))
     val formattedDate = dateFormat.format(Date(email.timestamp))
     val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
+
+    val isInSent = email.folderId.contains("sent", ignoreCase = true)
+    val cleanSenderEmail = email.senderEmail.cleanDisplayEmail(
+        isSentFolder = isInSent,
+        accountEmail = currentAccount?.email
+    )
+    val cleanRecipients = email.toRecipients.mapNotNull { rec ->
+        val c = rec.cleanDisplayEmail(isSentFolder = false)
+        c.ifBlank { null }
+    }
     androidx.compose.runtime.LaunchedEffect(email.id) {
         if (!email.isRead && readStatusManager.mode == app.jackdaw.client.core.readstatus.MarkAsReadMode.AFTER_DELAY) {
             kotlinx.coroutines.delay(readStatusManager.delaySeconds * 1000L)
@@ -134,7 +147,6 @@ fun MailDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
                 title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -282,16 +294,20 @@ fun MailDetailScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(
-                        text = "<${email.senderEmail}>",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "кому: ${email.toRecipients.joinToString(", ")}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (cleanSenderEmail.isNotBlank()) {
+                        Text(
+                            text = "<$cleanSenderEmail>",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (cleanRecipients.isNotEmpty()) {
+                        Text(
+                            text = "кому: ${cleanRecipients.joinToString(", ")}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
 
                 Text(

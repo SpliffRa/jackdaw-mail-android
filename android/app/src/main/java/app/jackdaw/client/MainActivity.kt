@@ -194,6 +194,7 @@ fun JackdawMainApp(
         }
     ) {
         Scaffold(
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (showBottomBar) {
                     OutlookBottomNavigationBar(
@@ -222,7 +223,7 @@ fun JackdawMainApp(
                 startDestination = Screen.MailList.route,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(bottom = innerPadding.calculateBottomPadding())
             ) {
             composable(Screen.MailList.route) {
                 MailListScreen(
@@ -343,6 +344,7 @@ fun JackdawMainApp(
                     MailDetailScreen(
                         email = currentEmail,
                         threadEmails = threadEmails,
+                        currentAccount = activeAccount,
                         onBack = { navController.popBackStack() },
                         onReply = { replyToEmail ->
                             navController.navigate(Screen.Compose.createRoute(replyToEmail.id))
