@@ -121,7 +121,7 @@ class SoundNotificationManager(private val context: Context) {
 
     private fun playViaMediaPlayer(volume: Float) {
         try {
-            val mp = MediaPlayer.create(context, R.raw.chpok)
+            val mp = MediaPlayer.create(context, R.raw.chpok) ?: return
             mp.setOnCompletionListener { it.release() }
             mp.setVolume(volume, volume)
             mp.start()
