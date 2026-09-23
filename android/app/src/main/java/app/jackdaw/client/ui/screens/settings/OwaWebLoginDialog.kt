@@ -86,7 +86,8 @@ private const val TAG = "OwaWebLoginDialog"
 class JackdawBridge(
     private val onCanaryFound: (String) -> Unit,
     private val onSessionActive: () -> Unit,
-    private val onItemsExtracted: (String) -> Unit
+    private val onItemsExtracted: (String) -> Unit,
+    private val onCredentialsCaptured: (String, String) -> Unit = { _, _ -> }
 ) {
     @JavascriptInterface
     fun postCanary(canary: String) {
@@ -101,6 +102,11 @@ class JackdawBridge(
     @JavascriptInterface
     fun postItems(json: String) {
         if (json.isNotBlank()) onItemsExtracted(json)
+    }
+
+    @JavascriptInterface
+    fun postCredentials(user: String, pass: String) {
+        if (pass.isNotBlank()) onCredentialsCaptured(user, pass)
     }
 }
 
@@ -133,6 +139,8 @@ fun OwaWebLoginDialog(
     var sessionDetected by remember { mutableStateOf(false) }
     var capturedCookies by remember { mutableStateOf("") }
     var capturedCanary by remember { mutableStateOf("") }
+    var capturedUser by remember { mutableStateOf(autoLoginUser) }
+    var capturedPass by remember { mutableStateOf(autoLoginPassword) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var extractedCount by remember { mutableStateOf(0) }
 
@@ -207,6 +215,33 @@ fun OwaWebLoginDialog(
                             }
                         }
                     }
+                }
+
+                function captureCredentials() {
+                    try {
+                        var pInput = document.querySelector('input[type="password"]');
+                        var uInput = document.querySelector('input#username, input#userNameInput, input#loginfmt, input#email, input#user, input[name="username" i], input[name="UserName" i], input[type="email"], input[type="text"]');
+                        if (pInput && pInput.value) {
+                            var u = (uInput && uInput.value) ? uInput.value : '';
+                            if (window.JackdawBridge && window.JackdawBridge.postCredentials) {
+                                window.JackdawBridge.postCredentials(u, pInput.value);
+                            }
+                        }
+                    } catch(e) {}
+                }
+                document.addEventListener('submit', captureCredentials, true);
+                var forms = document.querySelectorAll('form');
+                for (var f = 0; f < forms.length; f++) {
+                    forms[f].addEventListener('submit', captureCredentials, true);
+                }
+                var buttons = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+                for (var b = 0; b < buttons.length; b++) {
+                    buttons[b].addEventListener('click', captureCredentials, true);
+                }
+                var pField = document.querySelector('input[type="password"]');
+                if (pField) {
+                    pField.addEventListener('blur', captureCredentials, true);
+                    pField.addEventListener('change', captureCredentials, true);
                 }
 
                 doAutofill();
@@ -485,8 +520,8 @@ fun OwaWebLoginDialog(
             serverHost = normalizedUrl,
             authSessionToken = finalCanary,
             authSessionCookies = finalCookies,
-            loginUser = autoLoginUser.trim(),
-            savedPassword = autoLoginPassword
+            loginUser = capturedUser.ifBlank { autoLoginUser }.trim(),
+            savedPassword = capturedPass.ifBlank { autoLoginPassword }
         )
         onAccountAuthorized(account)
     }
@@ -653,6 +688,10 @@ fun OwaWebLoginDialog(
                                         onItemsExtracted = { json ->
                                             sessionDetected = true
                                             saveExtractedJson(json)
+                                        },
+                                        onCredentialsCaptured = { user, pass ->
+                                            if (user.isNotBlank()) capturedUser = user
+                                            if (pass.isNotBlank()) capturedPass = pass
                                         }
                                     ),
                                     "JackdawBridge"

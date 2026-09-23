@@ -170,5 +170,24 @@ class OwaProtocolEngineTest {
         assertEquals(0, folders[1].unreadCount)
         assertEquals(15, folders[1].totalCount)
     }
+
+    @Test
+    fun testFindItemPayloadSortOrder() {
+        val engine = OwaProtocolEngine()
+        val payload = engine.buildFindItemEmailPayload("inbox")
+        val body = payload.getJSONObject("Body")
+        val sortOrder = body.getJSONArray("SortOrder")
+        assertEquals(1, sortOrder.length())
+        val firstSort = sortOrder.getJSONObject(0)
+        assertEquals("Descending", firstSort.getString("Order"))
+        val path = firstSort.getJSONObject("Path")
+        assertEquals("item:DateTimeReceived", path.getString("FieldURI"))
+
+        val parentFolderIds = body.getJSONArray("ParentFolderIds")
+        assertEquals(1, parentFolderIds.length())
+        val parent = parentFolderIds.getJSONObject(0)
+        assertEquals("DistinguishedFolderId:#Exchange", parent.getString("__type"))
+        assertEquals("inbox", parent.getString("Id"))
+    }
 }
 

@@ -136,9 +136,7 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         try {
             val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
-                ?: return@withContext emptyList()
-
-            val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
+            val emails = if (responseJson != null) parseEmailsFromFindItemResponse(account, folderId, responseJson) else emptyList()
             val finalEmails = if (emails.isNotEmpty()) {
                 // Fetch full metadata (From, To, Subject, Body) via GetItem
                 val detailsMap = fetchEmailDetails(account, emails.map { it.id })
@@ -386,21 +384,12 @@ class OwaProtocolEngine : MailProtocolEngine {
     private val trustAllHostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
 
     private fun resolveCookies(account: MailAccount): String {
-        val list = mutableListOf<String>()
+        val map = LinkedHashMap<String, String>()
+        
+        // 1. Base cookies saved in account
         val saved = account.authSessionCookies.trim()
-        if (saved.isNotBlank()) list.add(saved)
-
-        val host = runCatching { URL(account.serverHost).host }.getOrNull()
-        if (!host.isNullOrBlank()) {
-            val cm = android.webkit.CookieManager.getInstance()
-            cm.getCookie("https://$host/owa/")?.let { if (it.isNotBlank()) list.add(it) }
-            cm.getCookie("https://$host/")?.let { if (it.isNotBlank()) list.add(it) }
-            cm.getCookie(account.serverHost)?.let { if (it.isNotBlank()) list.add(it) }
-        }
-
-        val map = mutableMapOf<String, String>()
-        for (cookieHeader in list) {
-            for (part in cookieHeader.split(";")) {
+        if (saved.isNotBlank()) {
+            for (part in saved.split(";")) {
                 val kv = part.split("=", limit = 2)
                 if (kv.size == 2) {
                     val k = kv[0].trim()
@@ -409,6 +398,32 @@ class OwaProtocolEngine : MailProtocolEngine {
                 }
             }
         }
+
+        // 2. Fresh cookies from system CookieManager (take precedence over stale saved cookies)
+        val host = runCatching { URL(account.serverHost).host }.getOrNull()
+        if (!host.isNullOrBlank()) {
+            val cm = android.webkit.CookieManager.getInstance()
+            cm.flush()
+            val candidateCookieUrls = listOf(
+                "https://$host/owa/",
+                "https://$host/",
+                "https://$host/owa/service.svc",
+                "https://$host/EWS/Exchange.asmx",
+                account.serverHost
+            )
+            for (curl in candidateCookieUrls) {
+                val header = cm.getCookie(curl) ?: continue
+                for (part in header.split(";")) {
+                    val kv = part.split("=", limit = 2)
+                    if (kv.size == 2) {
+                        val k = kv[0].trim()
+                        val v = kv[1].trim()
+                        if (k.isNotBlank()) map[k] = v
+                    }
+                }
+            }
+        }
+
         return map.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 
@@ -476,9 +491,16 @@ class OwaProtocolEngine : MailProtocolEngine {
                     doOutput = true
                     connectTimeout = 15000
                     readTimeout = 20000
+                    val origin = "https://${url.host}"
                     setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01")
+                    setRequestProperty("X-Requested-With", "XMLHttpRequest")
+                    setRequestProperty("Origin", origin)
+                    setRequestProperty("Referer", "$origin/owa/")
                     setRequestProperty("User-Agent", USER_AGENT)
                     setRequestProperty("Action", actionName)
+                    setRequestProperty("X-OWA-ActionName", "${actionName}Action")
+                    setRequestProperty("X-OWA-Attempt", "1")
                     if (effectiveCanary.isNotBlank()) {
                         setRequestProperty("X-OWA-CANARY", effectiveCanary)
                     }
@@ -487,10 +509,6 @@ class OwaProtocolEngine : MailProtocolEngine {
                     }
                     if (account != null && account.email.isNotBlank()) {
                         setRequestProperty("x-anchormailbox", account.email.trim())
-                    }
-                    val jsonStr = jsonBody.toString()
-                    if (jsonStr.length < 512) {
-                        setRequestProperty("x-owa-urlpostdata", java.net.URLEncoder.encode(jsonStr, "UTF-8"))
                     }
                     if (account != null && account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
@@ -511,6 +529,22 @@ class OwaProtocolEngine : MailProtocolEngine {
                         if (responseText.trimStart().startsWith("<")) {
                             Log.w(TAG, "OWA endpoint returned HTML page instead of JSON (session expired, HTTP $code)")
                             OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сервер вернул страницу входа (сессия истекла)")
+                            if (!isRetryAfterAuth && account != null) {
+                                val cm = runCatching { CookieManager.getInstance() }.getOrNull()
+                                val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
+                                if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
+                                    val freshCanary = OwaAuthManager.extractCanary(freshCookies).orEmpty()
+                                    return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
+                                }
+                                if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                                    val authResult = kotlinx.coroutines.runBlocking {
+                                        OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
+                                    }
+                                    if (authResult.isSuccess) {
+                                        return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
+                                    }
+                                }
+                            }
                             return null
                         }
                         val json = JSONObject(responseText)
@@ -672,7 +706,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
-    private fun buildFindItemEmailPayload(folderId: String): JSONObject {
+    internal fun buildFindItemEmailPayload(folderId: String): JSONObject {
         val targetFolder = when {
             folderId.endsWith("inbox", ignoreCase = true) || folderId.equals("inbox", ignoreCase = true) -> "inbox"
             folderId.endsWith("sent", ignoreCase = true) || folderId.equals("sentitems", ignoreCase = true) -> "sentitems"
@@ -717,12 +751,24 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("MaxEntriesReturned", 100)
         }
 
+        val sortOrder = JSONArray().apply {
+            put(JSONObject().apply {
+                put("__type", "SortResults:#Exchange")
+                put("Order", "Descending")
+                put("Path", JSONObject().apply {
+                    put("__type", "PropertyUri:#Exchange")
+                    put("FieldURI", "item:DateTimeReceived")
+                })
+            })
+        }
+
         val body = JSONObject().apply {
             put("__type", "FindItemRequest:#Exchange")
             put("ItemShape", itemShape)
             put("ParentFolderIds", parentFolderIds)
             put("Traversal", "Shallow")
             put("Paging", paging)
+            put("SortOrder", sortOrder)
         }
 
         val header = JSONObject().apply {
@@ -1378,6 +1424,11 @@ class OwaProtocolEngine : MailProtocolEngine {
                     <t:BaseShape>AllProperties</t:BaseShape>
                   </m:ItemShape>
                   <m:IndexedPageItemView MaxEntriesReturned="50" Offset="0" BasePoint="Beginning" />
+                  <m:SortOrder>
+                    <t:FieldOrder Order="Descending">
+                      <t:FieldURI FieldURI="item:DateTimeReceived" />
+                    </t:FieldOrder>
+                  </m:SortOrder>
                   <m:ParentFolderIds>
                     $folderXml
                   </m:ParentFolderIds>
