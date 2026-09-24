@@ -870,15 +870,23 @@ class OfflineFirstMailRepository(
             val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
             val targetFile = java.io.File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
 
-            if (targetFile.exists() && targetFile.length() > 0L) {
-                return targetFile
+            if (targetFile.exists()) {
+                if (targetFile.length() > 0L) {
+                    return targetFile
+                } else {
+                    targetFile.delete()
+                }
             }
 
             val bytes = mailProtocolEngine.downloadAttachment(account, attachment.id)
             if (bytes != null && bytes.isNotEmpty()) {
                 targetFile.writeBytes(bytes)
-                attachmentDao.updateAttachmentLocalUri(attachment.id, targetFile.absolutePath)
-                return targetFile
+                if (targetFile.exists() && targetFile.length() > 0L) {
+                    attachmentDao.updateAttachmentLocalUri(attachment.id, targetFile.absolutePath)
+                    return targetFile
+                }
+            } else if (targetFile.exists()) {
+                targetFile.delete()
             }
         } catch (e: Exception) {
             android.util.Log.e("MailRepository", "Error downloading attachment ${attachment.fileName}", e)

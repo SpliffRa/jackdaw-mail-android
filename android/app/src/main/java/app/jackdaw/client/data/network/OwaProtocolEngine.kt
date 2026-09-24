@@ -465,15 +465,17 @@ class OwaProtocolEngine : MailProtocolEngine {
         val (cookies, canary) = ensureSession(account)
         if (serverUrl.isBlank() || cookies.isBlank()) return@withContext null
 
-        try {
-            val baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
-            val downloadUrl = if (baseUrl.contains("/owa", ignoreCase = true)) {
-                val owaRoot = baseUrl.substringBefore("/owa", "") + "/owa/"
-                "${owaRoot}service.svc/s/GetFileAttachment?id=${java.net.URLEncoder.encode(attachmentId, "UTF-8")}"
-            } else {
-                "${baseUrl}service.svc/s/GetFileAttachment?id=${java.net.URLEncoder.encode(attachmentId, "UTF-8")}"
-            }
+        val encodedAttId = java.net.URLEncoder.encode(attachmentId, "UTF-8")
+        val baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
+        val owaRoot = if (baseUrl.contains("/owa", ignoreCase = true)) {
+            baseUrl.substringBefore("/owa", "") + "/owa/"
+        } else {
+            "${baseUrl}owa/"
+        }
 
+        // 1. Try REST GetFileAttachment endpoint
+        try {
+            val downloadUrl = "${owaRoot}service.svc/s/GetFileAttachment?id=$encodedAttId"
             val url = URL(downloadUrl)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 if (this is javax.net.ssl.HttpsURLConnection) {
@@ -485,24 +487,92 @@ class OwaProtocolEngine : MailProtocolEngine {
                 connectTimeout = 15000
                 readTimeout = 30000
                 setRequestProperty("Cookie", cookies)
-                if (canary.isNotBlank()) {
-                    setRequestProperty("X-OWA-CANARY", canary)
-                }
+                if (canary.isNotBlank()) setRequestProperty("X-OWA-CANARY", canary)
                 setRequestProperty("User-Agent", USER_AGENT)
-                if (account.email.isNotBlank()) {
-                    setRequestProperty("x-anchormailbox", account.email.trim())
-                }
+                if (account.email.isNotBlank()) setRequestProperty("x-anchormailbox", account.email.trim())
             }
 
             val code = conn.responseCode
             if (code in 200..299) {
-                return@withContext conn.inputStream.use { it.readBytes() }
+                val bytes = conn.inputStream.use { it.readBytes() }
+                if (bytes.isNotEmpty()) return@withContext bytes
             } else {
-                Log.w(TAG, "GetFileAttachment failed with HTTP $code")
+                Log.w(TAG, "GetFileAttachment returned HTTP $code, trying JSON-RPC...")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to download attachment $attachmentId", e)
+            Log.w(TAG, "GetFileAttachment failed for $attachmentId: ${e.message}")
         }
+
+        // 2. Fallback to Exchange JSON-RPC GetAttachment
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "GetAttachment")
+            val getAttPayload = JSONObject().apply {
+                put("__type", "GetAttachmentJsonRequest:#Exchange")
+                put("Header", JSONObject().apply {
+                    put("__type", "JsonRequestHeaders:#Exchange")
+                    put("RequestServerVersion", "Exchange2013")
+                })
+                put("Body", JSONObject().apply {
+                    put("__type", "GetAttachmentRequest:#Exchange")
+                    put("AttachmentShape", JSONObject().apply {
+                        put("__type", "AttachmentResponseShape:#Exchange")
+                    })
+                    put("AttachmentIds", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("__type", "RequestAttachmentId:#Exchange")
+                            put("Id", attachmentId)
+                        })
+                    })
+                })
+            }
+            val respJson = executeOwaJsonPost(owaServiceUrl, getAttPayload, cookies, canary, account)
+            if (respJson != null) {
+                val respBody = respJson.optJSONObject("Body") ?: respJson
+                val items = respBody.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                if (items != null && items.length() > 0) {
+                    val atts = items.optJSONObject(0)?.optJSONArray("Attachments")
+                    if (atts != null && atts.length() > 0) {
+                        val base64Content = atts.optJSONObject(0)?.optString("Content", "")
+                        if (!base64Content.isNullOrBlank()) {
+                            val decoded = android.util.Base64.decode(base64Content, android.util.Base64.DEFAULT)
+                            if (decoded != null && decoded.isNotEmpty()) {
+                                return@withContext decoded
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "GetAttachment JSON-RPC failed for $attachmentId: ${e.message}")
+        }
+
+        // 3. Fallback to attachment.ashx
+        try {
+            val ashxUrl = "${owaRoot}attachment.ashx?attachId=$encodedAttId"
+            val url = URL(ashxUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                if (this is javax.net.ssl.HttpsURLConnection) {
+                    sslSocketFactory = trustAllSslSocketFactory
+                    hostnameVerifier = trustAllHostnameVerifier
+                }
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 30000
+                setRequestProperty("Cookie", cookies)
+                if (canary.isNotBlank()) setRequestProperty("X-OWA-CANARY", canary)
+                setRequestProperty("User-Agent", USER_AGENT)
+                if (account.email.isNotBlank()) setRequestProperty("x-anchormailbox", account.email.trim())
+            }
+
+            if (conn.responseCode in 200..299) {
+                val bytes = conn.inputStream.use { it.readBytes() }
+                if (bytes.isNotEmpty()) return@withContext bytes
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "attachment.ashx failed for $attachmentId: ${e.message}")
+        }
+
         null
     }
 
@@ -1120,10 +1190,19 @@ class OwaProtocolEngine : MailProtocolEngine {
             })
         }
 
+        val additionalProperties = JSONArray().apply {
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Body") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:NormalizedBody") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:TextBody") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Attachments") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Subject") })
+        }
+
         val itemShape = JSONObject().apply {
             put("__type", "ItemResponseShape:#Exchange")
-            put("BaseShape", "Default")
-            put("BodyType", "HTML")
+            put("BaseShape", "AllProperties")
+            put("BodyType", "Best")
+            put("AdditionalProperties", additionalProperties)
         }
 
         val body = JSONObject().apply {

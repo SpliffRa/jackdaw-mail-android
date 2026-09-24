@@ -338,7 +338,7 @@ fun MailDetailScreen(
                         email.snippet.isNotBlank() -> email.snippet
                         else -> "(Письмо не содержит текста)"
                     }
-                    plainTextToHtml(displayText.cleanEmailPreview())
+                    plainTextToHtml(displayText)
                 }
             }
 
@@ -377,8 +377,7 @@ fun MailDetailScreen(
             }
 
             // Dynamic height measurement of exact content to eliminate clipping and empty space
-            var webViewHeightPx by remember(email.id, effectiveDark, rawHtmlContent.hashCode()) { mutableIntStateOf(160) }
-            val webViewHeightDp = (webViewHeightPx + 32).coerceAtLeast(100).dp
+            var webViewHeightDp by remember(email.id, effectiveDark, rawHtmlContent.hashCode()) { mutableStateOf(200.dp) }
 
             val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
             val linkColor = if (effectiveDark) "#64B5F6" else "#1976D2"
@@ -388,24 +387,26 @@ fun MailDetailScreen(
                 <html>
                 <head>
                 <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
                 <style>
                   * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
                   html, body {
                     margin: 0; padding: 0;
+                    width: 100%% !important;
                     background: transparent !important;
                     color: $textColor !important;
                     font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
                     font-size: 15px;
                     line-height: 1.55;
-                    word-break: normal;
+                    word-break: break-word;
+                    overflow-wrap: break-word;
                     overflow-y: visible !important;
                     height: auto !important;
                   }
                   #jackdaw-content-root {
                     margin: 0;
-                    padding: 10px 12px;
-                    width: 100%%;
+                    padding: 10px 12px 24px 12px;
+                    width: 100%% !important;
                     box-sizing: border-box;
                     overflow-y: visible !important;
                     height: auto !important;
@@ -436,9 +437,21 @@ fun MailDetailScreen(
                 <script>
                   function reportHeight() {
                     var r = document.getElementById('jackdaw-content-root');
-                    var h = r ? Math.ceil(Math.max(r.scrollHeight || 0, r.offsetHeight || 0, r.getBoundingClientRect().height || 0)) : Math.ceil(document.body.scrollHeight || 0);
-                    if (window.JackdawBridge && h > 0) {
-                      window.JackdawBridge.onHeightChanged(h);
+                    var b = document.body;
+                    var d = document.documentElement;
+                    var h = 0;
+                    if (r) {
+                      h = Math.max(r.scrollHeight || 0, r.offsetHeight || 0, r.getBoundingClientRect().height || 0);
+                    }
+                    if (b) {
+                      h = Math.max(h, b.scrollHeight || 0, b.offsetHeight || 0);
+                    }
+                    if (d) {
+                      h = Math.max(h, d.scrollHeight || 0, d.offsetHeight || 0);
+                    }
+                    var finalH = Math.ceil(h);
+                    if (window.JackdawBridge && finalH > 0) {
+                      window.JackdawBridge.onHeightChanged(finalH);
                     }
                   }
                   function adaptContent() {
@@ -491,10 +504,15 @@ fun MailDetailScreen(
                     adaptContent();
                     reportHeight();
                     setTimeout(reportHeight, 300);
-                    setTimeout(reportHeight, 1000);
+                    setTimeout(reportHeight, 800);
+                    setTimeout(reportHeight, 1800);
                   });
                   if (window.ResizeObserver) {
                     new ResizeObserver(function() { reportHeight(); }).observe(document.body);
+                    var contentRoot = document.getElementById('jackdaw-content-root');
+                    if (contentRoot) {
+                      new ResizeObserver(function() { reportHeight(); }).observe(contentRoot);
+                    }
                   }
                 </script>
                 </head>
@@ -513,7 +531,10 @@ fun MailDetailScreen(
                             fun onHeightChanged(h: Int) {
                                 if (h > 0) {
                                     post {
-                                        webViewHeightPx = maxOf(webViewHeightPx, h)
+                                        val measuredDp = (h + 48).coerceAtLeast(140).dp
+                                        if (measuredDp > webViewHeightDp) {
+                                            webViewHeightDp = measuredDp
+                                        }
                                     }
                                 }
                             }
@@ -532,19 +553,22 @@ fun MailDetailScreen(
 
                             override fun onPageFinished(view: WebView, url: String) {
                                 view.evaluateJavascript("adaptContent(); reportHeight();") { }
+                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 300)
+                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 800)
+                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 1800)
                             }
                         }
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = false
-                            loadWithOverviewMode = true
-                            useWideViewPort = true
-                            setSupportZoom(true)
-                            builtInZoomControls = true
+                            loadWithOverviewMode = false
+                            useWideViewPort = false
+                            setSupportZoom(false)
+                            builtInZoomControls = false
                             displayZoomControls = false
                             cacheMode = WebSettings.LOAD_NO_CACHE
                         }
-                        isVerticalScrollBarEnabled = true
+                        isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
@@ -553,7 +577,7 @@ fun MailDetailScreen(
                 update = { view ->
                     if (view.tag != viewTag) {
                         view.tag = viewTag
-                        webViewHeightPx = 160
+                        webViewHeightDp = 200.dp
                         view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
                     }
@@ -663,19 +687,26 @@ fun MailDetailScreen(
             if (email.attachments.isNotEmpty()) {
                 var downloadingAttachmentId by remember { mutableStateOf<String?>(null) }
                 val handleOpenAttachment = { attachment: Attachment ->
+                    val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+                    val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+                    val targetFile = File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
+                    val localFile = if (!attachment.localUri.isNullOrBlank()) File(attachment.localUri) else null
+
                     if (downloadingAttachmentId == attachment.id) {
-                        Toast.makeText(context, "Файл уже скачивается...", Toast.LENGTH_SHORT).show()
-                    } else if (!attachment.localUri.isNullOrBlank() && java.io.File(attachment.localUri).exists()) {
-                        openFile(context, java.io.File(attachment.localUri), attachment.mimeType)
+                        Toast.makeText(context, "Файл уже загружается, пожалуйста подождите...", Toast.LENGTH_SHORT).show()
+                    } else if (localFile != null && localFile.exists() && localFile.length() > 0L) {
+                        openFile(context, localFile, attachment.mimeType)
+                    } else if (targetFile.exists() && targetFile.length() > 0L) {
+                        openFile(context, targetFile, attachment.mimeType)
                     } else {
                         downloadingAttachmentId = attachment.id
-                        Toast.makeText(context, "Загрузка вложения ${attachment.fileName}...", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Загрузка вложения «${attachment.fileName}»...", Toast.LENGTH_SHORT).show()
                         onDownloadAttachment(attachment) { file ->
                             downloadingAttachmentId = null
-                            if (file != null && file.exists()) {
+                            if (file != null && file.exists() && file.length() > 0L) {
                                 openFile(context, file, attachment.mimeType)
                             } else {
-                                openAttachment(context, attachment)
+                                Toast.makeText(context, "Не удалось загрузить «${attachment.fileName}». Файл недоступен на сервере.", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -928,6 +959,10 @@ fun MailDetailScreen(
 }
 
 private fun openFile(context: Context, file: File, mimeType: String) {
+    if (!file.exists() || file.length() <= 0L) {
+        Toast.makeText(context, "Файл не найден или пуст", Toast.LENGTH_SHORT).show()
+        return
+    }
     try {
         val contentUri = FileProvider.getUriForFile(
             context,
@@ -945,35 +980,6 @@ private fun openFile(context: Context, file: File, mimeType: String) {
         context.startActivity(chooser)
     } catch (e: Exception) {
         Toast.makeText(context, "Не удалось открыть файл: ${e.message}", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun openAttachment(context: Context, attachment: Attachment) {
-    try {
-        val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
-        val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
-        val targetFile = File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
-
-        if (targetFile.exists() && targetFile.length() > 0L) {
-            openFile(context, targetFile, attachment.mimeType)
-            return
-        }
-
-        if (!attachment.localUri.isNullOrBlank()) {
-            val uri = Uri.parse(attachment.localUri)
-            if (uri.scheme == "file") {
-                val srcFile = File(uri.path ?: "")
-                if (srcFile.exists() && srcFile.absolutePath != targetFile.absolutePath) {
-                    srcFile.copyTo(targetFile, overwrite = true)
-                    openFile(context, targetFile, attachment.mimeType)
-                    return
-                }
-            }
-        }
-
-        Toast.makeText(context, "Файл ${attachment.fileName} загружается с сервера...", Toast.LENGTH_SHORT).show()
-    } catch (e: Exception) {
-        Toast.makeText(context, "Не удалось открыть ${attachment.fileName}: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
 

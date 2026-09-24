@@ -296,38 +296,45 @@ class MailViewModel(
         return repository.getEmailById(emailId)
     }
 
+    private val loadingEmailBodyIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     fun loadEmailBodyIfNeeded(email: EmailMessage) {
         val hasPlaceholderAttachment = email.attachments.any { it.fileName == "Вложение" && it.sizeBytes == 24500L }
-        val isFullBodyLoaded = !email.bodyHtml.isNullOrBlank() && 
-            email.bodyHtml.length > 500 && 
-            !hasPlaceholderAttachment && 
-            email.bodyText.length > 255
+        // Full body is already present if bodyHtml is non-empty or bodyText is longer than the 255-char FindItem preview
+        val isFullBodyLoaded = (!email.bodyHtml.isNullOrBlank() || (email.bodyText.isNotBlank() && email.bodyText.length > 300)) && !hasPlaceholderAttachment
 
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {
-            viewModelScope.launch {
-                val account = currentAccount.value ?: return@launch
-                val success = repository.fetchEmailFullDetails(account, email.id)
-                if (!success) {
-                    val pair = repository.fetchEmailBodyDirect(account, email.id)
-                    if (pair != null) {
-                        val bodyText = pair.first.ifBlank { email.bodyText }
-                        val bodyHtml = pair.second.ifBlank { email.bodyHtml }
-                        val snippet = pair.first.take(150).ifBlank { email.snippet }
-                        repository.updateEmailBody(email.id, bodyText, bodyHtml, snippet)
+            if (!loadingEmailBodyIds.add(email.id)) return
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val account = currentAccount.value ?: return@launch
+                    val success = repository.fetchEmailFullDetails(account, email.id)
+                    if (!success) {
+                        val pair = repository.fetchEmailBodyDirect(account, email.id)
+                        if (pair != null) {
+                            val bodyText = pair.first.ifBlank { email.bodyText }
+                            val bodyHtml = pair.second.ifBlank { email.bodyHtml }
+                            val snippet = pair.first.take(150).ifBlank { email.snippet }
+                            repository.updateEmailBody(email.id, bodyText, bodyHtml, snippet)
+                        }
                     }
+                } finally {
+                    loadingEmailBodyIds.remove(email.id)
                 }
             }
         }
     }
 
     fun downloadAttachment(attachment: Attachment, onReady: (java.io.File?) -> Unit) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val account = currentAccount.value ?: run {
-                onReady(null)
+                kotlinx.coroutines.withContext(Dispatchers.Main) { onReady(null) }
                 return@launch
             }
             val file = repository.downloadAttachment(account, attachment)
-            onReady(file)
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onReady(file)
+            }
         }
     }
 
