@@ -451,6 +451,9 @@ fun JackdawMainApp(
                         },
                         onDownloadAttachment = { attachment, onFileReady ->
                             viewModel.downloadAttachment(attachment, onFileReady)
+                        },
+                        onReloadBody = {
+                            viewModel.loadEmailBodyIfNeeded(currentEmail, force = true)
                         }
                     )
                 } else {

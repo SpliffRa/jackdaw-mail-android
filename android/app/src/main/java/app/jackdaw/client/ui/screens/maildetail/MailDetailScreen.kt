@@ -128,6 +128,7 @@ fun MailDetailScreen(
     onToggleStar: (Boolean) -> Unit,
     onToggleRead: (Boolean) -> Unit = {},
     onDownloadAttachment: (Attachment, (java.io.File?) -> Unit) -> Unit = { _, cb -> cb(null) },
+    onReloadBody: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -623,74 +624,117 @@ fun MailDetailScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-            // Body HTML Document
-            val rawBodyContent = remember(displayedEmail.id, displayedEmail.bodyHtml, displayedEmail.bodyText, displayedEmail.snippet) {
-                if (!displayedEmail.bodyHtml.isNullOrBlank()) {
-                    displayedEmail.bodyHtml!!
-                } else {
-                    val displayText = when {
-                        displayedEmail.bodyText.isNotBlank() && displayedEmail.bodyText != displayedEmail.subject -> displayedEmail.bodyText
-                        displayedEmail.snippet.isNotBlank() -> displayedEmail.snippet
-                        else -> "(Письмо не содержит текста)"
+            val hasFullHtml = !displayedEmail.bodyHtml.isNullOrBlank()
+            val hasFullText = displayedEmail.bodyText.length > 300 && 
+                              displayedEmail.bodyText != displayedEmail.snippet && 
+                              !displayedEmail.bodyText.endsWith("...")
+            val isBodyLoading = !hasFullHtml && !hasFullText
+
+            if (isBodyLoading) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = JackdawAmber,
+                            modifier = Modifier.size(36.dp),
+                            strokeWidth = 3.dp
+                        )
+                        Text(
+                            text = "Загрузка полного письма...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Surface(
+                            onClick = { onReloadBody() },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = "Обновить письмо",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = JackdawAmber,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                            )
+                        }
                     }
-                    plainTextToHtml(displayText)
                 }
-            }
-
-            val htmlDocument = remember(displayedEmail.id, effectiveDark, rawBodyContent.hashCode()) {
-                prepareEmailHtml(rawBodyContent, effectiveDark)
-            }
-
-            val webViewTag = "${displayedEmail.id}_${effectiveDark}_${rawBodyContent.hashCode()}"
-
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        tag = webViewTag
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                val uri = request?.url ?: return false
-                                return handleUriRedirect(ctx, uri)
-                            }
-
-                            @Deprecated("Deprecated in Java")
-                            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                                val uri = url?.let { Uri.parse(it) } ?: return false
-                                return handleUriRedirect(ctx, uri)
-                            }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                view?.evaluateJavascript("fixDarkColors();", null)
-                            }
+            } else {
+                val rawBodyContent = remember(displayedEmail.id, displayedEmail.bodyHtml, displayedEmail.bodyText, displayedEmail.snippet) {
+                    if (hasFullHtml) {
+                        displayedEmail.bodyHtml!!
+                    } else {
+                        val displayText = when {
+                            displayedEmail.bodyText.isNotBlank() && displayedEmail.bodyText != displayedEmail.subject -> displayedEmail.bodyText
+                            displayedEmail.snippet.isNotBlank() -> displayedEmail.snippet
+                            else -> "(Письмо не содержит текста)"
                         }
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            loadWithOverviewMode = true
-                            useWideViewPort = true
-                            setSupportZoom(true)
-                            builtInZoomControls = true
-                            displayZoomControls = false
-                            cacheMode = WebSettings.LOAD_NO_CACHE
+                        plainTextToHtml(displayText)
+                    }
+                }
+
+                val htmlDocument = remember(displayedEmail.id, effectiveDark, rawBodyContent.hashCode()) {
+                    prepareEmailHtml(rawBodyContent, effectiveDark)
+                }
+
+                val webViewTag = "${displayedEmail.id}_${effectiveDark}_${rawBodyContent.hashCode()}"
+
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            tag = webViewTag
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                    val uri = request?.url ?: return false
+                                    return handleUriRedirect(ctx, uri)
+                                }
+
+                                @Deprecated("Deprecated in Java")
+                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                    val uri = url?.let { Uri.parse(it) } ?: return false
+                                    return handleUriRedirect(ctx, uri)
+                                }
+
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    view?.evaluateJavascript("fixDarkColors();", null)
+                                }
+                            }
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                loadWithOverviewMode = true
+                                useWideViewPort = true
+                                setSupportZoom(true)
+                                builtInZoomControls = true
+                                displayZoomControls = false
+                                cacheMode = WebSettings.LOAD_NO_CACHE
+                            }
+                            isVerticalScrollBarEnabled = true
+                            isHorizontalScrollBarEnabled = true
+                            setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                            loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
                         }
-                        isVerticalScrollBarEnabled = true
-                        isHorizontalScrollBarEnabled = true
-                        setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
-                        loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
-                    }
-                },
-                update = { view ->
-                    if (view.tag != webViewTag) {
-                        view.tag = webViewTag
-                        view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
-                        view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
-                    }
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            )
+                    },
+                    update = { view ->
+                        if (view.tag != webViewTag) {
+                            view.tag = webViewTag
+                            view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                            view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                )
+            }
         }
     }
 

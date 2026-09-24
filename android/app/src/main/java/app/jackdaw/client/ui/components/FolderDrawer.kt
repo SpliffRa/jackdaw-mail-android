@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.Done
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -107,9 +108,9 @@ fun FolderDrawer(
     val regularFolders = remember(folders) {
         folders.filter { it.type != FolderType.SLA_ALERTS }
     }
-    // Mutable local list for reordering, automatically synced when outside reorder mode
-    val reorderList = remember(regularFolders) { regularFolders.toMutableStateList() }
-    LaunchedEffect(regularFolders) {
+    // Mutable local list for reordering, synced only when outside reorder mode to prevent Room emission resets during drag
+    val reorderList = remember { mutableStateListOf<Folder>() }
+    LaunchedEffect(regularFolders, isReorderMode) {
         if (!isReorderMode) {
             reorderList.clear()
             reorderList.addAll(regularFolders)
@@ -134,7 +135,7 @@ fun FolderDrawer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
+                .verticalScroll(scrollState, enabled = draggedId == null)
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
             // Header / Current Account Switcher
@@ -446,42 +447,6 @@ fun FolderDrawer(
                                         )
                                     }
                                 )
-                                .pointerInput(folder.id) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            draggedId = folder.id
-                                            dragOffsetY = 0f
-                                        },
-                                        onDragEnd = {
-                                            draggedId = null
-                                            dragOffsetY = 0f
-                                            onReorderFolders(reorderList.map { it.id })
-                                        },
-                                        onDragCancel = {
-                                            draggedId = null
-                                            dragOffsetY = 0f
-                                        },
-                                        onDrag = { change, dragAmount ->
-                                            change.consume()
-                                            dragOffsetY += dragAmount.y
-                                            val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
-                                            if (currentIdx != -1) {
-                                                val step = if (itemHeightPx > 0f) itemHeightPx else 48f
-                                                if (dragOffsetY > step * 0.5f && currentIdx < reorderList.size - 1) {
-                                                    val item = reorderList.removeAt(currentIdx)
-                                                    reorderList.add(currentIdx + 1, item)
-                                                    dragOffsetY -= step
-                                                    onReorderFolders(reorderList.map { it.id })
-                                                } else if (dragOffsetY < -step * 0.5f && currentIdx > 0) {
-                                                    val item = reorderList.removeAt(currentIdx)
-                                                    reorderList.add(currentIdx - 1, item)
-                                                    dragOffsetY += step
-                                                    onReorderFolders(reorderList.map { it.id })
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
                                 .padding(
                                     start = if (isReorderMode) 8.dp else 12.dp,
                                     end = if (isReorderMode) 8.dp else 12.dp,
@@ -574,12 +539,12 @@ fun FolderDrawer(
                                 }
                             }
 
-                            // In reorder mode: show clean Drag Handle on the right with immediate drag support
+                            // In reorder mode: show clean Drag Handle on the right with immediate finger drag support
                             if (isReorderMode) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .size(40.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(
                                             if (isBeingDragged) JackdawAmber.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
@@ -591,9 +556,10 @@ fun FolderDrawer(
                                                     dragOffsetY = 0f
                                                 },
                                                 onDragEnd = {
+                                                    val finalOrder = reorderList.map { it.id }
                                                     draggedId = null
                                                     dragOffsetY = 0f
-                                                    onReorderFolders(reorderList.map { it.id })
+                                                    onReorderFolders(finalOrder)
                                                 },
                                                 onDragCancel = {
                                                     draggedId = null
@@ -609,12 +575,10 @@ fun FolderDrawer(
                                                             val item = reorderList.removeAt(currentIdx)
                                                             reorderList.add(currentIdx + 1, item)
                                                             dragOffsetY -= step
-                                                            onReorderFolders(reorderList.map { it.id })
                                                         } else if (dragOffsetY < -step * 0.5f && currentIdx > 0) {
                                                             val item = reorderList.removeAt(currentIdx)
                                                             reorderList.add(currentIdx - 1, item)
                                                             dragOffsetY += step
-                                                            onReorderFolders(reorderList.map { it.id })
                                                         }
                                                     }
                                                 }
@@ -626,7 +590,7 @@ fun FolderDrawer(
                                         imageVector = Icons.Rounded.DragHandle,
                                         contentDescription = "Перетащить",
                                         tint = if (isBeingDragged) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }

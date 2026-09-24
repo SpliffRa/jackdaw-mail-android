@@ -280,27 +280,38 @@ class MailViewModel(
 
     private val loadingEmailBodyIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    fun loadEmailBodyIfNeeded(email: EmailMessage) {
+    fun loadEmailBodyIfNeeded(email: EmailMessage, force: Boolean = false) {
         val hasPlaceholderAttachment = email.attachments.any { 
             it.fileName == "Вложение" || it.sizeBytes == 24500L || it.id.contains("_att_") 
         }
         val hasCidInHtml = email.bodyHtml?.contains("cid:", ignoreCase = true) == true
         val needsAttachmentDetails = email.hasAttachments && (email.attachments.isEmpty() || hasPlaceholderAttachment)
-        // Full body is considered loaded only if HTML is present without unresolved CID images and attachments are authoritative
-        val isFullBodyLoaded = (!email.bodyHtml.isNullOrBlank() || (email.bodyText.isNotBlank() && email.bodyText.length > 300)) 
-            && !hasPlaceholderAttachment 
-            && !hasCidInHtml 
-            && !needsAttachmentDetails
+
+        val isFullBodyLoaded = if (force) {
+            false
+        } else if (!email.bodyHtml.isNullOrBlank()) {
+            email.bodyHtml!!.length > 300 && !hasPlaceholderAttachment && !hasCidInHtml && !needsAttachmentDetails
+        } else {
+            email.bodyText.length > 500 && email.bodyText != email.snippet && !email.bodyText.endsWith("...") && !needsAttachmentDetails
+        }
 
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {
+            if (force) {
+                loadingEmailBodyIds.remove(email.id)
+            }
             if (!loadingEmailBodyIds.add(email.id)) return
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val account = currentAccount.value ?: return@launch
+                    val accList = repository.getAccounts().firstOrNull().orEmpty()
+                    val account = currentAccount.value 
+                        ?: accList.find { it.id == email.accountId }
+                        ?: accList.find { it.isDefault }
+                        ?: accList.firstOrNull() 
+                        ?: return@launch
                     val success = repository.fetchEmailFullDetails(account, email.id)
                     if (!success) {
                         val pair = repository.fetchEmailBodyDirect(account, email.id)
-                        if (pair != null) {
+                        if (pair != null && (pair.first.isNotBlank() || pair.second.isNotBlank())) {
                             val bodyText = pair.first.ifBlank { email.bodyText }
                             val bodyHtml = pair.second.ifBlank { email.bodyHtml }
                             val snippet = pair.first.take(150).ifBlank { email.snippet }

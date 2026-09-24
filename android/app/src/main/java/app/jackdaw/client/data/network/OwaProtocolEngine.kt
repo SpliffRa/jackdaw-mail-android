@@ -376,7 +376,9 @@ class OwaProtocolEngine : MailProtocolEngine {
                             // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI
                             if ((isInline || isReferencedInBody) && isImage) {
                                 try {
-                                    val imgBytes = downloadAttachment(account, attId)
+                                    val imgBytes = kotlinx.coroutines.withTimeoutOrNull(2500L) {
+                                        downloadAttachment(account, attId)
+                                    }
                                     if (imgBytes != null && imgBytes.isNotEmpty()) {
                                         val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
                                         val effectiveMime = if (mime.startsWith("image/", ignoreCase = true)) mime else when {

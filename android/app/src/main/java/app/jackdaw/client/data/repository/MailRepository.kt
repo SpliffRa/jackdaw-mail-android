@@ -656,14 +656,17 @@ class OfflineFirstMailRepository(
                             val emailEntities = newEmails.map { email ->
                                 val effectiveIsRead = pendingReadStatusUpdates[email.id] ?: email.isRead
                                 val existing = emailDao.getEmailEntityById(email.id)
-                                val hasFullBody = !existing?.bodyHtml.isNullOrBlank() && (existing?.bodyHtml?.length ?: 0) > 300
-                                val effectiveHtml = if (hasFullBody) existing?.bodyHtml else email.bodyHtml
-                                val effectiveText = if (hasFullBody) (existing?.bodyText ?: email.bodyText) else email.bodyText
+                                val hasExistingHtml = !existing?.bodyHtml.isNullOrBlank()
+                                val hasExistingText = (existing?.bodyText?.length ?: 0) > 300
+                                val effectiveHtml = if (hasExistingHtml) existing?.bodyHtml else email.bodyHtml
+                                val effectiveText = if (hasExistingText) (existing?.bodyText ?: email.bodyText) else (if (hasExistingHtml) (existing?.bodyText ?: email.bodyText) else email.bodyText)
+                                val effectiveSnippet = if (!existing?.snippet.isNullOrBlank()) existing?.snippet!! else email.snippet
                                 EmailEntity.fromDomain(email.copy(
                                     folderId = folder.id,
                                     isRead = effectiveIsRead,
                                     bodyHtml = effectiveHtml,
-                                    bodyText = effectiveText
+                                    bodyText = effectiveText,
+                                    snippet = effectiveSnippet
                                 ))
                             }
                             emailDao.insertEmails(emailEntities)
@@ -711,13 +714,16 @@ class OfflineFirstMailRepository(
                     android.util.Log.i("MailRepository", "syncAll: inbox fallback synced ${newEmails.size} emails")
                     val emailEntities = newEmails.map { email ->
                         val existing = emailDao.getEmailEntityById(email.id)
-                        val hasFullBody = !existing?.bodyHtml.isNullOrBlank() && (existing?.bodyHtml?.length ?: 0) > 300
-                        val effectiveHtml = if (hasFullBody) existing?.bodyHtml else email.bodyHtml
-                        val effectiveText = if (hasFullBody) (existing?.bodyText ?: email.bodyText) else email.bodyText
+                        val hasExistingHtml = !existing?.bodyHtml.isNullOrBlank()
+                        val hasExistingText = (existing?.bodyText?.length ?: 0) > 300
+                        val effectiveHtml = if (hasExistingHtml) existing?.bodyHtml else email.bodyHtml
+                        val effectiveText = if (hasExistingText) (existing?.bodyText ?: email.bodyText) else (if (hasExistingHtml) (existing?.bodyText ?: email.bodyText) else email.bodyText)
+                        val effectiveSnippet = if (!existing?.snippet.isNullOrBlank()) existing?.snippet!! else email.snippet
                         EmailEntity.fromDomain(email.copy(
                             folderId = inboxFolder,
                             bodyHtml = effectiveHtml,
-                            bodyText = effectiveText
+                            bodyText = effectiveText,
+                            snippet = effectiveSnippet
                         ))
                     }
                     emailDao.insertEmails(emailEntities)
