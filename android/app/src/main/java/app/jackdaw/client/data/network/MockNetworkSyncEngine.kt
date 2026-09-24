@@ -40,4 +40,9 @@ class MockNetworkSyncEngine : MailProtocolEngine {
             serverMessageId = "srv_${UUID.randomUUID().toString().take(8)}"
         )
     }
+
+    override suspend fun updateEmailReadStatus(account: MailAccount, emailId: String, isRead: Boolean): Boolean {
+        delay(100)
+        return true
+    }
 }

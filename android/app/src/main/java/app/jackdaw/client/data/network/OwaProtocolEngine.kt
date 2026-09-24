@@ -405,19 +405,70 @@ class OwaProtocolEngine : MailProtocolEngine {
                 val requestBody = buildCreateItemEmailPayload(email)
                 val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
                 if (responseJson != null) {
+                    val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                    val firstMsg = respMessages?.optJSONObject(0)
+                    if (firstMsg?.optString("ResponseClass") == "Error") {
+                        val errMsg = firstMsg.optString("MessageText", "Exchange send error")
+                        val errCode = firstMsg.optString("ResponseCode", "")
+                        Log.e(TAG, "CreateItem failed with Exchange error: $errCode - $errMsg")
+                        return@withContext SendResult(isSuccess = false, errorMessage = "$errCode: $errMsg")
+                    }
                     val serverId = extractCreatedItemId(responseJson) ?: "owa_${UUID.randomUUID().toString().take(8)}"
+                    Log.i(TAG, "Email successfully sent via Exchange CreateItem (id=$serverId)")
                     return@withContext SendResult(isSuccess = true, serverMessageId = serverId)
+                } else {
+                    return@withContext SendResult(isSuccess = false, errorMessage = "Сервер Exchange не ответил на отправку письма")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "OWA direct send failed, falling back to queued simulation", e)
+                Log.e(TAG, "OWA direct send failed", e)
+                return@withContext SendResult(isSuccess = false, errorMessage = e.message ?: "Ошибка отправки письма")
             }
         }
 
-        // Fallback simulated delivery
-        SendResult(
-            isSuccess = true,
-            serverMessageId = "srv_${UUID.randomUUID().toString().take(8)}"
-        )
+        if (serverUrl.isBlank()) {
+            // Fallback simulated delivery for local mock accounts
+            SendResult(
+                isSuccess = true,
+                serverMessageId = "srv_${UUID.randomUUID().toString().take(8)}"
+            )
+        } else {
+            SendResult(
+                isSuccess = false,
+                errorMessage = "Нет активной сессии OWA для отправки"
+            )
+        }
+    }
+
+    override suspend fun updateEmailReadStatus(account: MailAccount, emailId: String, isRead: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+
+        if (serverUrl.isBlank() || cookies.isBlank()) {
+            Log.w(TAG, "Cannot update read status: missing serverUrl or cookies")
+            return@withContext false
+        }
+
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "UpdateItem")
+            val requestBody = buildUpdateItemReadStatusPayload(emailId, isRead)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+            if (responseJson != null) {
+                val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                val firstMsg = respMessages?.optJSONObject(0)
+                val responseClass = firstMsg?.optString("ResponseClass")
+                if (responseClass == "Success") {
+                    Log.i(TAG, "Exchange UpdateItem successful: marked $emailId as isRead=$isRead")
+                    return@withContext true
+                } else {
+                    val errMsg = firstMsg?.optString("MessageText", "Unknown error")
+                    val errCode = firstMsg?.optString("ResponseCode", "")
+                    Log.w(TAG, "Exchange UpdateItem error for $emailId: $errCode - $errMsg")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception updating read status on Exchange for $emailId", e)
+        }
+        return@withContext false
     }
 
     private val trustAllSslSocketFactory: javax.net.ssl.SSLSocketFactory by lazy {
@@ -968,7 +1019,17 @@ class OwaProtocolEngine : MailProtocolEngine {
     }
 
     private fun buildCreateItemEmailPayload(email: EmailMessage): JSONObject {
-        val bodyContent = email.bodyHtml?.ifBlank { email.snippet } ?: email.snippet.ifBlank { email.bodyText }
+        val rawBody = when {
+            !email.bodyHtml.isNullOrBlank() -> email.bodyHtml
+            email.bodyText.isNotBlank() -> email.bodyText
+            else -> email.snippet
+        }
+        val bodyContent = if (rawBody.contains("<html", ignoreCase = true) || rawBody.contains("<p>", ignoreCase = true) || rawBody.contains("<div", ignoreCase = true)) {
+            rawBody
+        } else {
+            rawBody.replace("\n", "<br/>")
+        }
+
         val message = JSONObject().apply {
             put("__type", "Message:#Exchange")
             put("Subject", email.subject)
@@ -978,15 +1039,28 @@ class OwaProtocolEngine : MailProtocolEngine {
             })
             val toRecipients = JSONArray()
             for (rec in email.toRecipients) {
-                toRecipients.put(JSONObject().apply {
-                    put("Mailbox", JSONObject().apply {
-                        put("EmailAddress", rec)
+                if (rec.isNotBlank()) {
+                    toRecipients.put(JSONObject().apply {
+                        put("EmailAddress", rec.trim())
+                        put("RoutingType", "SMTP")
                     })
-                })
+                }
             }
             put("ToRecipients", toRecipients)
-        }
 
+            if (email.ccRecipients.isNotEmpty()) {
+                val ccRecipients = JSONArray()
+                for (rec in email.ccRecipients) {
+                    if (rec.isNotBlank()) {
+                        ccRecipients.put(JSONObject().apply {
+                            put("EmailAddress", rec.trim())
+                            put("RoutingType", "SMTP")
+                        })
+                    }
+                }
+                put("CcRecipients", ccRecipients)
+            }
+        }
 
         val items = JSONArray().apply { put(message) }
 
@@ -1003,6 +1077,55 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         return JSONObject().apply {
             put("__type", "CreateItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
+    private fun buildUpdateItemReadStatusPayload(emailId: String, isRead: Boolean): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+
+        val path = JSONObject().apply {
+            put("__type", "PropertyUri:#Exchange")
+            put("FieldURI", "message:IsRead")
+        }
+
+        val item = JSONObject().apply {
+            put("__type", "Message:#Exchange")
+            put("IsRead", isRead)
+        }
+
+        val setItemField = JSONObject().apply {
+            put("__type", "SetItemField:#Exchange")
+            put("Path", path)
+            put("Item", item)
+        }
+
+        val updates = JSONArray().apply {
+            put(setItemField)
+        }
+
+        val itemChange = JSONObject().apply {
+            put("__type", "ItemChange:#Exchange")
+            put("ItemId", JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", emailId)
+            })
+            put("Updates", updates)
+        }
+
+        val body = JSONObject().apply {
+            put("__type", "UpdateItemRequest:#Exchange")
+            put("MessageDisposition", "SaveOnly")
+            put("ConflictResolution", "AlwaysOverwrite")
+            put("ItemChanges", JSONArray().apply { put(itemChange) })
+        }
+
+        return JSONObject().apply {
+            put("__type", "UpdateItemJsonRequest:#Exchange")
             put("Header", header)
             put("Body", body)
         }

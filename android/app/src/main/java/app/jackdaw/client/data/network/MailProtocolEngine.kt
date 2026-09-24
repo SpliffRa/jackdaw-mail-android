@@ -14,5 +14,6 @@ interface MailProtocolEngine {
     suspend fun fetchFolders(account: MailAccount): List<Folder> = emptyList()
     suspend fun fetchEmailBodies(account: MailAccount, itemIds: List<String>): Map<String, Pair<String, String>> = emptyMap()
     suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? = null
+    suspend fun updateEmailReadStatus(account: MailAccount, emailId: String, isRead: Boolean): Boolean = false
 }
 

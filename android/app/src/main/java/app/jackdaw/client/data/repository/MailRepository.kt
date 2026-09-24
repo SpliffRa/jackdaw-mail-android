@@ -68,6 +68,9 @@ class OfflineFirstMailRepository(
     private val attachmentDao = database.attachmentDao()
     private val calendarEventDao = database.calendarEventDao()
 
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+    private val pendingReadStatusUpdates = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
     init {
         (mailProtocolEngine as? app.jackdaw.client.data.network.OwaProtocolEngine)?.onSessionUpdated = { accId, cookies, canary ->
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
@@ -200,6 +203,28 @@ class OfflineFirstMailRepository(
 
     override suspend fun markAsRead(emailId: String, isRead: Boolean) {
         emailDao.updateReadStatus(emailId, isRead)
+        pendingReadStatusUpdates[emailId] = isRead
+
+        repositoryScope.launch {
+            try {
+                val email = emailDao.getEmailById(emailId).first() ?: return@launch
+                val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                    ?: accountDao.getDefaultAccount()?.toDomain()
+                    ?: return@launch
+
+                if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                    val success = mailProtocolEngine.updateEmailReadStatus(account, emailId, isRead)
+                    if (success) {
+                        pendingReadStatusUpdates.remove(emailId)
+                        android.util.Log.i("MailRepository", "Successfully synced read status ($isRead) to Exchange for $emailId")
+                    } else {
+                        android.util.Log.w("MailRepository", "Exchange read status update failed for $emailId, retained in pending queue")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Failed to sync read status for $emailId", e)
+            }
+        }
     }
 
     override suspend fun toggleStar(emailId: String, isStarred: Boolean) {
@@ -290,6 +315,43 @@ class OfflineFirstMailRepository(
             }
             attachmentDao.insertAttachments(attachmentEntities)
         }
+
+        // Immediately attempt transmission in background
+        repositoryScope.launch {
+            try {
+                val account = accountDao.getAccountById(queuedEmail.accountId)?.toDomain()
+                    ?: accountDao.getDefaultAccount()?.toDomain()
+                    ?: return@launch
+
+                if (account.serverHost.isNotBlank()) {
+                    processPendingOutgoingEmails(account)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Error during immediate outgoing email transmission", e)
+            }
+        }
+    }
+
+    private suspend fun processPendingOutgoingEmails(account: MailAccount): Int {
+        val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "${account.id}_outbox"
+        val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "${account.id}_sent"
+
+        val pendingEmails = emailDao.getPendingOutgoingEmails()
+        var sentCount = 0
+        for (pending in pendingEmails) {
+            emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENDING, outboxFolder)
+            val attachments = attachmentDao.getAttachmentsForEmail(pending.id).first().map { it.toDomain() }
+            val sendResult = mailProtocolEngine.sendMessage(account, pending.toDomain(attachments))
+            if (sendResult.isSuccess) {
+                emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENT, sentFolder)
+                sentCount++
+                android.util.Log.i("MailRepository", "Successfully sent outgoing email ${pending.id} (${pending.subject})")
+            } else {
+                emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.FAILED, outboxFolder)
+                android.util.Log.w("MailRepository", "Failed to send outgoing email ${pending.id}: ${sendResult.errorMessage}")
+            }
+        }
+        return sentCount
     }
 
     override suspend fun addAccount(account: MailAccount) {
@@ -352,19 +414,23 @@ class OfflineFirstMailRepository(
             val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "${account.id}_sent"
             val inboxFolder = folderDao.getFolderByType(account.id, FolderType.INBOX)?.id ?: "${account.id}_inbox"
 
-            // 1. Process pending outgoing emails (Outbox)
-            val pendingEmails = emailDao.getPendingOutgoingEmails()
-            var sentCount = 0
-            for (pending in pendingEmails) {
-                emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENDING, outboxFolder)
-                val sendResult = mailProtocolEngine.sendMessage(account, pending.toDomain())
-                if (sendResult.isSuccess) {
-                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.SENT, sentFolder)
-                    sentCount++
-                } else {
-                    emailDao.updateDeliveryStatus(pending.id, DeliveryStatus.FAILED, outboxFolder)
+            // 0. Flush pending read status updates to Exchange
+            if (pendingReadStatusUpdates.isNotEmpty()) {
+                val pendingCopies = HashMap(pendingReadStatusUpdates)
+                for ((pendingId, pendingIsRead) in pendingCopies) {
+                    try {
+                        val success = mailProtocolEngine.updateEmailReadStatus(account, pendingId, pendingIsRead)
+                        if (success) {
+                            pendingReadStatusUpdates.remove(pendingId)
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("MailRepository", "Error syncing pending read status for $pendingId", e)
+                    }
                 }
             }
+
+            // 1. Process pending outgoing emails (Outbox)
+            val sentCount = processPendingOutgoingEmails(account)
 
             // 2. Discover and synchronize server folders (Inbox, Sent, Trash, Drafts, Archive, and all custom folders)
             var remoteFolderCount = 0
@@ -464,7 +530,10 @@ class OfflineFirstMailRepository(
                         val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
                         if (newEmails.isNotEmpty()) {
                             android.util.Log.i("MailRepository", "syncAll: folder ${folder.name} synced ${newEmails.size} emails")
-                            val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = folder.id)) }
+                            val emailEntities = newEmails.map { email ->
+                                val effectiveIsRead = pendingReadStatusUpdates[email.id] ?: email.isRead
+                                EmailEntity.fromDomain(email.copy(folderId = folder.id, isRead = effectiveIsRead))
+                            }
                             emailDao.insertEmails(emailEntities)
 
                             for (email in newEmails) {
