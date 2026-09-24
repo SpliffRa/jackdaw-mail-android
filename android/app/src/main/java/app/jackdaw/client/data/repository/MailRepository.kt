@@ -325,6 +325,12 @@ class OfflineFirstMailRepository(
             val account = accountEntity.toDomain()
             android.util.Log.i("MailRepository", "syncAll started for account: ${account.email} on server ${account.serverHost}")
 
+            if (app.jackdaw.client.data.network.OwaProtocolEngine.mailboxSessionCooldownUntil > System.currentTimeMillis()) {
+                val remainingSec = (app.jackdaw.client.data.network.OwaProtocolEngine.mailboxSessionCooldownUntil - System.currentTimeMillis()) / 1000L
+                val msg = "Exchange: превышен лимит сессий почтового ящика. Ожидание сброса сервером ($remainingSec сек)"
+                return SyncResult(isSuccess = false, errorMessage = msg)
+            }
+
             if (account.serverHost.isBlank()) {
                 val err = "Не указан адрес сервера почты в настройках аккаунта"
                 app.jackdaw.client.data.network.OwaSyncDiagnostics.recordError("Validate", "", 0, err)
@@ -361,11 +367,13 @@ class OfflineFirstMailRepository(
             }
 
             // 2. Discover and synchronize server folders (Inbox, Sent, Trash, Drafts, Archive, and all custom folders)
+            var remoteFolderCount = 0
             try {
                 // First purge any cached Exchange system / search folders from Room
                 folderDao.cleanupNonMailFolders(account.id)
 
                 val remoteFolders = mailProtocolEngine.fetchFolders(account)
+                remoteFolderCount = remoteFolders.size
                 android.util.Log.i("MailRepository", "syncAll: discovered ${remoteFolders.size} remote folders: ${remoteFolders.map { "${it.name}(${it.totalCount})" }}")
                 if (remoteFolders.isNotEmpty()) {
                     val existingFolders = folderDao.getFoldersByAccount(account.id).first()
@@ -439,14 +447,19 @@ class OfflineFirstMailRepository(
                 ))
             }
 
-            // 3. Fetch emails for all syncable folders
+            // 3. Fetch emails for all syncable folders (Inbox first!)
             val foldersToSync = folderDao.getFoldersByAccount(account.id).first()
                 .filter { it.type != FolderType.OUTBOX && it.type != FolderType.SLA_ALERTS }
+                .sortedBy { if (it.type == FolderType.INBOX) 0 else 1 }
 
             var totalNewEmails = 0
             var unmutedNewEmails = 0
             if (foldersToSync.isNotEmpty()) {
                 for (folder in foldersToSync) {
+                    if (app.jackdaw.client.data.network.OwaProtocolEngine.mailboxSessionCooldownUntil > System.currentTimeMillis()) {
+                        android.util.Log.w("MailRepository", "syncAll: aborting folder sync loop due to active session limit cooldown")
+                        break
+                    }
                     try {
                         val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
                         if (newEmails.isNotEmpty()) {
@@ -489,18 +502,20 @@ class OfflineFirstMailRepository(
                 }
             }
 
-            // 4. Fetch calendar meetings & events from remote server
+            // 4. Fetch calendar meetings & events from remote server (if not in cooldown)
             val now = System.currentTimeMillis()
             val thirtyDaysAgo = now - 30L * 86400000L
             val ninetyDaysAhead = now + 90L * 86400000L
-            try {
-                val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
-                android.util.Log.i("MailRepository", "syncAll: fetched ${calendarEvents.size} calendar events from Exchange")
-                if (calendarEvents.isNotEmpty()) {
-                    calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
+            if (app.jackdaw.client.data.network.OwaProtocolEngine.mailboxSessionCooldownUntil <= System.currentTimeMillis()) {
+                try {
+                    val calendarEvents = mailProtocolEngine.fetchCalendarEvents(account, thirtyDaysAgo, ninetyDaysAhead)
+                    android.util.Log.i("MailRepository", "syncAll: fetched ${calendarEvents.size} calendar events from Exchange")
+                    if (calendarEvents.isNotEmpty()) {
+                        calendarEventDao.insertEvents(calendarEvents.map { CalendarEventEntity.fromDomain(it) })
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing calendar events", e)
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("MailRepository", "Error syncing calendar events", e)
             }
 
             // 5. Update folder unread and total counters
@@ -545,11 +560,19 @@ class OfflineFirstMailRepository(
 
             val diagError = app.jackdaw.client.data.network.OwaSyncDiagnostics.lastError
             val lastHttpCode = app.jackdaw.client.data.network.OwaSyncDiagnostics.lastHttpCode
-            val hasExplicitError = diagError != null && lastHttpCode != 200
-            val reportSuccess = if (totalNewEmails == 0 && (hasExplicitError || (diagError != null && totalNewEmails == 0 && lastHttpCode != 0))) {
+            val reportSuccess = if (remoteFolderCount == 0 && totalNewEmails == 0 && diagError != null && lastHttpCode != 200) {
                 false
             } else {
                 true
+            }
+
+            if (reportSuccess) {
+                app.jackdaw.client.data.network.OwaSyncDiagnostics.recordSuccess(
+                    "syncAll",
+                    account.serverHost,
+                    200,
+                    "Папок: $remoteFolderCount, получено писем: $totalNewEmails"
+                )
             }
 
             SyncResult(

@@ -164,8 +164,24 @@ object OwaAuthManager {
                 }
             }
 
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                return@withContext null
+            }
+
             val finalUrl = conn.url.toString()
             if (finalUrl.contains("logon.aspx", ignoreCase = true) || finalUrl.contains("reason=", ignoreCase = true)) {
+                return@withContext null
+            }
+
+            val htmlBody = runCatching {
+                BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+            }.getOrNull().orEmpty()
+
+            if (htmlBody.contains("440 Login Timeout", ignoreCase = true) ||
+                htmlBody.contains("logonForm", ignoreCase = true) ||
+                htmlBody.contains("signInExpl", ignoreCase = true) ||
+                htmlBody.contains("passwordLabel", ignoreCase = true)) {
                 return@withContext null
             }
 
@@ -182,10 +198,6 @@ object OwaAuthManager {
             }
             val mergedCookies = mergedMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
 
-            val htmlBody = runCatching {
-                BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-            }.getOrNull().orEmpty()
-
             val canary = extractCanaryFromHtml(htmlBody)
                 ?: extractCanary(mergedCookies)
                 ?: "canary_${System.currentTimeMillis()}"
@@ -197,7 +209,38 @@ object OwaAuthManager {
     }
 
     /**
-     * Performs direct Exchange Form-Based Auth (FBA) at /owa/auth/owaauth.dll.
+     * Closes the active session on Exchange via /owa/logoff.owa.
+     */
+    suspend fun closeOwaSession(serverInput: String, cookies: String) = withContext(Dispatchers.IO) {
+        if (cookies.isBlank()) return@withContext
+        val baseOwaUrl = normalizeOwaUrl(serverInput).trimEnd('/')
+        val logoffUrls = listOf(
+            "$baseOwaUrl/logoff.owa",
+            "$baseOwaUrl/auth/logoff.aspx"
+        )
+        for (logoffUrl in logoffUrls) {
+            try {
+                val url = URL(logoffUrl)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    if (this is javax.net.ssl.HttpsURLConnection) {
+                        sslSocketFactory = trustAllSslSocketFactory
+                        hostnameVerifier = trustAllHostnameVerifier
+                    }
+                    instanceFollowRedirects = false
+                    requestMethod = "GET"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    setRequestProperty("Cookie", cookies)
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
+                }
+                conn.responseCode
+                conn.disconnect()
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Performs direct Exchange Form-Based Auth (FBA) at /owa/auth.owa or /owa/auth/owaauth.dll.
      */
     suspend fun authenticateDirectFba(
         serverInput: String,
@@ -206,11 +249,12 @@ object OwaAuthManager {
         emailHint: String = ""
     ): OwaAuthResult = withContext(Dispatchers.IO) {
         val baseOwaUrl = normalizeOwaUrl(serverInput)
-        val fbaEndpoint = if (baseOwaUrl.endsWith("/")) {
-            "${baseOwaUrl}auth/owaauth.dll"
-        } else {
-            "$baseOwaUrl/auth/owaauth.dll"
-        }
+        val baseClean = baseOwaUrl.trimEnd('/')
+
+        val fbaEndpoints = listOf(
+            "$baseClean/auth.owa",
+            "$baseClean/auth/owaauth.dll"
+        )
 
         val domainFromHost = runCatching {
             URL(baseOwaUrl).host.split(".").let { parts ->
@@ -228,75 +272,79 @@ object OwaAuthManager {
 
         var lastError: String? = null
 
-        for (candidateUser in userCandidates.distinct()) {
-            try {
-                val url = URL(fbaEndpoint)
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    if (this is javax.net.ssl.HttpsURLConnection) {
-                        sslSocketFactory = trustAllSslSocketFactory
-                        hostnameVerifier = trustAllHostnameVerifier
+        for (fbaEndpoint in fbaEndpoints) {
+            for (candidateUser in userCandidates.distinct()) {
+                try {
+                    val url = URL(fbaEndpoint)
+                    val connection = (url.openConnection() as HttpURLConnection).apply {
+                        if (this is javax.net.ssl.HttpsURLConnection) {
+                            sslSocketFactory = trustAllSslSocketFactory
+                            hostnameVerifier = trustAllHostnameVerifier
+                        }
+                        requestMethod = "POST"
+                        doOutput = true
+                        instanceFollowRedirects = false
+                        connectTimeout = 10000
+                        readTimeout = 10000
+                        val origin = "https://${url.host}"
+                        setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                        setRequestProperty("Referer", "$baseClean/auth/logon.aspx")
+                        setRequestProperty("Origin", origin)
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
                     }
-                    requestMethod = "POST"
-                    doOutput = true
-                    instanceFollowRedirects = false
-                    connectTimeout = 10000
-                    readTimeout = 10000
-                    setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
+
+                    val postData = buildString {
+                        append("destination=").append(URLEncoder.encode(baseClean, "UTF-8"))
+                        append("&flags=4")
+                        append("&forcedownlevel=0")
+                        append("&username=").append(URLEncoder.encode(candidateUser, "UTF-8"))
+                        append("&password=").append(URLEncoder.encode(password, "UTF-8"))
+                        append("&isUtf8=1")
+                    }
+
+                    OutputStreamWriter(connection.outputStream).use { writer ->
+                        writer.write(postData)
+                        writer.flush()
+                    }
+
+                    val responseCode = connection.responseCode
+                    val setCookies = connection.headerFields.entries
+                        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                        .flatMap { it.value }
+                    val rawCookies = setCookies.joinToString("; ") { it.substringBefore(";") }
+
+                    val redirectLocation = connection.getHeaderField("Location") ?: ""
+                    val isSuccessRedirect = (responseCode == 302 || responseCode == 301) &&
+                        !redirectLocation.contains("reason=", ignoreCase = true) &&
+                        !redirectLocation.contains("logon.aspx", ignoreCase = true)
+
+                    val cookiesMap = parseCookies(rawCookies)
+                    val hasCadata = cookiesMap.containsKey("cadata") ||
+                        cookiesMap.containsKey("sessionid") ||
+                        cookiesMap.containsKey("userContext")
+
+                    if (isSuccessRedirect || hasCadata || (responseCode in 200..299 && !rawCookies.contains("reason="))) {
+                        // Critical: follow up with GET /owa/ to initialize UserContext and Canary
+                        val initialized = initializeOwaSession(baseOwaUrl, rawCookies)
+                        val effectiveCookies = initialized?.first ?: rawCookies
+                        val canary = initialized?.second
+                            ?: extractCanary(effectiveCookies)
+                            ?: "canary_${System.currentTimeMillis()}"
+
+                        android.util.Log.i("OwaAuthManager", "FBA authentication succeeded on $fbaEndpoint for $candidateUser")
+                        return@withContext OwaAuthResult(
+                            isSuccess = true,
+                            serverUrl = baseOwaUrl,
+                            email = if (candidateUser.contains("@")) candidateUser else if (emailHint.isNotBlank()) emailHint else "$candidateUser@${URL(baseOwaUrl).host}",
+                            sessionCookies = effectiveCookies,
+                            canaryToken = canary
+                        )
+                    } else {
+                        lastError = "Сервер $fbaEndpoint отклонил вход для '$candidateUser' (HTTP $responseCode)"
+                    }
+                } catch (e: Exception) {
+                    lastError = "Ошибка подключения к $fbaEndpoint: ${e.localizedMessage ?: "Сбой сети"}"
                 }
-
-                val postData = buildString {
-                    append("destination=").append(URLEncoder.encode(baseOwaUrl, "UTF-8"))
-                    append("&flags=4")
-                    append("&forcedownlevel=0")
-                    append("&trusted=4")
-                    append("&username=").append(URLEncoder.encode(candidateUser, "UTF-8"))
-                    append("&password=").append(URLEncoder.encode(password, "UTF-8"))
-                    append("&isUtf8=1")
-                }
-
-                OutputStreamWriter(connection.outputStream).use { writer ->
-                    writer.write(postData)
-                    writer.flush()
-                }
-
-                val responseCode = connection.responseCode
-                val setCookies = connection.headerFields.entries
-                    .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
-                    .flatMap { it.value }
-                val rawCookies = setCookies.joinToString("; ") { it.substringBefore(";") }
-
-                val redirectLocation = connection.getHeaderField("Location") ?: ""
-                val isSuccessRedirect = responseCode == 302 && (
-                    redirectLocation.contains("/owa", ignoreCase = true) ||
-                    !redirectLocation.contains("reason=", ignoreCase = true)
-                )
-
-                val cookiesMap = parseCookies(rawCookies)
-                val hasValidCookie = cookiesMap.containsKey("cadata") ||
-                    cookiesMap.containsKey("sessionid") ||
-                    cookiesMap.containsKey("userContext")
-
-                if (isSuccessRedirect || hasValidCookie || responseCode in 200..299) {
-                    // Critical: follow up with GET /owa/ to initialize UserContext and Canary
-                    val initialized = initializeOwaSession(baseOwaUrl, rawCookies)
-                    val effectiveCookies = initialized?.first ?: rawCookies
-                    val canary = initialized?.second
-                        ?: extractCanary(effectiveCookies)
-                        ?: "canary_${System.currentTimeMillis()}"
-
-                    return@withContext OwaAuthResult(
-                        isSuccess = true,
-                        serverUrl = baseOwaUrl,
-                        email = if (candidateUser.contains("@")) candidateUser else if (emailHint.isNotBlank()) emailHint else "$candidateUser@${URL(baseOwaUrl).host}",
-                        sessionCookies = effectiveCookies,
-                        canaryToken = canary
-                    )
-                } else {
-                    lastError = "Сервер отклонил вход для '$candidateUser' (HTTP $responseCode)"
-                }
-            } catch (e: Exception) {
-                lastError = "Ошибка подключения к $fbaEndpoint: ${e.localizedMessage ?: "Сбой сети"}"
             }
         }
 

@@ -40,28 +40,67 @@ class OwaProtocolEngine : MailProtocolEngine {
         private const val TAG = "OwaProtocolEngine"
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
+        @Volatile
+        var mailboxSessionCooldownUntil: Long = 0L
     }
+
 
     var onSessionUpdated: ((accountId: String, cookies: String, canary: String) -> Unit)? = null
 
+    private data class CachedSession(
+        val cookies: String,
+        val canary: String,
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    private val sessionCache = java.util.concurrent.ConcurrentHashMap<String, CachedSession>()
+
+    fun updateSession(accountId: String, serverHost: String, cookies: String, canary: String) {
+        sessionCache[accountId] = CachedSession(cookies, canary)
+        runCatching {
+            val host = URL(OwaAuthManager.normalizeOwaUrl(serverHost)).host
+            val cm = android.webkit.CookieManager.getInstance()
+            for (part in cookies.split(";")) {
+                val kv = part.trim()
+                if (kv.isNotBlank()) {
+                    cm.setCookie("https://$host/owa/", "$kv; path=/; secure; HttpOnly")
+                    cm.setCookie("https://$host/", "$kv; path=/; secure; HttpOnly")
+                }
+            }
+            cm.flush()
+        }
+        onSessionUpdated?.invoke(accountId, cookies, canary)
+    }
+
     suspend fun ensureSession(account: MailAccount): Pair<String, String> {
-        var cookies = resolveCookies(account)
-        var canary = resolveCanary(account, cookies)
+        val now = System.currentTimeMillis()
+        val cached = sessionCache[account.id]
+        if (cached != null && cached.cookies.contains("cadata") && (now - cached.timestamp < 30 * 60 * 1000L)) {
+            return Pair(cached.cookies, cached.canary)
+        }
 
-        val cookieMap = OwaAuthManager.parseCookies(cookies)
-        val hasCadata = cookieMap.containsKey("cadata")
-        val hasUserCtx = cookieMap.containsKey("UserContext") || cookieMap.containsKey("usercontext")
+        val saved = account.authSessionCookies.trim()
+        if (saved.contains("cadata")) {
+            val canary = resolveCanary(account, saved).ifBlank { "canary_$now" }
+            sessionCache[account.id] = CachedSession(saved, canary)
+            return Pair(saved, canary)
+        }
 
-        // If cadata is present but UserContext is missing, ping /owa/ to initialize the server session!
-        if (hasCadata && (!hasUserCtx || canary.isBlank())) {
-            Log.i(TAG, "cadata present but UserContext missing. Initializing OWA session via GET /owa/ ...")
-            val init = OwaAuthManager.initializeOwaSession(account.serverHost, cookies)
-            if (init != null) {
-                cookies = init.first
-                canary = init.second.ifBlank { canary }
-                onSessionUpdated?.invoke(account.id, cookies, canary)
+        if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+            Log.i(TAG, "No active cadata session in cache/account. Performing direct FBA auth for ${account.loginUser}...")
+            val authResult = OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
+            if (authResult.isSuccess) {
+                Log.i(TAG, "Direct FBA auth succeeded! Session cached.")
+                updateSession(account.id, account.serverHost, authResult.sessionCookies, authResult.canaryToken)
+                return Pair(authResult.sessionCookies, authResult.canaryToken)
+            } else {
+                Log.w(TAG, "Direct FBA auth failed: ${authResult.errorMessage}")
             }
         }
+
+        val cookies = resolveCookies(account)
+        val canary = resolveCanary(account, cookies).ifBlank { "canary_$now" }
         return Pair(cookies, canary)
     }
 
@@ -72,12 +111,18 @@ class OwaProtocolEngine : MailProtocolEngine {
             return@withContext emptyList()
         }
 
+        if (System.currentTimeMillis() < mailboxSessionCooldownUntil) {
+            val remainingSec = (mailboxSessionCooldownUntil - System.currentTimeMillis()) / 1000L
+            Log.w(TAG, "fetchFolders skipped: session limit cooldown active ($remainingSec s remaining)")
+            return@withContext emptyList()
+        }
+
         val (cookies, canary) = ensureSession(account)
         val discoveredFolders = mutableMapOf<String, Folder>()
 
-        // 1. Try FindFolder (Deep then Shallow) to discover all custom folders
+        // 1. Try FindFolder (Shallow then Deep) to discover all custom folders
         val findFolderUrl = buildOwaServiceUrl(serverUrl, "FindFolder")
-        for (traversal in listOf("Deep", "Shallow")) {
+        for (traversal in listOf("Shallow", "Deep")) {
             try {
                 val reqBody = buildFindFolderPayload(traversal)
                 val responseJson = executeOwaJsonPost(findFolderUrl, reqBody, cookies, canary, account)
@@ -150,6 +195,12 @@ class OwaProtocolEngine : MailProtocolEngine {
             return@withContext emptyList()
         }
 
+        if (System.currentTimeMillis() < mailboxSessionCooldownUntil) {
+            val remainingSec = (mailboxSessionCooldownUntil - System.currentTimeMillis()) / 1000L
+            Log.w(TAG, "fetchNewEmails skipped: session limit cooldown active ($remainingSec s remaining)")
+            return@withContext emptyList()
+        }
+
         val (cookies, canary) = ensureSession(account)
 
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
@@ -159,78 +210,58 @@ class OwaProtocolEngine : MailProtocolEngine {
             val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
             val emails = if (responseJson != null) parseEmailsFromFindItemResponse(account, folderId, responseJson) else emptyList()
             val finalEmails = if (emails.isNotEmpty()) {
-                // Fetch full metadata (From, To, Subject, Body) via GetItem
-                val detailsMap = fetchEmailDetails(account, emails.map { it.id })
                 emails.map { email ->
-                    val details = detailsMap[email.id]
-                    if (details != null) {
-                        val senderName = details.senderName ?: email.senderName
-                        val senderEmail = details.senderEmail ?: email.senderEmail
-                        val toRecipients = details.toRecipients ?: email.toRecipients
-                        val subject = details.subject ?: email.subject
-                        val bodyText = details.bodyText.ifBlank { email.bodyText }
-                        val bodyHtml = details.bodyHtml.ifBlank { email.bodyHtml }
-                        val snippet = details.snippet.ifBlank { email.snippet }
-                        val isRead = details.isRead ?: email.isRead
-                        val timestamp = details.receivedAt ?: email.timestamp
-                        val hasAttachments = details.hasAttachments ?: email.hasAttachments
-                        val isStarred = (details.importance ?: "").equals("High", ignoreCase = true) || email.isStarred
-
-                        val slaSeverity = if (!isRead) {
-                            val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
-                            when {
-                                ageMinutes > 30 -> SlaSeverity.BREACHED
-                                ageMinutes > 20 -> SlaSeverity.URGENT
-                                ageMinutes > 10 -> SlaSeverity.WARNING
-                                else -> SlaSeverity.NORMAL
-                            }
-                        } else {
-                            SlaSeverity.COMPLETED
+                    val timestamp = email.timestamp
+                    val isRead = email.isRead
+                    val slaSeverity = if (!isRead) {
+                        val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
+                        when {
+                            ageMinutes > 30 -> SlaSeverity.BREACHED
+                            ageMinutes > 20 -> SlaSeverity.URGENT
+                            ageMinutes > 10 -> SlaSeverity.WARNING
+                            else -> SlaSeverity.NORMAL
                         }
-
-                        val rawHtml = details.bodyHtml.ifBlank { email.bodyHtml.orEmpty() }
-                        val safeHtml = if (rawHtml.contains("<")) rawHtml else "<p>${bodyText.replace("\n", "<br/>")}</p>"
-                        val newSla = SlaInfo(
-                            severity = slaSeverity,
-                            deadlineTimestamp = timestamp + (30 * 60 * 1000L),
-                            remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
-                        )
-
-                        email.copy(
-                            senderName = senderName,
-                            senderEmail = senderEmail,
-                            toRecipients = toRecipients,
-                            subject = subject,
-                            bodyText = bodyText,
-                            bodyHtml = safeHtml,
-                            snippet = snippet,
-                            isRead = isRead,
-                            isStarred = isStarred,
-                            timestamp = timestamp,
-                            hasAttachments = hasAttachments,
-                            slaInfo = newSla
-                        )
                     } else {
-                        email
+                        SlaSeverity.COMPLETED
                     }
+
+                    val bodyText = email.bodyText.ifBlank { email.snippet }
+                    val bodyHtml = email.bodyHtml?.ifBlank { "<p>${bodyText.replace("\n", "<br/>")}</p>" } ?: "<p>${bodyText.replace("\n", "<br/>")}</p>"
+                    val newSla = SlaInfo(
+                        severity = slaSeverity,
+                        deadlineTimestamp = timestamp + (30 * 60 * 1000L),
+                        remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                    )
+
+                    email.copy(
+                        bodyText = bodyText,
+                        bodyHtml = bodyHtml,
+                        slaInfo = newSla
+                    )
                 }
+            } else if (responseJson != null) {
+                // OWA FindItem succeeded, but folder is empty on server
+                emptyList()
             } else {
-                // Silent EWS SOAP fallback if OWA FindItem returned 0 emails
-                Log.i(TAG, "OWA FindItem returned 0 emails for $folderId, silently trying EWS SOAP...")
-                val ewsEmails = fetchEmailsViaEws(account, folderId)
-                if (ewsEmails.isNotEmpty()) {
-                    OwaSyncDiagnostics.recordSuccess("FindItem(EWS)", buildEwsUrl(serverUrl), 200, "EWS synced ${ewsEmails.size} emails")
+                // OWA FindItem failed/null, silently try EWS SOAP if explicitly configured
+                val isEwsCandidate = account.serverHost.contains("/ews", ignoreCase = true)
+                if (isEwsCandidate) {
+                    val ewsEmails = fetchEmailsViaEws(account, folderId)
+                    if (ewsEmails.isNotEmpty()) {
+                        OwaSyncDiagnostics.recordSuccess("FindItem(EWS)", buildEwsUrl(serverUrl), 200, "EWS synced ${ewsEmails.size} emails")
+                    }
+                    ewsEmails
+                } else {
+                    emptyList()
                 }
-                ewsEmails
             }
             OwaSyncDiagnostics.lastEmailsFetchedCount = finalEmails.size
             finalEmails
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl, silently trying EWS SOAP...", e)
-            val ewsEmails = fetchEmailsViaEws(account, folderId)
-            if (ewsEmails.isNotEmpty()) {
-                OwaSyncDiagnostics.recordSuccess("FindItem(EWS)", buildEwsUrl(serverUrl), 200, "EWS fallback synced ${ewsEmails.size} emails")
-            } else {
+            Log.w(TAG, "Failed to fetch emails from OWA endpoint $owaServiceUrl", e)
+            val isEwsCandidate = account.serverHost.contains("/ews", ignoreCase = true)
+            val ewsEmails = if (isEwsCandidate) fetchEmailsViaEws(account, folderId) else emptyList()
+            if (ewsEmails.isEmpty()) {
                 OwaSyncDiagnostics.recordError("FindItem", owaServiceUrl, 0, e.message ?: "Exception")
             }
             OwaSyncDiagnostics.lastEmailsFetchedCount = ewsEmails.size
@@ -479,19 +510,20 @@ class OwaProtocolEngine : MailProtocolEngine {
         account: MailAccount? = null,
         isRetryAfterAuth: Boolean = false
     ): JSONObject? {
+        if (System.currentTimeMillis() < mailboxSessionCooldownUntil) {
+            val remainingSec = (mailboxSessionCooldownUntil - System.currentTimeMillis()) / 1000L
+            Log.w(TAG, "Request blocked by session limit cooldown ($remainingSec s remaining)")
+            return null
+        }
+
         val cleanUrl = urlString
             .replace(Regex("/owa/auth/.*service\\.svc", RegexOption.IGNORE_CASE), "/owa/service.svc")
             .replace(Regex("/auth/.*service\\.svc", RegexOption.IGNORE_CASE), "/owa/service.svc")
 
-        val candidateUrls = mutableListOf(
+        val candidateUrls = listOf(
             cleanUrl,
             cleanUrl.substringBefore("&EP=1")
         )
-        if (cleanUrl.contains("cas.", ignoreCase = true)) {
-            val mailUrl = cleanUrl.replace("cas.", "mail.", ignoreCase = true)
-            candidateUrls.add(mailUrl)
-            candidateUrls.add(mailUrl.substringBefore("&EP=1"))
-        }
 
         val effectiveCookies = cookies
         val effectiveCanary = canary.ifBlank {
@@ -546,6 +578,23 @@ class OwaProtocolEngine : MailProtocolEngine {
 
                 val code = conn.responseCode
                 if (code in 200..299) {
+                    // Sliding session maintenance: capture Set-Cookie (e.g. X-BackEndCookie or ClientId updates)
+                    val setCookies = conn.headerFields.entries
+                        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                        .flatMap { it.value }
+                    if (setCookies.isNotEmpty() && account != null) {
+                        val mergedMap = OwaAuthManager.parseCookies(effectiveCookies).toMutableMap()
+                        for (sc in setCookies) {
+                            val kv = sc.substringBefore(";").split("=", limit = 2)
+                            if (kv.size == 2 && kv[0].isNotBlank()) {
+                                mergedMap[kv[0].trim()] = kv[1].trim()
+                            }
+                        }
+                        val mergedCookies = mergedMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+                        val freshCanary = OwaAuthManager.extractCanary(mergedCookies) ?: effectiveCanary
+                        updateSession(account.id, account.serverHost, mergedCookies, freshCanary)
+                    }
+
                     val responseText = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
                     if (responseText.isNotBlank()) {
                         if (responseText.trimStart().startsWith("<")) {
@@ -574,7 +623,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                                         OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
                                     }
                                     if (authResult.isSuccess) {
-                                        onSessionUpdated?.invoke(account.id, authResult.sessionCookies, authResult.canaryToken)
+                                        updateSession(account.id, account.serverHost, authResult.sessionCookies, authResult.canaryToken)
                                         return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
                                     }
                                 }
@@ -594,12 +643,47 @@ class OwaProtocolEngine : MailProtocolEngine {
                         }
                         return json
                     }
+                } else if (code == 449 && !isRetryAfterAuth) {
+                    // Exchange "Retry With": server sends ClientId, UC, X-OWA-CANARY, X-BackEndCookie
+                    val setCookies = conn.headerFields.entries
+                        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                        .flatMap { it.value }
+                    val mergedMap = OwaAuthManager.parseCookies(effectiveCookies).toMutableMap()
+                    for (sc in setCookies) {
+                        val kv = sc.substringBefore(";").split("=", limit = 2)
+                        if (kv.size == 2 && kv[0].isNotBlank()) {
+                            mergedMap[kv[0].trim()] = kv[1].trim()
+                        }
+                    }
+                    val mergedCookies = mergedMap.entries.joinToString("; ") { "${it.key}=${it.value}" }
+                    val freshCanary = OwaAuthManager.extractCanary(mergedCookies) ?: effectiveCanary
+                    Log.i(TAG, "OWA returned HTTP 449 Retry With. Captured fresh session cookies and canary ($freshCanary). Retrying...")
+                    if (account != null) {
+                        updateSession(account.id, account.serverHost, mergedCookies, freshCanary)
+                    }
+                    return executeOwaJsonPost(urlString, jsonBody, mergedCookies, freshCanary, account, isRetryAfterAuth = true)
                 } else if ((code == 401 || code == 440 || code == 302 || code == 301) && !isRetryAfterAuth && account != null) {
+                    sessionCache.remove(account.id)
                     val redirectLoc = conn.getHeaderField("Location").orEmpty()
                     Log.w(TAG, "OWA session expired or redirected (HTTP $code to $redirectLoc). Attempting silent session recovery...")
                     OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сессия истекла (HTTP $code). Редирект: $redirectLoc")
 
-                    // 1. Silent session init/refresh via GET /owa/
+                    // 1. Silent FBA direct auth if credentials saved (essential for HTTP 440 Login Timeout!)
+                    if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                        Log.i(TAG, "Attempting silent FBA direct auth for ${account.loginUser}...")
+                        val authResult = kotlinx.coroutines.runBlocking {
+                            OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
+                        }
+                        if (authResult.isSuccess) {
+                            Log.i(TAG, "Silent FBA re-auth succeeded! Retrying request...")
+                            updateSession(account.id, account.serverHost, authResult.sessionCookies, authResult.canaryToken)
+                            return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
+                        } else {
+                            Log.w(TAG, "Silent FBA re-auth failed: ${authResult.errorMessage}")
+                        }
+                    }
+
+                    // 2. Silent session init/refresh via GET /owa/
                     val init = kotlinx.coroutines.runBlocking {
                         OwaAuthManager.initializeOwaSession(account.serverHost, effectiveCookies)
                     }
@@ -609,7 +693,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         return executeOwaJsonPost(urlString, jsonBody, init.first, init.second, account, isRetryAfterAuth = true)
                     }
 
-                    // 2. Silent recovery via system CookieManager
+                    // 3. Silent recovery via system CookieManager
                     val cm = runCatching { CookieManager.getInstance() }.getOrNull()
                     val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
                     if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
@@ -618,24 +702,22 @@ class OwaProtocolEngine : MailProtocolEngine {
                         onSessionUpdated?.invoke(account.id, freshCookies, freshCanary)
                         return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
                     }
-
-                    // 3. Silent FBA direct auth if credentials saved
-                    if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
-                        val authResult = kotlinx.coroutines.runBlocking {
-                            OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
-                        }
-                        if (authResult.isSuccess) {
-                            Log.i(TAG, "Silent FBA re-auth succeeded! Retrying request...")
-                            onSessionUpdated?.invoke(account.id, authResult.sessionCookies, authResult.canaryToken)
-                            return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
-                        }
-                    }
                 } else {
                     val err = runCatching {
                         BufferedReader(InputStreamReader(conn.errorStream ?: conn.inputStream, Charsets.UTF_8)).use { it.readText() }
                     }.getOrNull()
-                    Log.w(TAG, "OWA service returned HTTP $code for $candidateUrl. Error: ${err?.take(200)}")
-                    OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "HTTP $code: ${err?.take(120)}")
+                    val isSessionLimit = code == 500 && err != null && (
+                        err.contains("too many active sessions", ignoreCase = true) ||
+                        err.contains("MapiExceptionSessionLimit", ignoreCase = true)
+                    )
+                    if (isSessionLimit) {
+                        mailboxSessionCooldownUntil = System.currentTimeMillis() + 4 * 60 * 1000L
+                        Log.w(TAG, "Exchange session limit reached (Too many active sessions). Setting 4-minute cooldown.")
+                        OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Exchange: лимит сессий почтового ящика (пауза 4 мин для сброса)")
+                        return null
+                    } else {
+                        OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "HTTP $code: ${err?.take(120)}")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Request to $candidateUrl failed: ${e.message}")
@@ -643,6 +725,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
         return null
     }
+
 
     private fun buildFindFolderPayload(traversal: String = "Deep"): JSONObject {
         val folderShape = JSONObject().apply {
@@ -767,6 +850,9 @@ class OwaProtocolEngine : MailProtocolEngine {
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:DateTimeReceived") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:HasAttachments") })
             put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Importance") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:From") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "message:ToRecipients") })
+            put(JSONObject().apply { put("__type", "PropertyUri:#Exchange"); put("FieldURI", "item:Preview") })
         }
 
         val itemShape = JSONObject().apply {

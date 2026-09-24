@@ -99,11 +99,6 @@ fun FolderDrawer(
     val context = LocalContext.current
     var isAccountsExpanded by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
-    var draggedId by remember { mutableStateOf<String?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    var itemHeightPx by remember { mutableFloatStateOf(0f) }
-    val density = LocalDensity.current
-    val fallbackItemHeightPx = remember(density) { with(density) { 54.dp.toPx() } }
 
     val regularFolders = remember(folders) {
         folders.filter { it.type != FolderType.SLA_ALERTS }
@@ -135,16 +130,7 @@ fun FolderDrawer(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                    indication = null
-                ) {
-                    if (isReorderMode) {
-                        onReorderFolders(reorderList.map { it.id })
-                        isReorderMode = false
-                    }
-                }
-                .verticalScroll(scrollState, enabled = (draggedId == null))
+                .verticalScroll(scrollState)
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
             // Header / Current Account Switcher
@@ -418,35 +404,17 @@ fun FolderDrawer(
                     key(folder.id) {
                         val isSelected = folder.id == selectedFolderId
                         val icon = getFolderIcon(folder.type)
-                        val isBeingDragged = draggedId == folder.id
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .onGloballyPositioned { coords ->
-                                    if (coords.size.height > 0) {
-                                        itemHeightPx = coords.size.height.toFloat()
-                                    }
-                                }
-                                .zIndex(if (isBeingDragged) 10f else 1f)
-                                .graphicsLayer {
-                                    translationY = if (isBeingDragged) dragOffsetY else 0f
-                                    shadowElevation = if (isBeingDragged) 12f else 0f
-                                    scaleX = if (isBeingDragged) 1.02f else 1.0f
-                                    scaleY = if (isBeingDragged) 1.02f else 1.0f
-                                }
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(
-                                    when {
-                                        isBeingDragged -> MaterialTheme.colorScheme.surfaceVariant
-                                        isSelected && !isReorderMode -> MaterialTheme.colorScheme.surfaceVariant
-                                        else -> Color.Transparent
-                                    }
+                                    if (isSelected && !isReorderMode) MaterialTheme.colorScheme.surfaceVariant
+                                    else Color.Transparent
                                 )
                                 .then(
                                     if (isReorderMode) {
-                                        // In reorder mode: do NOT intercept gestures on the Row so that
-                                        // vertical swipe scrolling across the list works instantly and fluidly!
                                         Modifier
                                     } else {
                                         Modifier.combinedClickable(
@@ -466,153 +434,153 @@ fun FolderDrawer(
                                 .padding(
                                     start = if (isReorderMode) 8.dp else 12.dp,
                                     end = if (isReorderMode) 8.dp else 12.dp,
-                                    top = 10.dp,
-                                    bottom = 10.dp
+                                    top = 8.dp,
+                                    bottom = 8.dp
                                 ),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                        // In reorder mode: show Mute toggle button on the left
-                        if (isReorderMode) {
-                            Box(
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (folder.isMuted) SlaUrgentRed.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            // In reorder mode: show Mute toggle button on the left
+                            if (isReorderMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (folder.isMuted) SlaUrgentRed.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                        .clickable {
+                                            onToggleMuteFolder(folder)
+                                            val msg = if (!folder.isMuted) {
+                                                "Уведомления отключены: «${folder.name}»"
+                                            } else {
+                                                "Уведомления включены: «${folder.name}»"
+                                            }
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (folder.isMuted) Icons.Rounded.NotificationsOff else Icons.Rounded.NotificationsActive,
+                                        contentDescription = if (folder.isMuted) "Включить уведомления" else "Заглушить уведомления",
+                                        tint = if (folder.isMuted) SlaUrgentRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    .clickable {
-                                        onToggleMuteFolder(folder)
-                                        val msg = if (!folder.isMuted) {
-                                            "Уведомления отключены: «${folder.name}»"
-                                        } else {
-                                            "Уведомления включены: «${folder.name}»"
-                                        }
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (folder.isMuted) Icons.Rounded.NotificationsOff else Icons.Rounded.NotificationsActive,
-                                    contentDescription = if (folder.isMuted) "Включить уведомления" else "Заглушить уведомления",
-                                    tint = if (folder.isMuted) SlaUrgentRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
 
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = folder.name,
-                            tint = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = folder.name,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSelected && !isReorderMode) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f, fill = false)
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = folder.name,
+                                tint = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
                             )
 
-                            // Show mute icon in normal mode if folder is muted
-                            if (folder.isMuted && !isReorderMode) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.Rounded.NotificationsOff,
-                                    contentDescription = "Без уведомлений",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                        // Unread count badge - visible in both normal mode and reorder mode!
-                        if (folder.unreadCount > 0) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (folder.type == FolderType.SLA_ALERTS) SlaUrgentRed else JackdawAmber
-                                    )
-                                    .padding(horizontal = 7.dp, vertical = 2.dp),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${folder.unreadCount}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
+                                    text = folder.name,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected && !isReorderMode) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected && !isReorderMode) JackdawAmber else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f, fill = false)
                                 )
-                            }
-                        }
 
-                        // In reorder mode: show clean Drag Handle on the right with immediate drag support
-                        if (isReorderMode) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(
-                                        if (isBeingDragged) JackdawAmber.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                // Show mute icon in normal mode if folder is muted
+                                if (folder.isMuted && !isReorderMode) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.Rounded.NotificationsOff,
+                                        contentDescription = "Без уведомлений",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(14.dp)
                                     )
-                                    .pointerInput(folder.id) {
-                                        detectVerticalDragGestures(
-                                            onDragStart = {
-                                                draggedId = folder.id
-                                                dragOffsetY = 0f
-                                            },
-                                            onDragEnd = {
-                                                draggedId = null
-                                                dragOffsetY = 0f
+                                }
+                            }
+
+                            // Unread count badge
+                            if (folder.unreadCount > 0) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (folder.type == FolderType.SLA_ALERTS) SlaUrgentRed else JackdawAmber
+                                        )
+                                        .padding(horizontal = 7.dp, vertical = 2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${folder.unreadCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                }
+                            }
+
+                            // In reorder mode: show fluid Up and Down arrows
+                            if (isReorderMode) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    // Move Up
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (index > 0) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                                            )
+                                            .clickable(enabled = index > 0) {
+                                                val item = reorderList.removeAt(index)
+                                                reorderList.add(index - 1, item)
                                                 onReorderFolders(reorderList.map { it.id })
                                             },
-                                            onDragCancel = {
-                                                draggedId = null
-                                                dragOffsetY = 0f
-                                            },
-                                            onVerticalDrag = { change, dragAmount ->
-                                                change.consume()
-                                                dragOffsetY += dragAmount
-                                                val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
-                                                if (currentIdx != -1) {
-                                                    val step = if (itemHeightPx > 0f) itemHeightPx else fallbackItemHeightPx
-                                                    if (dragOffsetY > step * 0.5f && currentIdx < reorderList.size - 1) {
-                                                        val item = reorderList.removeAt(currentIdx)
-                                                        reorderList.add(currentIdx + 1, item)
-                                                        dragOffsetY -= step
-                                                    } else if (dragOffsetY < -step * 0.5f && currentIdx > 0) {
-                                                        val item = reorderList.removeAt(currentIdx)
-                                                        reorderList.add(currentIdx - 1, item)
-                                                        dragOffsetY += step
-                                                    }
-                                                }
-                                            }
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.KeyboardArrowUp,
+                                            contentDescription = "Вверх",
+                                            tint = if (index > 0) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                                            modifier = Modifier.size(20.dp)
                                         )
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DragHandle,
-                                    contentDescription = "Перетащить",
-                                    tint = if (isBeingDragged) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                    }
+
+                                    // Move Down
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (index < reorderList.size - 1) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+                                            )
+                                            .clickable(enabled = index < reorderList.size - 1) {
+                                                val item = reorderList.removeAt(index)
+                                                reorderList.add(index + 1, item)
+                                                onReorderFolders(reorderList.map { it.id })
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                                            contentDescription = "Вниз",
+                                            tint = if (index < reorderList.size - 1) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
