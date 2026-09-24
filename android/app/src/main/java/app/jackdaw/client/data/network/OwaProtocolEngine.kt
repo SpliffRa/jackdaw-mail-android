@@ -42,6 +42,29 @@ class OwaProtocolEngine : MailProtocolEngine {
             "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
     }
 
+    var onSessionUpdated: ((accountId: String, cookies: String, canary: String) -> Unit)? = null
+
+    suspend fun ensureSession(account: MailAccount): Pair<String, String> {
+        var cookies = resolveCookies(account)
+        var canary = resolveCanary(account, cookies)
+
+        val cookieMap = OwaAuthManager.parseCookies(cookies)
+        val hasCadata = cookieMap.containsKey("cadata")
+        val hasUserCtx = cookieMap.containsKey("UserContext") || cookieMap.containsKey("usercontext")
+
+        // If cadata is present but UserContext is missing, ping /owa/ to initialize the server session!
+        if (hasCadata && (!hasUserCtx || canary.isBlank())) {
+            Log.i(TAG, "cadata present but UserContext missing. Initializing OWA session via GET /owa/ ...")
+            val init = OwaAuthManager.initializeOwaSession(account.serverHost, cookies)
+            if (init != null) {
+                cookies = init.first
+                canary = init.second.ifBlank { canary }
+                onSessionUpdated?.invoke(account.id, cookies, canary)
+            }
+        }
+        return Pair(cookies, canary)
+    }
+
     override suspend fun fetchFolders(account: MailAccount): List<Folder> = withContext(Dispatchers.IO) {
         val serverUrl = account.serverHost.trim()
         if (serverUrl.isBlank()) {
@@ -49,8 +72,7 @@ class OwaProtocolEngine : MailProtocolEngine {
             return@withContext emptyList()
         }
 
-        val cookies = resolveCookies(account)
-        val canary = resolveCanary(account, cookies)
+        val (cookies, canary) = ensureSession(account)
         val discoveredFolders = mutableMapOf<String, Folder>()
 
         // 1. Try FindFolder (Deep then Shallow) to discover all custom folders
@@ -128,8 +150,7 @@ class OwaProtocolEngine : MailProtocolEngine {
             return@withContext emptyList()
         }
 
-        val cookies = resolveCookies(account)
-        val canary = resolveCanary(account, cookies)
+        val (cookies, canary) = ensureSession(account)
 
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
         val requestBody = buildFindItemEmailPayload(folderId)
@@ -225,8 +246,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         val serverUrl = account.serverHost.trim()
         if (serverUrl.isBlank()) return@withContext emptyMap()
 
-        val cookies = resolveCookies(account)
-        val canary = resolveCanary(account, cookies)
+        val (cookies, canary) = ensureSession(account)
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "GetItem")
 
         val resultMap = mutableMapOf<String, EmailFullDetails>()
@@ -346,8 +366,7 @@ class OwaProtocolEngine : MailProtocolEngine {
 
     override suspend fun sendMessage(account: MailAccount, email: EmailMessage): SendResult = withContext(Dispatchers.IO) {
         val serverUrl = account.serverHost.trim()
-        val cookies = resolveCookies(account)
-        val canary = resolveCanary(account, cookies)
+        val (cookies, canary) = ensureSession(account)
 
         if (serverUrl.isNotBlank() && cookies.isNotBlank()) {
             try {
@@ -428,10 +447,14 @@ class OwaProtocolEngine : MailProtocolEngine {
     }
 
     private fun resolveCanary(account: MailAccount, cookies: String): String {
+        val extracted = OwaAuthManager.extractCanary(cookies)
+        if (!extracted.isNullOrBlank()) {
+            return extracted
+        }
         if (account.authSessionToken.isNotBlank() && !account.authSessionToken.startsWith("canary_web_")) {
             return account.authSessionToken
         }
-        return OwaAuthManager.extractCanary(cookies).orEmpty()
+        return ""
     }
 
     private fun buildOwaServiceUrl(serverHost: String, action: String): String {
@@ -462,14 +485,12 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         val candidateUrls = mutableListOf(
             cleanUrl,
-            cleanUrl.substringBefore("&EP=1"),
-            cleanUrl.replace("/owa/service.svc", "/service.svc")
+            cleanUrl.substringBefore("&EP=1")
         )
         if (cleanUrl.contains("cas.", ignoreCase = true)) {
             val mailUrl = cleanUrl.replace("cas.", "mail.", ignoreCase = true)
             candidateUrls.add(mailUrl)
             candidateUrls.add(mailUrl.substringBefore("&EP=1"))
-            candidateUrls.add(mailUrl.replace("/owa/service.svc", "/service.svc"))
         }
 
         val effectiveCookies = cookies
@@ -510,7 +531,8 @@ class OwaProtocolEngine : MailProtocolEngine {
                     if (account != null && account.email.isNotBlank()) {
                         setRequestProperty("x-anchormailbox", account.email.trim())
                     }
-                    if (account != null && account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                    // ONLY set Basic Auth if there are NO session cookies:
+                    if (effectiveCookies.isBlank() && account != null && account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
                         val authBase64 = Base64.encodeToString(authStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                         setRequestProperty("Authorization", "Basic $authBase64")
@@ -530,17 +552,29 @@ class OwaProtocolEngine : MailProtocolEngine {
                             Log.w(TAG, "OWA endpoint returned HTML page instead of JSON (session expired, HTTP $code)")
                             OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сервер вернул страницу входа (сессия истекла)")
                             if (!isRetryAfterAuth && account != null) {
+                                // 1. Try initializing session via GET /owa/
+                                val init = kotlinx.coroutines.runBlocking {
+                                    OwaAuthManager.initializeOwaSession(account.serverHost, effectiveCookies)
+                                }
+                                if (init != null) {
+                                    onSessionUpdated?.invoke(account.id, init.first, init.second)
+                                    return executeOwaJsonPost(urlString, jsonBody, init.first, init.second, account, isRetryAfterAuth = true)
+                                }
+                                // 2. Try CookieManager
                                 val cm = runCatching { CookieManager.getInstance() }.getOrNull()
                                 val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
                                 if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
                                     val freshCanary = OwaAuthManager.extractCanary(freshCookies).orEmpty()
+                                    onSessionUpdated?.invoke(account.id, freshCookies, freshCanary)
                                     return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
                                 }
+                                // 3. Try silent FBA login
                                 if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                                     val authResult = kotlinx.coroutines.runBlocking {
-                                        OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
+                                        OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
                                     }
                                     if (authResult.isSuccess) {
+                                        onSessionUpdated?.invoke(account.id, authResult.sessionCookies, authResult.canaryToken)
                                         return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
                                     }
                                 }
@@ -565,24 +599,34 @@ class OwaProtocolEngine : MailProtocolEngine {
                     Log.w(TAG, "OWA session expired or redirected (HTTP $code to $redirectLoc). Attempting silent session recovery...")
                     OwaSyncDiagnostics.recordError(actionName, candidateUrl, code, "Сессия истекла (HTTP $code). Редирект: $redirectLoc")
 
-                    // 1. Silent recovery via system CookieManager
-                    if (!isRetryAfterAuth) {
-                        val cm = runCatching { CookieManager.getInstance() }.getOrNull()
-                        val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
-                        if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
-                            Log.i(TAG, "Silent cookie recovery from CookieManager succeeded! Retrying request...")
-                            val freshCanary = OwaAuthManager.extractCanary(freshCookies).orEmpty()
-                            return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
-                        }
+                    // 1. Silent session init/refresh via GET /owa/
+                    val init = kotlinx.coroutines.runBlocking {
+                        OwaAuthManager.initializeOwaSession(account.serverHost, effectiveCookies)
+                    }
+                    if (init != null) {
+                        Log.i(TAG, "Silent session init via GET /owa/ succeeded! Retrying request...")
+                        onSessionUpdated?.invoke(account.id, init.first, init.second)
+                        return executeOwaJsonPost(urlString, jsonBody, init.first, init.second, account, isRetryAfterAuth = true)
                     }
 
-                    // 2. Silent FBA direct auth if credentials saved
+                    // 2. Silent recovery via system CookieManager
+                    val cm = runCatching { CookieManager.getInstance() }.getOrNull()
+                    val freshCookies = cm?.getCookie(candidateUrl) ?: cm?.getCookie(account.serverHost)
+                    if (!freshCookies.isNullOrBlank() && freshCookies != effectiveCookies) {
+                        Log.i(TAG, "Silent cookie recovery from CookieManager succeeded! Retrying request...")
+                        val freshCanary = OwaAuthManager.extractCanary(freshCookies).orEmpty()
+                        onSessionUpdated?.invoke(account.id, freshCookies, freshCanary)
+                        return executeOwaJsonPost(urlString, jsonBody, freshCookies, freshCanary, account, isRetryAfterAuth = true)
+                    }
+
+                    // 3. Silent FBA direct auth if credentials saved
                     if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
                         val authResult = kotlinx.coroutines.runBlocking {
-                            OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword)
+                            OwaAuthManager.authenticateDirectFba(account.serverHost, account.loginUser, account.savedPassword, account.email)
                         }
                         if (authResult.isSuccess) {
                             Log.i(TAG, "Silent FBA re-auth succeeded! Retrying request...")
+                            onSessionUpdated?.invoke(account.id, authResult.sessionCookies, authResult.canaryToken)
                             return executeOwaJsonPost(urlString, jsonBody, authResult.sessionCookies, authResult.canaryToken, account, isRetryAfterAuth = true)
                         }
                     }
@@ -1344,49 +1388,64 @@ class OwaProtocolEngine : MailProtocolEngine {
         ).distinct()
 
         val cookies = resolveCookies(account)
+        val domainFromHost = runCatching {
+            URL(serverUrl).host.split(".").let { parts ->
+                if (parts.size >= 2) parts[parts.size - 2] else ""
+            }
+        }.getOrDefault("")
+
+        val userCandidates = mutableListOf<String>()
+        if (account.loginUser.isNotBlank()) userCandidates.add(account.loginUser.trim())
+        if (account.email.isNotBlank() && account.email != account.loginUser) userCandidates.add(account.email.trim())
+        if (account.loginUser.isNotBlank() && !account.loginUser.contains("@") && !account.loginUser.contains("\\") && domainFromHost.isNotBlank()) {
+            userCandidates.add("$domainFromHost\\${account.loginUser.trim()}")
+        }
+        if (userCandidates.isEmpty()) userCandidates.add("")
 
         for (candidate in candidateUrls) {
-            try {
-                val url = URL(candidate)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    if (this is javax.net.ssl.HttpsURLConnection) {
-                        sslSocketFactory = trustAllSslSocketFactory
-                        hostnameVerifier = trustAllHostnameVerifier
+            for (authUser in userCandidates) {
+                try {
+                    val url = URL(candidate)
+                    val conn = (url.openConnection() as HttpURLConnection).apply {
+                        if (this is javax.net.ssl.HttpsURLConnection) {
+                            sslSocketFactory = trustAllSslSocketFactory
+                            hostnameVerifier = trustAllHostnameVerifier
+                        }
+                        instanceFollowRedirects = true
+                        requestMethod = "POST"
+                        doOutput = true
+                        connectTimeout = 15000
+                        readTimeout = 20000
+                        setRequestProperty("Content-Type", "text/xml; charset=utf-8")
+                        setRequestProperty("SOAPAction", "\"http://schemas.microsoft.com/exchange/services/2006/messages/$soapAction\"")
+                        setRequestProperty("User-Agent", USER_AGENT)
+                        if (account.email.isNotBlank()) {
+                            setRequestProperty("x-anchormailbox", account.email.trim())
+                        }
+                        if (authUser.isNotBlank() && account.savedPassword.isNotBlank()) {
+                            val authStr = "$authUser:${account.savedPassword}"
+                            val authBase64 = Base64.encodeToString(authStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                            setRequestProperty("Authorization", "Basic $authBase64")
+                        }
+                        if (cookies.isNotBlank()) {
+                            setRequestProperty("Cookie", cookies)
+                        }
                     }
-                    instanceFollowRedirects = true
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 15000
-                    readTimeout = 20000
-                    setRequestProperty("Content-Type", "text/xml; charset=utf-8")
-                    setRequestProperty("SOAPAction", "\"http://schemas.microsoft.com/exchange/services/2006/messages/$soapAction\"")
-                    setRequestProperty("User-Agent", USER_AGENT)
-                    if (account.email.isNotBlank()) {
-                        setRequestProperty("x-anchormailbox", account.email.trim())
-                    }
-                    if (account.loginUser.isNotBlank() && account.savedPassword.isNotBlank()) {
-                        val authStr = "${account.loginUser.trim()}:${account.savedPassword}"
-                        val authBase64 = Base64.encodeToString(authStr.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                        setRequestProperty("Authorization", "Basic $authBase64")
-                    }
-                    if (cookies.isNotBlank()) {
-                        setRequestProperty("Cookie", cookies)
-                    }
-                }
 
-                OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(soapBody) }
-                val code = conn.responseCode
-                if (code in 200..299) {
-                    val resp = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
-                    if (resp.contains("ResponseClass=\"Success\"") || resp.contains("<m:Items>") || resp.contains("<t:Message>") || resp.contains("<m:Folders>")) {
-                        Log.i(TAG, "EWS SOAP $soapAction success on $candidate")
-                        return resp
+                    OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(soapBody) }
+                    val code = conn.responseCode
+                    if (code in 200..299) {
+                        val resp = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { it.readText() }
+                        if (resp.contains("ResponseClass=\"Success\"") || resp.contains("<m:Items>") || resp.contains("<t:Message>") || resp.contains("<m:Folders>")) {
+                            Log.i(TAG, "EWS SOAP $soapAction success on $candidate with user '$authUser'")
+                            return resp
+                        }
+                    } else {
+                        Log.w(TAG, "EWS SOAP $candidate returned HTTP $code for user '$authUser'")
                     }
-                } else {
-                    Log.w(TAG, "EWS SOAP $candidate returned HTTP $code")
+                } catch (e: Exception) {
+                    Log.w(TAG, "EWS SOAP $candidate failed for user '$authUser': ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "EWS SOAP $candidate failed: ${e.message}")
             }
         }
         return null

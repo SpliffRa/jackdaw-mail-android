@@ -26,4 +26,7 @@ interface AccountDao {
 
     @Query("DELETE FROM accounts WHERE id = :id")
     suspend fun deleteAccount(id: String)
+
+    @Query("UPDATE accounts SET authSessionCookies = :cookies, authSessionToken = :canary WHERE id = :id")
+    suspend fun updateSession(id: String, cookies: String, canary: String)
 }

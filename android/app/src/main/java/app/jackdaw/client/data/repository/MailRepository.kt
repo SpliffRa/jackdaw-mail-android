@@ -15,12 +15,15 @@ import app.jackdaw.client.data.local.entity.FolderEntity
 import app.jackdaw.client.data.network.MailProtocolEngine
 import app.jackdaw.client.data.network.MockNetworkSyncEngine
 import app.jackdaw.client.data.network.model.SyncResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 interface MailRepository {
     fun getAccounts(): Flow<List<MailAccount>>
@@ -64,6 +67,14 @@ class OfflineFirstMailRepository(
     private val emailDao = database.emailDao()
     private val attachmentDao = database.attachmentDao()
     private val calendarEventDao = database.calendarEventDao()
+
+    init {
+        (mailProtocolEngine as? app.jackdaw.client.data.network.OwaProtocolEngine)?.onSessionUpdated = { accId, cookies, canary ->
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                accountDao.updateSession(accId, cookies, canary)
+            }
+        }
+    }
 
 
     override fun getAccounts(): Flow<List<MailAccount>> {

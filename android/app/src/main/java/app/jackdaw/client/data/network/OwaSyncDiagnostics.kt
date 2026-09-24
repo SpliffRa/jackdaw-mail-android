@@ -48,6 +48,12 @@ object OwaSyncDiagnostics {
                 val hasUserCtx = account.authSessionCookies.contains("UserContext", ignoreCase = true)
                 val hasSessionId = account.authSessionCookies.contains("sessionid", ignoreCase = true)
                 appendLine("Cookies длина: ${account.authSessionCookies.length} симв (cadata=$hasCadata, UserContext=$hasUserCtx, sessionid=$hasSessionId)")
+                val cm = runCatching { android.webkit.CookieManager.getInstance() }.getOrNull()
+                val cmCookies = runCatching { cm?.getCookie(account.serverHost) }.getOrNull()
+                val cmHasUserCtx = cmCookies?.contains("UserContext", ignoreCase = true) == true
+                if (!cmCookies.isNullOrBlank() && cmCookies != account.authSessionCookies) {
+                    appendLine("WebView Cookies: ${cmCookies.length} симв (UserContext=$cmHasUserCtx)")
+                }
                 appendLine("Canary токен: ${if (account.authSessionToken.isNotBlank()) "Задан (${account.authSessionToken.take(8)}...)" else "Отсутствует"}")
                 appendLine("Логин пользователя: ${account.loginUser.ifBlank { "(не указан)" }}")
                 appendLine("Пароль для silent re-auth: ${if (account.savedPassword.isNotBlank()) "Задан" else "Не сохранен"}")
