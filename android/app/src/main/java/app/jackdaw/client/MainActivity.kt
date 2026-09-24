@@ -102,7 +102,9 @@ class MainActivity : ComponentActivity() {
                     onClearPendingEmail = { pendingEmailIdState.value = null },
                     onThemeModeChange = { mode -> themeManager.setThemeMode(mode) },
                     onToast = { message ->
-                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                        if (message.isNotBlank()) {
+                            Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 )
             }
@@ -264,7 +266,9 @@ fun JackdawMainApp(
                     snackbarHostState = snackbarHostState,
                     onSyncClick = {
                         viewModel.triggerSync { resultMsg ->
-                            onToast(resultMsg)
+                            if (resultMsg.isNotBlank()) {
+                                onToast(resultMsg)
+                            }
                         }
                     },
                     onSwipeArchive = { emailToArchive ->

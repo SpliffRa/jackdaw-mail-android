@@ -167,14 +167,7 @@ class MailViewModel(
                     if (!_isSyncing.value) {
                         _isSyncing.value = true
                         try {
-                            val result = repository.syncAll(acc.id)
-                            if (result.isSuccess && result.unmutedNewMessagesCount > 0) {
-                                try {
-                                    app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
-                                        app.jackdaw.client.JackdawApp.instance
-                                    ).playIncomingMailSound()
-                                } catch (_: Exception) {}
-                            }
+                            repository.syncAll(acc.id)
                         } finally {
                             _isSyncing.value = false
                             _lastSyncTimestamp.value = System.currentTimeMillis()
@@ -217,28 +210,17 @@ class MailViewModel(
             try {
                 val result = repository.syncAll(account.id)
                 val msg = if (result.isSuccess) {
-                    if (result.unmutedNewMessagesCount > 0) {
-                        try {
-                            app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(
-                                app.jackdaw.client.JackdawApp.instance
-                            ).playIncomingMailSound()
-                        } catch (_: Exception) {}
-                    }
                     when {
-                        result.newMessagesCount > 0 && result.sentMessagesCount > 0 ->
-                            "Синхронизировано: +${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.newMessagesCount)}, ${result.sentMessagesCount} отправлено"
-                        result.newMessagesCount > 0 ->
-                            "Получено: ${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.newMessagesCount)}"
                         result.sentMessagesCount > 0 ->
                             "Отправлено: ${app.jackdaw.client.core.util.PluralRules.formatEmailCount(result.sentMessagesCount)}"
                         else ->
-                            "Все папки актуальны"
+                            null
                     }
                 } else {
                     result.errorMessage ?: "Ошибка синхронизации"
                 }
                 _syncMessage.value = msg
-                onCompleted?.invoke(msg)
+                onCompleted?.invoke(msg ?: "")
             } finally {
                 _isSyncing.value = false
                 _lastSyncTimestamp.value = System.currentTimeMillis()
