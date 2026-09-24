@@ -277,18 +277,37 @@ class MailViewModel(
     }
 
     fun loadEmailBodyIfNeeded(email: EmailMessage) {
-        val isFullBodyLoaded = !email.bodyHtml.isNullOrBlank() && (email.bodyHtml?.length ?: 0) > 300
+        val hasPlaceholderAttachment = email.attachments.any { it.fileName == "Вложение" && it.sizeBytes == 24500L }
+        val isFullBodyLoaded = !email.bodyHtml.isNullOrBlank() && 
+            email.bodyHtml.length > 500 && 
+            !hasPlaceholderAttachment && 
+            email.bodyText.length > 255
+
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {
             viewModelScope.launch {
                 val account = currentAccount.value ?: return@launch
-                val pair = repository.fetchEmailBodyDirect(account, email.id)
-                if (pair != null) {
-                    val bodyText = pair.first.ifBlank { email.bodyText }
-                    val bodyHtml = pair.second.ifBlank { email.bodyHtml }
-                    val snippet = pair.first.take(150).ifBlank { email.snippet }
-                    repository.updateEmailBody(email.id, bodyText, bodyHtml, snippet)
+                val success = repository.fetchEmailFullDetails(account, email.id)
+                if (!success) {
+                    val pair = repository.fetchEmailBodyDirect(account, email.id)
+                    if (pair != null) {
+                        val bodyText = pair.first.ifBlank { email.bodyText }
+                        val bodyHtml = pair.second.ifBlank { email.bodyHtml }
+                        val snippet = pair.first.take(150).ifBlank { email.snippet }
+                        repository.updateEmailBody(email.id, bodyText, bodyHtml, snippet)
+                    }
                 }
             }
+        }
+    }
+
+    fun downloadAttachment(attachment: Attachment, onReady: (java.io.File?) -> Unit) {
+        viewModelScope.launch {
+            val account = currentAccount.value ?: run {
+                onReady(null)
+                return@launch
+            }
+            val file = repository.downloadAttachment(account, attachment)
+            onReady(file)
         }
     }
 

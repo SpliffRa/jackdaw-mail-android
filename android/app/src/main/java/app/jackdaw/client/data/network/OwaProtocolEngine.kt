@@ -176,8 +176,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         val senderEmail: String?,
         val toRecipients: List<String>?,
         val isRead: Boolean?,
+        val isStarred: Boolean?,
         val receivedAt: Long?,
         val hasAttachments: Boolean?,
+        val attachments: List<Attachment>,
         val importance: String?,
         val bodyText: String,
         val bodyHtml: String,
@@ -344,10 +346,62 @@ class OwaProtocolEngine : MailProtocolEngine {
                     val normBody = item.optJSONObject("NormalizedBody")?.optString("Value", "").orEmpty()
                     val preview = item.optString("Preview", "").trim()
 
+                    // Parse real attachments and resolve inline CID images into base64 data URIs
+                    val attachmentsList = mutableListOf<Attachment>()
+                    val attsArray = item.optJSONArray("Attachments")
+                    var resolvedHtml = bodyHtml
+
+                    if (attsArray != null) {
+                        for (aIdx in 0 until attsArray.length()) {
+                            val attObj = attsArray.optJSONObject(aIdx) ?: continue
+                            val attId = attObj.optJSONObject("AttachmentId")?.optString("Id")
+                                ?: attObj.optString("Id", "")
+                            if (attId.isBlank()) continue
+
+                            val name = attObj.optString("Name", "Вложение").ifBlank { "Вложение" }
+                            val size = attObj.optLong("Size", 0L)
+                            val mime = attObj.optString("ContentType", "application/octet-stream")
+                            val isInline = attObj.optBoolean("IsInline", false)
+                            val contentId = attObj.optString("ContentId", "")
+
+                            // If inline image (e.g. signature logo), resolve CID into inline base64 data URI
+                            if (isInline && contentId.isNotBlank() && (mime.startsWith("image/") || name.endsWith(".png", true) || name.endsWith(".jpg", true))) {
+                                try {
+                                    val imgBytes = downloadAttachment(account, attId)
+                                    if (imgBytes != null && imgBytes.isNotEmpty()) {
+                                        val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
+                                        val cleanCid = contentId.removePrefix("<").removeSuffix(">")
+                                        val dataUri = "data:$mime;base64,$b64"
+                                        resolvedHtml = resolvedHtml.replace("cid:$cleanCid", dataUri)
+                                        resolvedHtml = resolvedHtml.replace("cid:<$cleanCid>", dataUri)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to resolve inline CID image $contentId", e)
+                                }
+                            }
+
+                            // Only add as visible download attachment if it's not purely a small inline decorative image
+                            if (!isInline || !mime.startsWith("image/")) {
+                                attachmentsList.add(
+                                    Attachment(
+                                        id = attId,
+                                        fileName = name,
+                                        sizeBytes = size,
+                                        mimeType = mime
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    val flagObj = item.optJSONObject("Flag")
+                    val flagStatus = flagObj?.optString("FlagStatus", "")
+                    val isStarred = flagStatus.equals("Flagged", ignoreCase = true) || importance.equals("High", ignoreCase = true)
+
                     val cleanText = when {
                         textBody.isNotBlank() -> textBody
                         normBody.isNotBlank() -> normBody
-                        bodyHtml.isNotBlank() -> stripHtml(bodyHtml)
+                        resolvedHtml.isNotBlank() -> stripHtml(resolvedHtml)
                         preview.isNotBlank() -> preview
                         else -> ""
                     }
@@ -360,11 +414,13 @@ class OwaProtocolEngine : MailProtocolEngine {
                         senderEmail = senderEmail.ifBlank { null },
                         toRecipients = if (toRecipientsList.isNotEmpty()) toRecipientsList else null,
                         isRead = isRead,
+                        isStarred = isStarred,
                         receivedAt = receivedAt,
                         hasAttachments = hasAttachments,
+                        attachments = attachmentsList,
                         importance = importance.ifBlank { null },
                         bodyText = cleanText,
-                        bodyHtml = bodyHtml,
+                        bodyHtml = resolvedHtml,
                         snippet = snippet
                     )
                 }
@@ -391,6 +447,63 @@ class OwaProtocolEngine : MailProtocolEngine {
             return body
         }
         return null
+    }
+
+    override suspend fun fetchEmailFullDetails(account: MailAccount, itemId: String): DetailedEmailContent? {
+        val details = fetchEmailDetails(account, listOf(itemId))
+        val email = details[itemId] ?: return null
+        return DetailedEmailContent(
+            bodyText = email.bodyText,
+            bodyHtml = email.bodyHtml,
+            attachments = email.attachments,
+            isStarred = email.isStarred
+        )
+    }
+
+    override suspend fun downloadAttachment(account: MailAccount, attachmentId: String): ByteArray? = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+        if (serverUrl.isBlank() || cookies.isBlank()) return@withContext null
+
+        try {
+            val baseUrl = if (serverUrl.endsWith("/")) serverUrl else "$serverUrl/"
+            val downloadUrl = if (baseUrl.contains("/owa", ignoreCase = true)) {
+                val owaRoot = baseUrl.substringBefore("/owa", "") + "/owa/"
+                "${owaRoot}service.svc/s/GetFileAttachment?id=${java.net.URLEncoder.encode(attachmentId, "UTF-8")}"
+            } else {
+                "${baseUrl}service.svc/s/GetFileAttachment?id=${java.net.URLEncoder.encode(attachmentId, "UTF-8")}"
+            }
+
+            val url = URL(downloadUrl)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                if (this is javax.net.ssl.HttpsURLConnection) {
+                    sslSocketFactory = trustAllSslSocketFactory
+                    hostnameVerifier = trustAllHostnameVerifier
+                }
+                instanceFollowRedirects = true
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 30000
+                setRequestProperty("Cookie", cookies)
+                if (canary.isNotBlank()) {
+                    setRequestProperty("X-OWA-CANARY", canary)
+                }
+                setRequestProperty("User-Agent", USER_AGENT)
+                if (account.email.isNotBlank()) {
+                    setRequestProperty("x-anchormailbox", account.email.trim())
+                }
+            }
+
+            val code = conn.responseCode
+            if (code in 200..299) {
+                return@withContext conn.inputStream.use { it.readBytes() }
+            } else {
+                Log.w(TAG, "GetFileAttachment failed with HTTP $code")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download attachment $attachmentId", e)
+        }
+        null
     }
 
     override suspend fun fetchCalendarEvents(
@@ -601,14 +714,14 @@ class OwaProtocolEngine : MailProtocolEngine {
 
         try {
             val owaServiceUrl = buildOwaServiceUrl(serverUrl, "UpdateItem")
-            val requestBody = buildUpdateItemImportancePayload(emailId, if (isStarred) "High" else "Normal")
+            val requestBody = buildUpdateItemFlagPayload(emailId, isStarred)
             val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
             if (responseJson != null) {
                 val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
                 val firstMsg = respMessages?.optJSONObject(0)
                 val responseClass = firstMsg?.optString("ResponseClass")
                 if (responseClass == "Success") {
-                    Log.i(TAG, "Exchange UpdateItem successful: updated star/importance for $emailId to $isStarred")
+                    Log.i(TAG, "Exchange UpdateItem successful: updated flag for $emailId to $isStarred")
                     return@withContext true
                 }
             }
@@ -1356,6 +1469,47 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
+    private fun buildUpdateItemFlagPayload(emailId: String, isStarred: Boolean): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+        val path = JSONObject().apply {
+            put("__type", "PropertyUri:#Exchange")
+            put("FieldURI", "item:Flag")
+        }
+        val item = JSONObject().apply {
+            put("__type", "Message:#Exchange")
+            put("Flag", JSONObject().apply {
+                put("FlagStatus", if (isStarred) "Flagged" else "NotFlagged")
+            })
+        }
+        val setItemField = JSONObject().apply {
+            put("__type", "SetItemField:#Exchange")
+            put("Path", path)
+            put("Item", item)
+        }
+        val itemChange = JSONObject().apply {
+            put("__type", "ItemChange:#Exchange")
+            put("ItemId", JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", emailId)
+            })
+            put("Updates", JSONArray().apply { put(setItemField) })
+        }
+        val body = JSONObject().apply {
+            put("__type", "UpdateItemRequest:#Exchange")
+            put("MessageDisposition", "SaveOnly")
+            put("ConflictResolution", "AlwaysOverwrite")
+            put("ItemChanges", JSONArray().apply { put(itemChange) })
+        }
+        return JSONObject().apply {
+            put("__type", "UpdateItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
     private fun buildUpdateItemImportancePayload(emailId: String, importance: String): JSONObject {
         val header = JSONObject().apply {
             put("__type", "JsonRequestHeaders:#Exchange")
@@ -1468,17 +1622,12 @@ class OwaProtocolEngine : MailProtocolEngine {
                         )
                     )
                 }
-            } else if (hasAttachments) {
-                attachmentsList.add(
-                    Attachment(
-                        id = "${itemId}_att_0",
-                        fileName = "Вложение",
-                        sizeBytes = 24500L,
-                        mimeType = "application/octet-stream"
-                    )
-                )
             }
             val attachments = attachmentsList.distinctBy { "${it.fileName}_${it.sizeBytes}" }
+
+            val flagObj = itemObj.optJSONObject("Flag")
+            val flagStatus = flagObj?.optString("FlagStatus", "")
+            val isStarred = flagStatus.equals("Flagged", ignoreCase = true) || importanceStr.equals("High", ignoreCase = true)
 
             val slaSeverity = if (!isRead) {
                 val ageMinutes = (System.currentTimeMillis() - receivedAt) / 60000L
@@ -1506,7 +1655,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                 bodyHtml = null,
                 timestamp = receivedAt,
                 isRead = isRead,
-                isStarred = importanceStr.equals("High", ignoreCase = true),
+                isStarred = isStarred,
                 hasAttachments = hasAttachments,
                 attachments = attachments,
                 slaInfo = SlaInfo(

@@ -94,7 +94,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.rounded.Sync
 
 enum class MailFilter(val label: String) {
-    ALL("Все"),
+    INBOX("Входящие"),
     UNREAD("Непрочитанные"),
     STARRED("Избранное")
 }
@@ -129,7 +129,7 @@ fun MailListScreen(
 ) {
     val isTrashFolder = currentFolder.type == FolderType.TRASH
     var isSearchActive by remember { mutableStateOf(searchQuery.isNotBlank()) }
-    var selectedFilter by remember { mutableStateOf(MailFilter.ALL) }
+    var selectedFilter by remember { mutableStateOf(MailFilter.INBOX) }
     var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
     var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
@@ -138,7 +138,7 @@ fun MailListScreen(
 
     val filteredEmails = emails.filter { email ->
         when (selectedFilter) {
-            MailFilter.ALL -> true
+            MailFilter.INBOX -> true
             MailFilter.UNREAD -> !email.isRead
             MailFilter.STARRED -> email.isStarred
         }
@@ -335,10 +335,10 @@ fun MailListScreen(
             ) {
                 items(MailFilter.values()) { filter ->
                     val isSelected = filter == selectedFilter
-                    val filterLabel = if (filter == MailFilter.UNREAD && unreadCount > 0) {
-                        "${filter.label} ($unreadCount)"
-                    } else {
-                        filter.label
+                    val filterLabel = when (filter) {
+                        MailFilter.INBOX -> if (currentFolder.type == FolderType.INBOX) "Входящие" else currentFolder.name
+                        MailFilter.UNREAD -> if (unreadCount > 0) "${filter.label} ($unreadCount)" else filter.label
+                        MailFilter.STARRED -> filter.label
                     }
                     FilterChip(
                         selected = isSelected,

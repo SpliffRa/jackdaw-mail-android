@@ -26,4 +26,7 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE emailId IN (:emailIds)")
     suspend fun deleteAttachmentsForEmails(emailIds: List<String>)
+
+    @Query("UPDATE attachments SET localUri = :localUri WHERE id = :attachmentId")
+    suspend fun updateAttachmentLocalUri(attachmentId: String, localUri: String)
 }

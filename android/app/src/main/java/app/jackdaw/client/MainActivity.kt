@@ -116,6 +116,11 @@ class MainActivity : ComponentActivity() {
             pendingEmailIdState.value = emailId
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        app.jackdaw.client.data.worker.SyncScheduler.triggerImmediateSync(applicationContext)
+    }
 }
 
 @Composable
@@ -394,6 +399,9 @@ fun JackdawMainApp(
                         },
                         onToggleRead = { isRead ->
                             viewModel.markAsRead(currentEmail.id, isRead)
+                        },
+                        onDownloadAttachment = { attachment, onFileReady ->
+                            viewModel.downloadAttachment(attachment, onFileReady)
                         }
                     )
                 } else {

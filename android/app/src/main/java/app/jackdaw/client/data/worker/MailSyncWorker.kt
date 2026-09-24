@@ -70,6 +70,7 @@ class MailSyncWorker(
             app.jackdaw.client.core.notification.LauncherBadgeManager.setBadge(context, totalUnread)
 
             Log.d(TAG, "MailSyncWorker completed successfully")
+            SyncScheduler.scheduleNextFastSync(context, 3)
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "MailSyncWorker encountered an error", e)

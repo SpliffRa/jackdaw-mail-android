@@ -21,7 +21,6 @@ object SyncScheduler {
     fun schedulePeriodicSync(context: Context) {
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
-            .setRequiresBatteryNotLow(true)
             .build()
 
         val periodicSyncRequest = PeriodicWorkRequestBuilder<MailSyncWorker>(
@@ -33,8 +32,25 @@ object SyncScheduler {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             periodicSyncRequest
+        )
+    }
+
+    fun scheduleNextFastSync(context: Context, delayMinutes: Long = 3) {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val fastSyncRequest = OneTimeWorkRequestBuilder<MailSyncWorker>()
+            .setConstraints(constraints)
+            .setInitialDelay(delayMinutes, TimeUnit.MINUTES)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "jackdaw_fast_bg_sync",
+            ExistingWorkPolicy.REPLACE,
+            fastSyncRequest
         )
     }
 

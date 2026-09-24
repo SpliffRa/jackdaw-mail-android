@@ -51,6 +51,8 @@ interface MailRepository {
     suspend fun initializeSampleDataIfEmpty()
     suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
     suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>?
+    suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean
+    suspend fun downloadAttachment(account: MailAccount, attachment: app.jackdaw.client.core.model.Attachment): java.io.File?
     fun getTotalUnreadCount(): Flow<Int>
     suspend fun reorderFolders(orderedIds: List<String>)
     suspend fun toggleFolderMute(folderId: String)
@@ -837,6 +839,52 @@ class OfflineFirstMailRepository(
 
     override suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>? {
         return mailProtocolEngine.fetchEmailBody(account, itemId)
+    }
+
+    override suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean {
+        val details = mailProtocolEngine.fetchEmailFullDetails(account, emailId) ?: return false
+        emailDao.updateEmailBody(
+            emailId,
+            details.bodyText,
+            details.bodyHtml,
+            details.bodyText.take(150)
+        )
+        if (details.isStarred != null) {
+            emailDao.updateStarredStatus(emailId, details.isStarred)
+        }
+        if (details.attachments.isNotEmpty()) {
+            attachmentDao.deleteAttachmentsForEmail(emailId)
+            attachmentDao.insertAttachments(details.attachments.map { 
+                app.jackdaw.client.data.local.entity.AttachmentEntity.fromDomain(it, emailId) 
+            })
+        }
+        return true
+    }
+
+    override suspend fun downloadAttachment(
+        account: MailAccount,
+        attachment: app.jackdaw.client.core.model.Attachment
+    ): java.io.File? {
+        try {
+            val context = app.jackdaw.client.JackdawApp.instance
+            val attachmentsDir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+            val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+            val targetFile = java.io.File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
+
+            if (targetFile.exists() && targetFile.length() > 0L) {
+                return targetFile
+            }
+
+            val bytes = mailProtocolEngine.downloadAttachment(account, attachment.id)
+            if (bytes != null && bytes.isNotEmpty()) {
+                targetFile.writeBytes(bytes)
+                attachmentDao.updateAttachmentLocalUri(attachment.id, targetFile.absolutePath)
+                return targetFile
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MailRepository", "Error downloading attachment ${attachment.fileName}", e)
+        }
+        return null
     }
 
     override suspend fun reorderFolders(orderedIds: List<String>) {
