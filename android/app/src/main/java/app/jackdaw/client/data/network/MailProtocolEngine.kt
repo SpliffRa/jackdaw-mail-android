@@ -6,6 +6,7 @@ import app.jackdaw.client.core.model.MailAccount
 import app.jackdaw.client.data.network.model.SendResult
 
 import app.jackdaw.client.core.model.Folder
+import app.jackdaw.client.core.model.FolderType
 
 interface MailProtocolEngine {
     suspend fun fetchNewEmails(account: MailAccount, folderId: String, sinceTimestamp: Long): List<EmailMessage>
@@ -15,5 +16,8 @@ interface MailProtocolEngine {
     suspend fun fetchEmailBodies(account: MailAccount, itemIds: List<String>): Map<String, Pair<String, String>> = emptyMap()
     suspend fun fetchEmailBody(account: MailAccount, itemId: String): Pair<String, String>? = null
     suspend fun updateEmailReadStatus(account: MailAccount, emailId: String, isRead: Boolean): Boolean = false
+    suspend fun deleteEmail(account: MailAccount, emailId: String, hardDelete: Boolean = false): Boolean = false
+    suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = false
+    suspend fun updateEmailStarStatus(account: MailAccount, emailId: String, isStarred: Boolean): Boolean = false
 }
 

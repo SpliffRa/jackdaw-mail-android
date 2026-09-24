@@ -277,7 +277,8 @@ class MailViewModel(
     }
 
     fun loadEmailBodyIfNeeded(email: EmailMessage) {
-        if (email.bodyText.isBlank() || email.bodyText == email.subject) {
+        val isFullBodyLoaded = !email.bodyHtml.isNullOrBlank() && (email.bodyHtml?.length ?: 0) > 300
+        if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {
             viewModelScope.launch {
                 val account = currentAccount.value ?: return@launch
                 val pair = repository.fetchEmailBodyDirect(account, email.id)

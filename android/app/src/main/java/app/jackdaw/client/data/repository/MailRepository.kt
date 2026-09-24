@@ -229,6 +229,21 @@ class OfflineFirstMailRepository(
 
     override suspend fun toggleStar(emailId: String, isStarred: Boolean) {
         emailDao.updateStarredStatus(emailId, isStarred)
+
+        repositoryScope.launch {
+            try {
+                val email = emailDao.getEmailById(emailId).first() ?: return@launch
+                val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                    ?: accountDao.getDefaultAccount()?.toDomain()
+                    ?: return@launch
+
+                if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                    mailProtocolEngine.updateEmailStarStatus(account, emailId, isStarred)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Error syncing toggleStar for $emailId", e)
+            }
+        }
     }
 
     override suspend fun moveToArchive(emailId: String) {
@@ -239,6 +254,22 @@ class OfflineFirstMailRepository(
             else -> "archive"
         }
         emailDao.updateFolder(emailId, targetFolder)
+
+        if (email != null) {
+            repositoryScope.launch {
+                try {
+                    val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                        ?: accountDao.getDefaultAccount()?.toDomain()
+                        ?: return@launch
+
+                    if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                        mailProtocolEngine.moveEmail(account, emailId, FolderType.ARCHIVE)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing moveToArchive for $emailId", e)
+                }
+            }
+        }
     }
 
     override suspend fun unarchiveEmail(emailId: String) {
@@ -249,6 +280,22 @@ class OfflineFirstMailRepository(
             else -> "inbox"
         }
         emailDao.updateFolder(emailId, targetFolder)
+
+        if (email != null) {
+            repositoryScope.launch {
+                try {
+                    val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                        ?: accountDao.getDefaultAccount()?.toDomain()
+                        ?: return@launch
+
+                    if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                        mailProtocolEngine.moveEmail(account, emailId, FolderType.INBOX)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing unarchiveEmail for $emailId", e)
+                }
+            }
+        }
     }
 
     override suspend fun moveToTrash(emailId: String) {
@@ -259,11 +306,44 @@ class OfflineFirstMailRepository(
             else -> "trash"
         }
         emailDao.updateFolder(emailId, targetFolder)
+
+        if (email != null) {
+            repositoryScope.launch {
+                try {
+                    val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                        ?: accountDao.getDefaultAccount()?.toDomain()
+                        ?: return@launch
+
+                    if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                        mailProtocolEngine.deleteEmail(account, emailId, hardDelete = false)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing moveToTrash for $emailId", e)
+                }
+            }
+        }
     }
 
     override suspend fun permanentlyDeleteEmail(emailId: String) {
+        val email = emailDao.getEmailById(emailId).first()
         attachmentDao.deleteAttachmentsForEmail(emailId)
         emailDao.deleteEmail(emailId)
+
+        if (email != null) {
+            repositoryScope.launch {
+                try {
+                    val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                        ?: accountDao.getDefaultAccount()?.toDomain()
+                        ?: return@launch
+
+                    if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                        mailProtocolEngine.deleteEmail(account, emailId, hardDelete = true)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing permanentlyDeleteEmail for $emailId", e)
+                }
+            }
+        }
     }
 
     override suspend fun emptyTrash(accountId: String, folderId: String) {
@@ -287,7 +367,24 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun restoreEmail(emailId: String, originalFolderId: String) {
+        val email = emailDao.getEmailById(emailId).first()
         emailDao.updateFolder(emailId, originalFolderId)
+
+        if (email != null) {
+            repositoryScope.launch {
+                try {
+                    val account = accountDao.getAccountById(email.accountId)?.toDomain()
+                        ?: accountDao.getDefaultAccount()?.toDomain()
+                        ?: return@launch
+
+                    if (account.serverHost.isNotBlank() && !emailId.startsWith("mock_")) {
+                        mailProtocolEngine.moveEmail(account, emailId, FolderType.INBOX)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MailRepository", "Error syncing restoreEmail for $emailId", e)
+                }
+            }
+        }
     }
 
     override suspend fun sendEmail(email: EmailMessage) {
@@ -529,10 +626,18 @@ class OfflineFirstMailRepository(
                     try {
                         val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
                         if (newEmails.isNotEmpty()) {
-                            android.util.Log.i("MailRepository", "syncAll: folder ${folder.name} synced ${newEmails.size} emails")
                             val emailEntities = newEmails.map { email ->
                                 val effectiveIsRead = pendingReadStatusUpdates[email.id] ?: email.isRead
-                                EmailEntity.fromDomain(email.copy(folderId = folder.id, isRead = effectiveIsRead))
+                                val existing = emailDao.getEmailEntityById(email.id)
+                                val hasFullBody = !existing?.bodyHtml.isNullOrBlank() && (existing?.bodyHtml?.length ?: 0) > 300
+                                val effectiveHtml = if (hasFullBody) existing?.bodyHtml else email.bodyHtml
+                                val effectiveText = if (hasFullBody) (existing?.bodyText ?: email.bodyText) else email.bodyText
+                                EmailEntity.fromDomain(email.copy(
+                                    folderId = folder.id,
+                                    isRead = effectiveIsRead,
+                                    bodyHtml = effectiveHtml,
+                                    bodyText = effectiveText
+                                ))
                             }
                             emailDao.insertEmails(emailEntities)
 
@@ -564,7 +669,17 @@ class OfflineFirstMailRepository(
                 val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
                 if (newEmails.isNotEmpty()) {
                     android.util.Log.i("MailRepository", "syncAll: inbox fallback synced ${newEmails.size} emails")
-                    val emailEntities = newEmails.map { EmailEntity.fromDomain(it.copy(folderId = inboxFolder)) }
+                    val emailEntities = newEmails.map { email ->
+                        val existing = emailDao.getEmailEntityById(email.id)
+                        val hasFullBody = !existing?.bodyHtml.isNullOrBlank() && (existing?.bodyHtml?.length ?: 0) > 300
+                        val effectiveHtml = if (hasFullBody) existing?.bodyHtml else email.bodyHtml
+                        val effectiveText = if (hasFullBody) (existing?.bodyText ?: email.bodyText) else email.bodyText
+                        EmailEntity.fromDomain(email.copy(
+                            folderId = inboxFolder,
+                            bodyHtml = effectiveHtml,
+                            bodyText = effectiveText
+                        ))
+                    }
                     emailDao.insertEmails(emailEntities)
                     totalNewEmails += newEmails.size
                     unmutedNewEmails += newEmails.size

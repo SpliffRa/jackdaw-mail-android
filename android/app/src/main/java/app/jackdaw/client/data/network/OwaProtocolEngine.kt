@@ -226,7 +226,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                     }
 
                     val bodyText = email.bodyText.ifBlank { email.snippet }
-                    val bodyHtml = email.bodyHtml?.ifBlank { "<p>${bodyText.replace("\n", "<br/>")}</p>" } ?: "<p>${bodyText.replace("\n", "<br/>")}</p>"
+                    val bodyHtml = email.bodyHtml
                     val newSla = SlaInfo(
                         severity = slaSeverity,
                         deadlineTimestamp = timestamp + (30 * 60 * 1000L),
@@ -364,7 +364,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         if (body != null && (body.first.isNotBlank() || body.second.isNotBlank())) {
             return body
         }
-        return fetchEmailBodyViaEws(account, itemId)
+        return null
     }
 
     override suspend fun fetchCalendarEvents(
@@ -467,6 +467,87 @@ class OwaProtocolEngine : MailProtocolEngine {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception updating read status on Exchange for $emailId", e)
+        }
+        return@withContext false
+    }
+
+    override suspend fun deleteEmail(account: MailAccount, emailId: String, hardDelete: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+        if (serverUrl.isBlank() || cookies.isBlank()) return@withContext false
+
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "DeleteItem")
+            val requestBody = buildDeleteItemPayload(emailId, hardDelete)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+            if (responseJson != null) {
+                val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                val firstMsg = respMessages?.optJSONObject(0)
+                val responseClass = firstMsg?.optString("ResponseClass")
+                if (responseClass == "Success") {
+                    Log.i(TAG, "Exchange DeleteItem successful for $emailId (hardDelete=$hardDelete)")
+                    return@withContext true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in deleteEmail for $emailId", e)
+        }
+        return@withContext false
+    }
+
+    override suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+        if (serverUrl.isBlank() || cookies.isBlank()) return@withContext false
+
+        val targetFolderId = when (targetFolderType) {
+            FolderType.INBOX -> "inbox"
+            FolderType.ARCHIVE -> "archive"
+            FolderType.TRASH -> "deleteditems"
+            FolderType.SENT -> "sentitems"
+            FolderType.DRAFTS -> "drafts"
+            else -> "inbox"
+        }
+
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "MoveItem")
+            val requestBody = buildMoveItemPayload(emailId, targetFolderId)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+            if (responseJson != null) {
+                val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                val firstMsg = respMessages?.optJSONObject(0)
+                val responseClass = firstMsg?.optString("ResponseClass")
+                if (responseClass == "Success") {
+                    Log.i(TAG, "Exchange MoveItem successful: moved $emailId to $targetFolderId")
+                    return@withContext true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in moveEmail for $emailId", e)
+        }
+        return@withContext false
+    }
+
+    override suspend fun updateEmailStarStatus(account: MailAccount, emailId: String, isStarred: Boolean): Boolean = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+        if (serverUrl.isBlank() || cookies.isBlank()) return@withContext false
+
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "UpdateItem")
+            val requestBody = buildUpdateItemImportancePayload(emailId, if (isStarred) "High" else "Normal")
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+            if (responseJson != null) {
+                val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                val firstMsg = respMessages?.optJSONObject(0)
+                val responseClass = firstMsg?.optString("ResponseClass")
+                if (responseClass == "Success") {
+                    Log.i(TAG, "Exchange UpdateItem successful: updated star/importance for $emailId to $isStarred")
+                    return@withContext true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in updateEmailStarStatus for $emailId", e)
         }
         return@withContext false
     }
@@ -1131,6 +1212,98 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
+    private fun buildDeleteItemPayload(emailId: String, hardDelete: Boolean): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+        val itemIds = JSONArray().apply {
+            put(JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", emailId)
+            })
+        }
+        val body = JSONObject().apply {
+            put("__type", "DeleteItemRequest:#Exchange")
+            put("DeleteType", if (hardDelete) "HardDelete" else "MoveToDeletedItems")
+            put("ItemIds", itemIds)
+        }
+        return JSONObject().apply {
+            put("__type", "DeleteItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
+    private fun buildMoveItemPayload(emailId: String, targetDistinguishedFolder: String): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+        val toFolderId = JSONObject().apply {
+            put("__type", "TargetFolderId:#Exchange")
+            put("BaseFolderId", JSONObject().apply {
+                put("__type", "DistinguishedFolderId:#Exchange")
+                put("Id", targetDistinguishedFolder)
+            })
+        }
+        val itemIds = JSONArray().apply {
+            put(JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", emailId)
+            })
+        }
+        val body = JSONObject().apply {
+            put("__type", "MoveItemRequest:#Exchange")
+            put("ToFolderId", toFolderId)
+            put("ItemIds", itemIds)
+        }
+        return JSONObject().apply {
+            put("__type", "MoveItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
+    private fun buildUpdateItemImportancePayload(emailId: String, importance: String): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+        val path = JSONObject().apply {
+            put("__type", "PropertyUri:#Exchange")
+            put("FieldURI", "item:Importance")
+        }
+        val item = JSONObject().apply {
+            put("__type", "Item:#Exchange")
+            put("Importance", importance)
+        }
+        val setItemField = JSONObject().apply {
+            put("__type", "SetItemField:#Exchange")
+            put("Path", path)
+            put("Item", item)
+        }
+        val itemChange = JSONObject().apply {
+            put("__type", "ItemChange:#Exchange")
+            put("ItemId", JSONObject().apply {
+                put("__type", "ItemId:#Exchange")
+                put("Id", emailId)
+            })
+            put("Updates", JSONArray().apply { put(setItemField) })
+        }
+        val body = JSONObject().apply {
+            put("__type", "UpdateItemRequest:#Exchange")
+            put("MessageDisposition", "SaveOnly")
+            put("ConflictResolution", "AlwaysOverwrite")
+            put("ItemChanges", JSONArray().apply { put(itemChange) })
+        }
+        return JSONObject().apply {
+            put("__type", "UpdateItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
     private fun extractCreatedItemId(response: JSONObject): String? {
         val body = response.optJSONObject("Body") ?: return null
         val responseMessages = body.optJSONObject("ResponseMessages") ?: return null
@@ -1239,7 +1412,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                 subject = subject.cleanEmailSubject(),
                 snippet = (preview.ifBlank { bodyValue.take(160) }).cleanEmailPreview(),
                 bodyText = bodyValue,
-                bodyHtml = if (bodyValue.contains("<")) bodyValue else "<p>${bodyValue.replace("\n", "<br/>")}</p>",
+                bodyHtml = null,
                 timestamp = receivedAt,
                 isRead = isRead,
                 isStarred = importanceStr.equals("High", ignoreCase = true),

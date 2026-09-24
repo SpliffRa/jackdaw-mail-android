@@ -71,6 +71,7 @@ import app.jackdaw.client.core.util.cleanEmailSubject
 import app.jackdaw.client.core.util.cleanDisplayEmail
 import app.jackdaw.client.core.model.MailAccount
 import androidx.compose.ui.graphics.luminance
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -325,207 +326,223 @@ fun MailDetailScreen(
             val isSystemDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
             var forceLightMode by remember(email.id) { mutableStateOf(false) }
             val effectiveDark = isSystemDark && !forceLightMode
-            val hasHtml = !email.bodyHtml.isNullOrBlank()
 
-            if (hasHtml) {
-                // Reading mode pill to switch between light and dark backgrounds
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+            // Prepare HTML content: either from rich bodyHtml or converted plain text with clickable links
+            val rawHtmlContent = remember(email.id, email.bodyHtml, email.bodyText, email.snippet) {
+                if (!email.bodyHtml.isNullOrBlank()) {
+                    email.bodyHtml!!
+                } else {
+                    val displayText = when {
+                        email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
+                        email.snippet.isNotBlank() -> email.snippet
+                        else -> "(Письмо не содержит текста)"
+                    }
+                    plainTextToHtml(displayText.cleanEmailPreview())
+                }
+            }
+
+            // Reading mode pill to switch between light and dark backgrounds
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    onClick = { forceLightMode = !forceLightMode },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (forceLightMode) JackdawAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 ) {
-                    Surface(
-                        onClick = { forceLightMode = !forceLightMode },
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (forceLightMode) JackdawAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                        border = BorderStroke(1.dp, if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (forceLightMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                                contentDescription = null,
-                                tint = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = if (forceLightMode) "Тёмный фон" else "Светлый фон",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                        Icon(
+                            imageVector = if (forceLightMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                            contentDescription = null,
+                            tint = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (forceLightMode) "Тёмный фон" else "Светлый фон",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-
-                // Dynamic height measurement of exact content to eliminate empty space
-                var webViewHeightPx by remember(email.id, effectiveDark) { mutableIntStateOf(60) }
-                val webViewHeightDp = (webViewHeightPx + 16).coerceAtLeast(36).dp
-
-                val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
-                val linkColor = if (effectiveDark) "#FFB74D" else "#1976D2"
-
-                val htmlDoc = """
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                    <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <style>
-                      * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
-                      html, body {
-                        margin: 0; padding: 0;
-                        background: transparent !important;
-                        color: $textColor !important;
-                        font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-                        font-size: 15px;
-                        line-height: 1.55;
-                        word-break: normal;
-                      }
-                      #jackdaw-content-root {
-                        margin: 0;
-                        padding: 10px 12px;
-                        width: 100%%;
-                        box-sizing: border-box;
-                      }
-                      /* Remove underlines and border artifacts on all links and grammar/spell spans */
-                      a, a *, u, u *, .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom"], span[style*="text-decoration"] {
-                        color: $linkColor !important;
-                        text-decoration: none !important;
-                        text-decoration-line: none !important;
-                        text-decoration-color: transparent !important;
-                        border-bottom: none !important;
-                        box-shadow: none !important;
-                      }
-                      img { max-width: 100%% !important; height: auto !important; }
-                      /* Hide broken CID attachments */
-                      img[src^="cid:"], img[src=""] { display: none !important; }
-                      pre, code { white-space: pre-wrap; word-break: break-all; }
-                      table { max-width: 100%% !important; }
-                      p { margin: 0 0 8px 0; }
-                      blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid ${if (effectiveDark) "#444" else "#ccc"}; color: ${if (effectiveDark) "#aaa" else "#666"}; }
-                      hr { border: none; border-top: 1px solid ${if (effectiveDark) "#333" else "#ddd"}; margin: 12px 0; }
-                    </style>
-                    <script>
-                      function adaptContent() {
-                        var linksAndDecorations = document.querySelectorAll('a, a *, u, u *, .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom"], span[style*="text-decoration"]');
-                        for (var i = 0; i < linksAndDecorations.length; i++) {
-                          var d = linksAndDecorations[i];
-                          d.style.setProperty('text-decoration', 'none', 'important');
-                          d.style.setProperty('text-decoration-line', 'none', 'important');
-                          d.style.setProperty('border-bottom', 'none', 'important');
-                          d.style.setProperty('box-shadow', 'none', 'important');
-                          if (d.tagName === 'A' || d.closest('a')) {
-                            d.style.setProperty('color', '$linkColor', 'important');
-                          }
-                        }
-
-                        var isDark = $effectiveDark;
-                        if (isDark) {
-                          var all = document.querySelectorAll('#jackdaw-content-root, #jackdaw-content-root *');
-                          for (var j = 0; j < all.length; j++) {
-                            var el = all[j];
-                            if (el.tagName === 'A' || el.closest('a')) continue;
-                            var cs = window.getComputedStyle(el);
-                            var c = cs.color;
-                            var match = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                            if (match) {
-                              var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
-                              var brightness = (r * 299 + g * 587 + b * 114) / 1000;
-                              if (brightness < 140) {
-                                el.style.setProperty('color', '#E6E1E5', 'important');
-                              }
-                            }
-                            var bg = cs.backgroundColor;
-                            if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-                              var bgMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                              if (bgMatch) {
-                                var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
-                                var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
-                                if (bgBrightness > 160) {
-                                  el.style.setProperty('background-color', 'transparent', 'important');
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                      document.addEventListener('DOMContentLoaded', adaptContent);
-                      window.onload = adaptContent;
-                    </script>
-                    </head>
-                    <body><div id="jackdaw-content-root">${email.bodyHtml}</div></body>
-                    </html>
-                """.trimIndent()
-
-                val viewTag = "${email.id}_${effectiveDark}"
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            tag = viewTag
-                            webViewClient = object : WebViewClient() {
-                                override fun onPageFinished(view: WebView, url: String) {
-                                    view.evaluateJavascript("adaptContent();") { }
-                                    view.evaluateJavascript(
-                                        "(function(){ var r = document.getElementById('jackdaw-content-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : Math.ceil(document.body.scrollHeight); })()"
-                                    ) { result ->
-                                        val px = result?.trim('"')?.toIntOrNull() ?: 0
-                                        if (px > 0) webViewHeightPx = px
-                                    }
-                                }
-                            }
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = false
-                                loadWithOverviewMode = true
-                                useWideViewPort = true
-                                setSupportZoom(true)
-                                builtInZoomControls = true
-                                displayZoomControls = false
-                                cacheMode = WebSettings.LOAD_NO_CACHE
-                            }
-                            isScrollContainer = false
-                            isVerticalScrollBarEnabled = false
-                            isHorizontalScrollBarEnabled = false
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
-                        }
-                    },
-                    update = { view ->
-                        if (view.tag != viewTag) {
-                            view.tag = viewTag
-                            webViewHeightPx = 60
-                            view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(
-                            if (forceLightMode) Color.White
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
-                        .height(webViewHeightDp)
-                )
-            } else {
-                // Fallback: plain text
-                val displayText = when {
-                    email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
-                    email.snippet.isNotBlank() -> email.snippet
-                    else -> "(Письмо не содержит текста)"
-                }
-                Text(
-                    text = displayText.cleanEmailPreview(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 24.sp
-                )
             }
+
+            // Dynamic height measurement of exact content to eliminate empty space
+            var webViewHeightPx by remember(email.id, effectiveDark, rawHtmlContent.hashCode()) { mutableIntStateOf(60) }
+            val webViewHeightDp = (webViewHeightPx + 16).coerceAtLeast(36).dp
+
+            val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
+            val linkColor = if (effectiveDark) "#64B5F6" else "#1976D2"
+
+            val htmlDoc = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                  * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
+                  html, body {
+                    margin: 0; padding: 0;
+                    background: transparent !important;
+                    color: $textColor !important;
+                    font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+                    font-size: 15px;
+                    line-height: 1.55;
+                    word-break: normal;
+                  }
+                  #jackdaw-content-root {
+                    margin: 0;
+                    padding: 10px 12px;
+                    width: 100%%;
+                    box-sizing: border-box;
+                  }
+                  /* Visible, distinct links that redirect to external browser */
+                  a, a:link, a:visited {
+                    color: $linkColor !important;
+                    text-decoration: underline !important;
+                    cursor: pointer !important;
+                  }
+                  a * {
+                    color: inherit !important;
+                    text-decoration: inherit !important;
+                  }
+                  /* Strip Word/Outlook grammar/spell artifacts */
+                  .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom: 1px"], span[style*="text-decoration: underline wavy"] {
+                    text-decoration: none !important;
+                    border-bottom: none !important;
+                    box-shadow: none !important;
+                  }
+                  img { max-width: 100%% !important; height: auto !important; }
+                  /* Hide broken CID attachments */
+                  img[src^="cid:"], img[src=""] { display: none !important; }
+                  pre, code { white-space: pre-wrap; word-break: break-all; }
+                  table { max-width: 100%% !important; }
+                  p { margin: 0 0 8px 0; }
+                  blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid ${if (effectiveDark) "#444" else "#ccc"}; color: ${if (effectiveDark) "#aaa" else "#666"}; }
+                  hr { border: none; border-top: 1px solid ${if (effectiveDark) "#333" else "#ddd"}; margin: 12px 0; }
+                </style>
+                <script>
+                  function adaptContent() {
+                    var spells = document.querySelectorAll('.SpellE, .GramE, [class*="Spell"], [class*="Gram"]');
+                    for (var i = 0; i < spells.length; i++) {
+                      spells[i].style.setProperty('text-decoration', 'none', 'important');
+                      spells[i].style.setProperty('border-bottom', 'none', 'important');
+                    }
+                    var links = document.querySelectorAll('a');
+                    for (var k = 0; k < links.length; k++) {
+                      links[k].style.setProperty('color', '$linkColor', 'important');
+                      links[k].style.setProperty('text-decoration', 'underline', 'important');
+                    }
+
+                    var isDark = $effectiveDark;
+                    if (isDark) {
+                      var all = document.querySelectorAll('#jackdaw-content-root, #jackdaw-content-root *');
+                      for (var j = 0; j < all.length; j++) {
+                        var el = all[j];
+                        if (el.tagName === 'A' || el.closest('a')) continue;
+                        var cs = window.getComputedStyle(el);
+                        var c = cs.color;
+                        var match = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                        if (match) {
+                          var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                          var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                          if (brightness < 140) {
+                            el.style.setProperty('color', '#E6E1E5', 'important');
+                          }
+                        }
+                        var bg = cs.backgroundColor;
+                        if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                          var bgMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                          if (bgMatch) {
+                            var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
+                            var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
+                            if (bgBrightness > 160) {
+                              el.style.setProperty('background-color', 'transparent', 'important');
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  document.addEventListener('DOMContentLoaded', adaptContent);
+                  window.onload = adaptContent;
+                </script>
+                </head>
+                <body><div id="jackdaw-content-root">${rawHtmlContent}</div></body>
+                </html>
+            """.trimIndent()
+
+            val contentHash = rawHtmlContent.hashCode()
+            val viewTag = "${email.id}_${effectiveDark}_$contentHash"
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        tag = viewTag
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val uri = request?.url ?: return false
+                                return handleUriRedirect(ctx, uri)
+                            }
+
+                            @Deprecated("Deprecated in Java")
+                            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                val uri = url?.let { Uri.parse(it) } ?: return false
+                                return handleUriRedirect(ctx, uri)
+                            }
+
+                            override fun onPageFinished(view: WebView, url: String) {
+                                view.evaluateJavascript("adaptContent();") { }
+                                view.evaluateJavascript(
+                                    "(function(){ var r = document.getElementById('jackdaw-content-root'); return r ? Math.ceil(r.getBoundingClientRect().height) : Math.ceil(document.body.scrollHeight); })()"
+                                ) { result ->
+                                    val px = result?.trim('"')?.toIntOrNull() ?: 0
+                                    if (px > 0) webViewHeightPx = px
+                                }
+                            }
+                        }
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = false
+                            loadWithOverviewMode = true
+                            useWideViewPort = true
+                            setSupportZoom(true)
+                            builtInZoomControls = true
+                            displayZoomControls = false
+                            cacheMode = WebSettings.LOAD_NO_CACHE
+                        }
+                        isScrollContainer = false
+                        isVerticalScrollBarEnabled = false
+                        isHorizontalScrollBarEnabled = false
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { view ->
+                    if (view.tag != viewTag) {
+                        view.tag = viewTag
+                        webViewHeightPx = 60
+                        view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (forceLightMode) Color.White
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                    .height(webViewHeightDp)
+            )
 
             // SLA indicator below email body - compact single row showing remaining time to answer (capped at 30 min)
             val isIncoming = email.folderId.contains("inbox", ignoreCase = true)
@@ -914,5 +931,36 @@ private fun openAttachment(context: Context, attachment: Attachment) {
     } catch (e: Exception) {
         Toast.makeText(context, "Не удалось открыть ${attachment.fileName}: ${e.message}", Toast.LENGTH_SHORT).show()
     }
+}
+
+private val URL_REGEX = Regex("""(?i)\b(https?://[^\s<>"]+)""")
+
+private fun plainTextToHtml(text: String): String {
+    val escaped = text
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+    val linked = URL_REGEX.replace(escaped) { matchResult ->
+        val url = matchResult.value
+        """<a href="$url">$url</a>"""
+    }
+    return linked.replace("\n", "<br>")
+}
+
+private fun handleUriRedirect(context: Context, uri: Uri): Boolean {
+    val scheme = uri.scheme?.lowercase()
+    if (scheme == "http" || scheme == "https" || scheme == "mailto" || scheme == "tel") {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            return true
+        } catch (e: Exception) {
+            android.util.Log.e("MailDetailScreen", "Failed to open link: $uri", e)
+        }
+    }
+    return false
 }
 

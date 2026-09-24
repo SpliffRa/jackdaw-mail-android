@@ -25,6 +25,9 @@ interface EmailDao {
     @Query("SELECT * FROM emails WHERE id = :id LIMIT 1")
     fun getEmailById(id: String): Flow<EmailEntity?>
 
+    @Query("SELECT * FROM emails WHERE id = :id LIMIT 1")
+    suspend fun getEmailEntityById(id: String): EmailEntity?
+
     @Query("SELECT emails.* FROM emails JOIN emails_fts ON emails.rowid = emails_fts.rowid WHERE emails_fts MATCH :query ORDER BY emails.timestamp DESC")
     fun searchEmails(query: String): Flow<List<EmailEntity>>
 

@@ -45,4 +45,19 @@ class MockNetworkSyncEngine : MailProtocolEngine {
         delay(100)
         return true
     }
+
+    override suspend fun deleteEmail(account: MailAccount, emailId: String, hardDelete: Boolean): Boolean {
+        delay(100)
+        return true
+    }
+
+    override suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: app.jackdaw.client.core.model.FolderType): Boolean {
+        delay(100)
+        return true
+    }
+
+    override suspend fun updateEmailStarStatus(account: MailAccount, emailId: String, isStarred: Boolean): Boolean {
+        delay(100)
+        return true
+    }
 }

@@ -1,5 +1,6 @@
 package app.jackdaw.client
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -58,9 +59,13 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { _ -> }
 
+    private val pendingEmailIdState = androidx.compose.runtime.mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        pendingEmailIdState.value = intent.getStringExtra("EXTRA_EMAIL_ID")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -93,12 +98,22 @@ class MainActivity : ComponentActivity() {
                     viewModel = mailViewModel,
                     calendarViewModel = calendarViewModel,
                     currentThemeMode = currentThemeMode,
+                    pendingEmailId = pendingEmailIdState.value,
+                    onClearPendingEmail = { pendingEmailIdState.value = null },
                     onThemeModeChange = { mode -> themeManager.setThemeMode(mode) },
                     onToast = { message ->
                         Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("EXTRA_EMAIL_ID")?.let { emailId ->
+            pendingEmailIdState.value = emailId
         }
     }
 }
@@ -108,11 +123,20 @@ fun JackdawMainApp(
     viewModel: MailViewModel,
     calendarViewModel: CalendarViewModel,
     currentThemeMode: ThemeMode,
+    pendingEmailId: String? = null,
+    onClearPendingEmail: () -> Unit = {},
     onThemeModeChange: (ThemeMode) -> Unit,
     onToast: (String) -> Unit
 ) {
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+    androidx.compose.runtime.LaunchedEffect(pendingEmailId) {
+        if (!pendingEmailId.isNullOrBlank()) {
+            navController.navigate(Screen.MailDetail.createRoute(pendingEmailId))
+            onClearPendingEmail()
+        }
+    }
     val scope = rememberCoroutineScope()
 
     val accounts by viewModel.accounts.collectAsState()

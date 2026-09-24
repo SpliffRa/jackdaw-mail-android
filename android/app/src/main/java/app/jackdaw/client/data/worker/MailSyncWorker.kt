@@ -38,6 +38,7 @@ class MailSyncWorker(
 
             // 2. Perform sync across all accounts
             val accounts = repository.getAccounts().first()
+            val allUnmutedEmails = mutableListOf<app.jackdaw.client.core.model.EmailMessage>()
             for (account in accounts) {
                 val syncResult = repository.syncAll(account.id)
                 Log.d(TAG, "Sync finished for account ${account.email}: new=${syncResult.newMessagesCount}, sent=${syncResult.sentMessagesCount}")
@@ -46,10 +47,15 @@ class MailSyncWorker(
                     for (emailEntity in latestEmails) {
                         val folder = database.folderDao().getFolderById(emailEntity.folderId)
                         if (folder?.isMuted != true) {
-                            notificationHelper.showNewEmailNotification(emailEntity.toDomain(emptyList()))
+                            allUnmutedEmails.add(emailEntity.toDomain(emptyList()))
                         }
                     }
                 }
+            }
+
+            if (allUnmutedEmails.isNotEmpty()) {
+                val totalUnread = repository.getTotalUnreadCount().first()
+                notificationHelper.showNewEmailsNotification(allUnmutedEmails, totalUnread)
             }
 
             // 3. Check for urgent SLA emails and trigger system notification if necessary
