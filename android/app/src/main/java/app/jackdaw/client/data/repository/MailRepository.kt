@@ -161,14 +161,22 @@ class OfflineFirstMailRepository(
             folderId.contains("outbox") -> emailDao.getOutboxEmails(accountId, folderId)
             else -> emailDao.getEmailsInFolder(accountId, folderId)
         }
-        return emailFlow.map { emailEntities ->
-            emailEntities.map { it.toDomain(emptyList()) }
+        return combine(emailFlow, attachmentDao.getAllAttachments()) { emailEntities, allAttachments ->
+            val attachmentsByEmail = allAttachments.groupBy { it.emailId }
+            emailEntities.map { entity ->
+                val atts = attachmentsByEmail[entity.id]?.map { it.toDomain() }?.distinctBy { "${it.fileName}_${it.sizeBytes}" } ?: emptyList()
+                entity.toDomain(atts)
+            }
         }.flowOn(Dispatchers.IO)
     }
 
     override fun getSlaEmails(accountId: String): Flow<List<EmailMessage>> {
-        return emailDao.getSlaEmails(accountId).map { emailEntities ->
-            emailEntities.map { it.toDomain(emptyList()) }
+        return combine(emailDao.getSlaEmails(accountId), attachmentDao.getAllAttachments()) { emailEntities, allAttachments ->
+            val attachmentsByEmail = allAttachments.groupBy { it.emailId }
+            emailEntities.map { entity ->
+                val atts = attachmentsByEmail[entity.id]?.map { it.toDomain() }?.distinctBy { "${it.fileName}_${it.sizeBytes}" } ?: emptyList()
+                entity.toDomain(atts)
+            }
         }.flowOn(Dispatchers.IO)
     }
 
@@ -186,8 +194,12 @@ class OfflineFirstMailRepository(
     }
 
     override fun getEmailsInThread(threadId: String): Flow<List<EmailMessage>> {
-        return emailDao.getEmailsInThread(threadId).map { emailEntities ->
-            emailEntities.map { it.toDomain(emptyList()) }
+        return combine(emailDao.getEmailsInThread(threadId), attachmentDao.getAllAttachments()) { emailEntities, allAttachments ->
+            val attachmentsByEmail = allAttachments.groupBy { it.emailId }
+            emailEntities.map { entity ->
+                val atts = attachmentsByEmail[entity.id]?.map { it.toDomain() }?.distinctBy { "${it.fileName}_${it.sizeBytes}" } ?: emptyList()
+                entity.toDomain(atts)
+            }
         }.flowOn(Dispatchers.IO)
     }
 
@@ -197,8 +209,12 @@ class OfflineFirstMailRepository(
             return flowOf(emptyList())
         }
         val ftsQuery = "*$sanitizedQuery*"
-        return emailDao.searchEmails(ftsQuery).map { emailEntities ->
-            emailEntities.map { it.toDomain(emptyList()) }
+        return combine(emailDao.searchEmails(ftsQuery), attachmentDao.getAllAttachments()) { emailEntities, allAttachments ->
+            val attachmentsByEmail = allAttachments.groupBy { it.emailId }
+            emailEntities.map { entity ->
+                val atts = attachmentsByEmail[entity.id]?.map { it.toDomain() }?.distinctBy { "${it.fileName}_${it.sizeBytes}" } ?: emptyList()
+                entity.toDomain(atts)
+            }
         }.flowOn(Dispatchers.IO)
     }
 
@@ -657,13 +673,15 @@ class OfflineFirstMailRepository(
                                 val effectiveIsRead = pendingReadStatusUpdates[email.id] ?: email.isRead
                                 val existing = emailDao.getEmailEntityById(email.id)
                                 val hasExistingHtml = !existing?.bodyHtml.isNullOrBlank()
-                                val hasExistingText = (existing?.bodyText?.length ?: 0) > 300
+                                val hasExistingText = !existing?.bodyText.isNullOrBlank() && existing?.bodyText != existing?.snippet
                                 val effectiveHtml = if (hasExistingHtml) existing?.bodyHtml else email.bodyHtml
                                 val effectiveText = if (hasExistingText) (existing?.bodyText ?: email.bodyText) else (if (hasExistingHtml) (existing?.bodyText ?: email.bodyText) else email.bodyText)
                                 val effectiveSnippet = if (!existing?.snippet.isNullOrBlank()) existing?.snippet!! else email.snippet
+                                val effectiveHasAttachments = email.hasAttachments || (existing?.hasAttachments == true) || email.attachments.isNotEmpty()
                                 EmailEntity.fromDomain(email.copy(
                                     folderId = folder.id,
                                     isRead = effectiveIsRead,
+                                    hasAttachments = effectiveHasAttachments,
                                     bodyHtml = effectiveHtml,
                                     bodyText = effectiveText,
                                     snippet = effectiveSnippet
@@ -684,7 +702,20 @@ class OfflineFirstMailRepository(
                             }
                             try {
                                 attachmentDao.deduplicateAttachments()
+                                attachmentDao.deletePlaceholderAttachments()
                             } catch (_: Exception) {}
+
+                            // Proactively fetch full details (including real attachments) for inbox emails with attachments
+                            if (folder.type == app.jackdaw.client.core.model.FolderType.INBOX) {
+                                val emailsNeedingAtts = newEmails.filter { it.hasAttachments && it.attachments.isEmpty() }.take(5)
+                                if (emailsNeedingAtts.isNotEmpty()) {
+                                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                        for (e in emailsNeedingAtts) {
+                                            runCatching { fetchEmailFullDetails(account, e.id) }
+                                        }
+                                    }
+                                }
+                            }
                             totalNewEmails += newEmails.size
                             if (!folder.isMuted) {
                                 unmutedNewEmails += newEmails.size
@@ -836,6 +867,7 @@ class OfflineFirstMailRepository(
         emailDao.deleteEmail("msg_nda_2")
         emailDao.deleteEmail("msg_k8s_patch")
         emailDao.deleteEmail("msg_spec")
+        attachmentDao.deletePlaceholderAttachments()
     }
 
     override suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String) {
@@ -848,11 +880,13 @@ class OfflineFirstMailRepository(
 
     override suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean {
         val details = mailProtocolEngine.fetchEmailFullDetails(account, emailId) ?: return false
-        emailDao.updateEmailBody(
+        val hasAtt = details.attachments.isNotEmpty() || (details.hasAttachments == true)
+        emailDao.updateEmailBodyWithAttachments(
             emailId,
             details.bodyText,
             details.bodyHtml,
-            details.bodyText.take(150)
+            details.bodyText.take(150),
+            hasAtt
         )
         if (details.isStarred != null) {
             emailDao.updateStarredStatus(emailId, details.isStarred)
@@ -874,8 +908,9 @@ class OfflineFirstMailRepository(
         try {
             val context = app.jackdaw.client.JackdawApp.instance
             val attachmentsDir = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+            val safeAttId = attachment.id.replace("[^a-zA-Z0-9]".toRegex(), "_").take(16)
             val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
-            val targetFile = java.io.File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
+            val targetFile = java.io.File(attachmentsDir, "${safeAttId}_$safeFileName")
 
             if (targetFile.exists()) {
                 if (targetFile.length() > 0L) {

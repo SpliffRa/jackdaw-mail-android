@@ -174,14 +174,23 @@ fun SlaMonitoringCard(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    if (email.hasAttachments) {
+                    if (email.hasAttachments || email.attachments.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             imageVector = Icons.Rounded.AttachFile,
                             contentDescription = "Вложения",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = JackdawAmber,
                             modifier = Modifier.size(12.dp)
                         )
+                        if (email.attachments.size > 1) {
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = "${email.attachments.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
 

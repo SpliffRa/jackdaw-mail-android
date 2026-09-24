@@ -196,6 +196,9 @@ interface EmailDao {
     @Query("UPDATE emails SET bodyText = :bodyText, bodyHtml = :bodyHtml, snippet = :snippet WHERE id = :id")
     suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
 
+    @Query("UPDATE emails SET bodyText = :bodyText, bodyHtml = :bodyHtml, snippet = :snippet, hasAttachments = :hasAttachments WHERE id = :id")
+    suspend fun updateEmailBodyWithAttachments(id: String, bodyText: String, bodyHtml: String?, snippet: String, hasAttachments: Boolean)
+
     @Query("SELECT id FROM emails WHERE id IN (:ids)")
     suspend fun getExistingEmailIds(ids: List<String>): List<String>
 

@@ -175,10 +175,18 @@ fun JackdawMainApp(
     val accounts by viewModel.accounts.collectAsState()
     val currentAccount by viewModel.currentAccount.collectAsState()
 
-    androidx.compose.runtime.LaunchedEffect(pendingEmailId, currentAccount) {
-        if (!pendingEmailId.isNullOrBlank() && currentAccount != null) {
-            navController.navigate(Screen.MailDetail.createRoute(pendingEmailId))
-            onClearPendingEmail()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    val showBottomBar = currentRoute == Screen.MailList.route || currentRoute == Screen.Calendar.route
+
+    androidx.compose.runtime.LaunchedEffect(pendingEmailId, currentAccount, currentRoute) {
+        if (!pendingEmailId.isNullOrBlank() && currentAccount != null && currentRoute != null) {
+            runCatching {
+                navController.navigate(Screen.MailDetail.createRoute(pendingEmailId)) {
+                    launchSingleTop = true
+                }
+                onClearPendingEmail()
+            }
         }
     }
     val scope = rememberCoroutineScope()
@@ -191,10 +199,6 @@ fun JackdawMainApp(
     val context = androidx.compose.ui.platform.LocalContext.current
     val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
     val totalUnreadCount by viewModel.totalUnreadCount.collectAsState()
-
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
-    val showBottomBar = currentRoute == null || currentRoute == Screen.MailList.route || currentRoute == Screen.Calendar.route
 
     if (accounts.isEmpty() || currentAccount == null) {
         SetupAccountScreen(
@@ -218,6 +222,7 @@ fun JackdawMainApp(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = currentRoute == Screen.MailList.route,
         drawerContent = {
             FolderDrawer(
                 currentAccount = activeAccount,
@@ -400,13 +405,16 @@ fun JackdawMainApp(
                 })
             ) { backStackEntry ->
                 val rawEmailId = backStackEntry.arguments?.getString("emailId") ?: ""
-                val emailId = if (rawEmailId.contains("%")) {
+                val decodedEmailId = if (rawEmailId.contains("%")) {
                     runCatching { java.net.URLDecoder.decode(rawEmailId, "UTF-8") }.getOrDefault(rawEmailId)
                 } else {
                     rawEmailId
                 }
-                val initialEmail = remember(emailId) { emails.find { it.id == emailId } }
-                val detailEmail by viewModel.getEmailById(emailId).collectAsState(initial = initialEmail)
+                val initialEmail = remember(rawEmailId, decodedEmailId) {
+                    emails.find { it.id == decodedEmailId } ?: emails.find { it.id == rawEmailId }
+                }
+                val targetEmailId = initialEmail?.id ?: decodedEmailId.ifBlank { rawEmailId }
+                val detailEmail by viewModel.getEmailById(targetEmailId).collectAsState(initial = initialEmail)
                 val currentEmail = detailEmail ?: initialEmail
 
                 val threadEmails by if (currentEmail?.threadId != null) {

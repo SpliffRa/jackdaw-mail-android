@@ -397,8 +397,9 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 }
                             }
 
-                            // Only add as visible download attachment if it's NOT an inline decorative/signature image
-                            if (!isReferencedInBody && (!isInline || !isImage)) {
+                            // Only filter out if it's purely an inline decorative/signature image referenced in HTML body
+                            val isPureInlineSignature = isReferencedInBody && (isInline || isImage)
+                            if (!isPureInlineSignature) {
                                 attachmentsList.add(
                                     Attachment(
                                         id = attId,
@@ -433,7 +434,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                         isRead = isRead,
                         isStarred = isStarred,
                         receivedAt = receivedAt,
-                        hasAttachments = hasAttachments,
+                        hasAttachments = (hasAttachments == true) || attachmentsList.isNotEmpty(),
                         attachments = attachmentsList,
                         importance = importance.ifBlank { null },
                         bodyText = cleanText,
@@ -473,7 +474,8 @@ class OwaProtocolEngine : MailProtocolEngine {
             bodyText = email.bodyText,
             bodyHtml = email.bodyHtml,
             attachments = email.attachments,
-            isStarred = email.isStarred
+            isStarred = email.isStarred,
+            hasAttachments = email.hasAttachments
         )
     }
 
@@ -1759,7 +1761,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                 timestamp = receivedAt,
                 isRead = isRead,
                 isStarred = isStarred,
-                hasAttachments = hasAttachments,
+                hasAttachments = hasAttachments || attachments.isNotEmpty(),
                 attachments = attachments,
                 slaInfo = SlaInfo(
                     severity = slaSeverity,

@@ -14,7 +14,8 @@ data class DetailedEmailContent(
     val bodyText: String,
     val bodyHtml: String,
     val attachments: List<Attachment> = emptyList(),
-    val isStarred: Boolean? = null
+    val isStarred: Boolean? = null,
+    val hasAttachments: Boolean? = null
 )
 
 interface MailProtocolEngine {

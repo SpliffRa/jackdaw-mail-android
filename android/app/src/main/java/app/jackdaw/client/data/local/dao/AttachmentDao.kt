@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AttachmentDao {
+    @Query("SELECT * FROM attachments")
+    fun getAllAttachments(): Flow<List<AttachmentEntity>>
+
     @Query("SELECT * FROM attachments WHERE emailId = :emailId")
     fun getAttachmentsForEmail(emailId: String): Flow<List<AttachmentEntity>>
 
@@ -32,4 +35,10 @@ interface AttachmentDao {
 
     @Query("UPDATE attachments SET sizeBytes = :sizeBytes WHERE id = :attachmentId")
     suspend fun updateAttachmentSize(attachmentId: String, sizeBytes: Long)
+
+    @Query("DELETE FROM attachments WHERE fileName = 'Вложение' AND sizeBytes = 24500")
+    suspend fun deletePlaceholderAttachments()
+
+    @Query("SELECT COUNT(*) FROM attachments WHERE emailId = :emailId")
+    suspend fun getAttachmentsCountForEmail(emailId: String): Int
 }

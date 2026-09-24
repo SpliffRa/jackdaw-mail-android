@@ -284,15 +284,14 @@ class MailViewModel(
         val hasPlaceholderAttachment = email.attachments.any { 
             it.fileName == "Вложение" || it.sizeBytes == 24500L || it.id.contains("_att_") 
         }
-        val hasCidInHtml = email.bodyHtml?.contains("cid:", ignoreCase = true) == true
         val needsAttachmentDetails = email.hasAttachments && (email.attachments.isEmpty() || hasPlaceholderAttachment)
 
         val isFullBodyLoaded = if (force) {
             false
         } else if (!email.bodyHtml.isNullOrBlank()) {
-            email.bodyHtml!!.length > 300 && !hasPlaceholderAttachment && !hasCidInHtml && !needsAttachmentDetails
+            !hasPlaceholderAttachment && !needsAttachmentDetails
         } else {
-            email.bodyText.length > 500 && email.bodyText != email.snippet && !email.bodyText.endsWith("...") && !needsAttachmentDetails
+            email.bodyText.isNotBlank() && email.bodyText != email.snippet && !email.bodyText.endsWith("...") && !needsAttachmentDetails
         }
 
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {

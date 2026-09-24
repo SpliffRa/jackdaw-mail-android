@@ -211,26 +211,29 @@ fun EmailCard(
                     // Inline compact SLA pill (e.g. 🕒 SLA: 25 мин)
                     SlaBadge(email = email)
 
-                    if (email.hasAttachments) {
+                    if (email.hasAttachments || email.attachments.isNotEmpty()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.AttachFile,
                                 contentDescription = "Вложения",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(12.dp)
+                                tint = JackdawAmber,
+                                modifier = Modifier.size(13.dp)
                             )
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = "${email.attachments.size}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (email.attachments.size > 1) {
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "${email.attachments.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
 
