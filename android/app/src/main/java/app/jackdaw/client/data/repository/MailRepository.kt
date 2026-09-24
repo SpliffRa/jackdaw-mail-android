@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -54,6 +55,10 @@ interface MailRepository {
     suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean
     suspend fun downloadAttachment(account: MailAccount, attachment: app.jackdaw.client.core.model.Attachment): java.io.File?
     fun getTotalUnreadCount(): Flow<Int>
+    fun getUnmutedUnreadCount(): Flow<Int>
+    fun getUnmutedUnreadEmails(limit: Int = 10): Flow<List<EmailMessage>>
+    fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int = 50): Flow<List<EmailMessage>>
+    fun searchEmailsPaged(query: String, limit: Int = 50): Flow<List<EmailMessage>>
     suspend fun reorderFolders(orderedIds: List<String>)
     suspend fun toggleFolderMute(folderId: String)
 }
@@ -89,7 +94,39 @@ class OfflineFirstMailRepository(
     }
 
     override fun getTotalUnreadCount(): Flow<Int> {
-        return emailDao.getTotalUnreadCountFlow()
+        return emailDao.getUnmutedUnreadCountFlow().flowOn(Dispatchers.IO)
+    }
+
+    override fun getUnmutedUnreadCount(): Flow<Int> {
+        return emailDao.getUnmutedUnreadCountFlow().flowOn(Dispatchers.IO)
+    }
+
+    override fun getUnmutedUnreadEmails(limit: Int): Flow<List<EmailMessage>> {
+        return emailDao.getUnmutedUnreadEmailsFlow(limit).map { entities ->
+            entities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int): Flow<List<EmailMessage>> {
+        val emailFlow = when {
+            folderId == "sla_alerts" -> emailDao.getPagedSlaEmails(accountId, limit)
+            folderId.contains("outbox") -> emailDao.getPagedOutboxEmails(accountId, folderId, limit)
+            else -> emailDao.getPagedEmailsInFolder(accountId, folderId, limit)
+        }
+        return emailFlow.map { entities ->
+            entities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun searchEmailsPaged(query: String, limit: Int): Flow<List<EmailMessage>> {
+        val sanitizedQuery = query.trim()
+        if (sanitizedQuery.isBlank()) {
+            return flowOf(emptyList())
+        }
+        val ftsQuery = "*$sanitizedQuery*"
+        return emailDao.searchEmailsPaged(ftsQuery, limit).map { entities ->
+            entities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getFolders(accountId: String): Flow<List<Folder>> {
@@ -115,7 +152,7 @@ class OfflineFirstMailRepository(
                     totalCount = total
                 )
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getEmailsInFolder(accountId: String, folderId: String): Flow<List<EmailMessage>> {
@@ -124,34 +161,15 @@ class OfflineFirstMailRepository(
             folderId.contains("outbox") -> emailDao.getOutboxEmails(accountId, folderId)
             else -> emailDao.getEmailsInFolder(accountId, folderId)
         }
-
-        return emailFlow.flatMapLatest { emailEntities ->
-            if (emailEntities.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(emailEntities.map { entity ->
-                    attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
-                        entity.toDomain(distinctAtts)
-                    }
-                }) { emailsArray -> emailsArray.toList() }
-            }
-        }
+        return emailFlow.map { emailEntities ->
+            emailEntities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getSlaEmails(accountId: String): Flow<List<EmailMessage>> {
-        return emailDao.getSlaEmails(accountId).flatMapLatest { emailEntities ->
-            if (emailEntities.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(emailEntities.map { entity ->
-                    attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
-                        entity.toDomain(distinctAtts)
-                    }
-                }) { emailsArray -> emailsArray.toList() }
-            }
-        }
+        return emailDao.getSlaEmails(accountId).map { emailEntities ->
+            emailEntities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getEmailById(id: String): Flow<EmailMessage?> {
@@ -164,24 +182,14 @@ class OfflineFirstMailRepository(
                     entity.toDomain(distinctAtts)
                 }
             }
-        }
+        }.flowOn(Dispatchers.IO)
     }
 
     override fun getEmailsInThread(threadId: String): Flow<List<EmailMessage>> {
-        return emailDao.getEmailsInThread(threadId).flatMapLatest { emailEntities ->
-            if (emailEntities.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(emailEntities.map { entity ->
-                    attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
-                        entity.toDomain(distinctAtts)
-                    }
-                }) { emailsArray -> emailsArray.toList() }
-            }
-        }
+        return emailDao.getEmailsInThread(threadId).map { emailEntities ->
+            emailEntities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
     }
-
 
     override fun searchEmails(query: String): Flow<List<EmailMessage>> {
         val sanitizedQuery = query.trim()
@@ -189,18 +197,9 @@ class OfflineFirstMailRepository(
             return flowOf(emptyList())
         }
         val ftsQuery = "*$sanitizedQuery*"
-        return emailDao.searchEmails(ftsQuery).flatMapLatest { emailEntities ->
-            if (emailEntities.isEmpty()) {
-                flowOf(emptyList())
-            } else {
-                combine(emailEntities.map { entity ->
-                    attachmentDao.getAttachmentsForEmail(entity.id).map { attachments ->
-                        val distinctAtts = attachments.map { it.toDomain() }.distinctBy { "${it.fileName}_${it.sizeBytes}" }
-                        entity.toDomain(distinctAtts)
-                    }
-                }) { emailsArray -> emailsArray.toList() }
-            }
-        }
+        return emailDao.searchEmails(ftsQuery).map { emailEntities ->
+            emailEntities.map { it.toDomain(emptyList()) }
+        }.flowOn(Dispatchers.IO)
     }
 
     override suspend fun markAsRead(emailId: String, isRead: Boolean) {

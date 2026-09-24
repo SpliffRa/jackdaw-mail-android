@@ -1,5 +1,7 @@
 package app.jackdaw.client.core.model
 
+import androidx.compose.runtime.Immutable
+
 enum class AccountProtocol(val displayName: String) {
     IMAP("IMAP"),
     EXCHANGE_EWS("Exchange"),
@@ -8,6 +10,7 @@ enum class AccountProtocol(val displayName: String) {
     MICROSOFT_GRAPH("MS Graph")
 }
 
+@Immutable
 data class MailAccount(
     val id: String,
     val email: String,
@@ -45,6 +48,7 @@ enum class DeliveryStatus {
     FAILED
 }
 
+@Immutable
 data class Folder(
     val id: String,
     val accountId: String,
@@ -65,12 +69,14 @@ enum class SlaSeverity {
     COMPLETED
 }
 
+@Immutable
 data class SlaInfo(
     val severity: SlaSeverity,
     val deadlineTimestamp: Long,
     val remainingLabel: String
 )
 
+@Immutable
 data class Attachment(
     val id: String,
     val fileName: String,
@@ -79,6 +85,7 @@ data class Attachment(
     val localUri: String? = null
 )
 
+@Immutable
 data class EmailMessage(
     val id: String,
     val accountId: String,

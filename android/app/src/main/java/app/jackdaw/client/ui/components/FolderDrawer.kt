@@ -99,6 +99,10 @@ fun FolderDrawer(
     val context = LocalContext.current
     var isAccountsExpanded by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val itemHeightPx = with(density) { 48.dp.toPx() }
 
     val regularFolders = remember(folders) {
         folders.filter { it.type != FolderType.SLA_ALERTS }
@@ -404,14 +408,25 @@ fun FolderDrawer(
                     key(folder.id) {
                         val isSelected = folder.id == selectedFolderId
                         val icon = getFolderIcon(folder.type)
+                        val isBeingDragged = folder.id == draggedId
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .zIndex(if (isBeingDragged) 10f else 1f)
+                                .graphicsLayer {
+                                    translationY = if (isBeingDragged) dragOffsetY else 0f
+                                    shadowElevation = if (isBeingDragged) 12f else 0f
+                                    scaleX = if (isBeingDragged) 1.02f else 1.0f
+                                    scaleY = if (isBeingDragged) 1.02f else 1.0f
+                                }
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(
-                                    if (isSelected && !isReorderMode) MaterialTheme.colorScheme.surfaceVariant
-                                    else Color.Transparent
+                                    when {
+                                        isBeingDragged -> MaterialTheme.colorScheme.surfaceVariant
+                                        isSelected && !isReorderMode -> MaterialTheme.colorScheme.surfaceVariant
+                                        else -> Color.Transparent
+                                    }
                                 )
                                 .then(
                                     if (isReorderMode) {
@@ -431,6 +446,42 @@ fun FolderDrawer(
                                         )
                                     }
                                 )
+                                .pointerInput(folder.id) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggedId = folder.id
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragEnd = {
+                                            draggedId = null
+                                            dragOffsetY = 0f
+                                            onReorderFolders(reorderList.map { it.id })
+                                        },
+                                        onDragCancel = {
+                                            draggedId = null
+                                            dragOffsetY = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            dragOffsetY += dragAmount.y
+                                            val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
+                                            if (currentIdx != -1) {
+                                                val step = if (itemHeightPx > 0f) itemHeightPx else 48f
+                                                if (dragOffsetY > step * 0.5f && currentIdx < reorderList.size - 1) {
+                                                    val item = reorderList.removeAt(currentIdx)
+                                                    reorderList.add(currentIdx + 1, item)
+                                                    dragOffsetY -= step
+                                                    onReorderFolders(reorderList.map { it.id })
+                                                } else if (dragOffsetY < -step * 0.5f && currentIdx > 0) {
+                                                    val item = reorderList.removeAt(currentIdx)
+                                                    reorderList.add(currentIdx - 1, item)
+                                                    dragOffsetY += step
+                                                    onReorderFolders(reorderList.map { it.id })
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
                                 .padding(
                                     start = if (isReorderMode) 8.dp else 12.dp,
                                     end = if (isReorderMode) 8.dp else 12.dp,
@@ -523,58 +574,60 @@ fun FolderDrawer(
                                 }
                             }
 
-                            // In reorder mode: show fluid Up and Down arrows
+                            // In reorder mode: show clean Drag Handle on the right with immediate drag support
                             if (isReorderMode) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isBeingDragged) JackdawAmber.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                        .pointerInput(folder.id) {
+                                            detectVerticalDragGestures(
+                                                onDragStart = {
+                                                    draggedId = folder.id
+                                                    dragOffsetY = 0f
+                                                },
+                                                onDragEnd = {
+                                                    draggedId = null
+                                                    dragOffsetY = 0f
+                                                    onReorderFolders(reorderList.map { it.id })
+                                                },
+                                                onDragCancel = {
+                                                    draggedId = null
+                                                    dragOffsetY = 0f
+                                                },
+                                                onVerticalDrag = { change, dragAmount ->
+                                                    change.consume()
+                                                    dragOffsetY += dragAmount
+                                                    val currentIdx = reorderList.indexOfFirst { it.id == draggedId }
+                                                    if (currentIdx != -1) {
+                                                        val step = if (itemHeightPx > 0f) itemHeightPx else 48f
+                                                        if (dragOffsetY > step * 0.5f && currentIdx < reorderList.size - 1) {
+                                                            val item = reorderList.removeAt(currentIdx)
+                                                            reorderList.add(currentIdx + 1, item)
+                                                            dragOffsetY -= step
+                                                            onReorderFolders(reorderList.map { it.id })
+                                                        } else if (dragOffsetY < -step * 0.5f && currentIdx > 0) {
+                                                            val item = reorderList.removeAt(currentIdx)
+                                                            reorderList.add(currentIdx - 1, item)
+                                                            dragOffsetY += step
+                                                            onReorderFolders(reorderList.map { it.id })
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    // Move Up
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (index > 0) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-                                            )
-                                            .clickable(enabled = index > 0) {
-                                                val item = reorderList.removeAt(index)
-                                                reorderList.add(index - 1, item)
-                                                onReorderFolders(reorderList.map { it.id })
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.KeyboardArrowUp,
-                                            contentDescription = "Вверх",
-                                            tint = if (index > 0) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-
-                                    // Move Down
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (index < reorderList.size - 1) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-                                            )
-                                            .clickable(enabled = index < reorderList.size - 1) {
-                                                val item = reorderList.removeAt(index)
-                                                reorderList.add(index + 1, item)
-                                                onReorderFolders(reorderList.map { it.id })
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                                            contentDescription = "Вниз",
-                                            tint = if (index < reorderList.size - 1) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Rounded.DragHandle,
+                                        contentDescription = "Перетащить",
+                                        tint = if (isBeingDragged) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
                                 }
                             }
                         }

@@ -57,6 +57,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val timeFormatThreadLocal = ThreadLocal.withInitial {
+    SimpleDateFormat("HH:mm", Locale.getDefault())
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    return timeFormatThreadLocal.get()?.format(Date(timestamp)) ?: ""
+}
+
 @Composable
 fun EmailCard(
     email: EmailMessage,
@@ -64,8 +72,10 @@ fun EmailCard(
     onToggleStar: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val formattedTime = timeFormat.format(Date(email.timestamp))
+    val formattedTime = remember(email.timestamp) { formatTimestamp(email.timestamp) }
+    val cleanSubject = remember(email.subject) { email.subject.cleanEmailSubject() }
+    val cleanSnippet = remember(email.snippet) { email.snippet.cleanEmailPreview() }
+    val initial = remember(email.senderName) { email.senderName.firstOrNull()?.uppercase() ?: "J" }
 
     val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
@@ -112,7 +122,6 @@ fun EmailCard(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    val initial = email.senderName.firstOrNull()?.uppercase() ?: "J"
                     Text(
                         text = initial,
                         style = MaterialTheme.typography.titleMedium,
@@ -175,7 +184,7 @@ fun EmailCard(
                 Spacer(modifier = Modifier.height(1.dp))
 
                 Text(
-                    text = email.subject.cleanEmailSubject(),
+                    text = cleanSubject,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (!email.isRead) FontWeight.SemiBold else FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -184,7 +193,7 @@ fun EmailCard(
                 )
 
                 Text(
-                    text = email.snippet.cleanEmailPreview(),
+                    text = cleanSnippet,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

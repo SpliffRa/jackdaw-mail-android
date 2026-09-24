@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -124,6 +127,7 @@ fun MailListScreen(
     onSwipeArchive: (EmailMessage) -> Unit = {},
     onSwipeDelete: (EmailMessage) -> Unit = {},
     onEmptyTrash: () -> Unit = {},
+    onLoadMore: () -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
@@ -133,14 +137,15 @@ fun MailListScreen(
     var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
     var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
-    val unreadCount = emails.count { !it.isRead }
+    val unreadCount = remember(emails) { emails.count { !it.isRead } }
 
-
-    val filteredEmails = emails.filter { email ->
-        when (selectedFilter) {
-            MailFilter.INBOX -> true
-            MailFilter.UNREAD -> !email.isRead
-            MailFilter.STARRED -> email.isStarred
+    val filteredEmails = remember(emails, selectedFilter) {
+        emails.filter { email ->
+            when (selectedFilter) {
+                MailFilter.INBOX -> true
+                MailFilter.UNREAD -> !email.isRead
+                MailFilter.STARRED -> email.isStarred
+            }
         }
     }
 
@@ -391,11 +396,26 @@ fun MailListScreen(
                         }
                     }
                 } else {
+                    val listState = rememberLazyListState()
+                    val shouldLoadMore by remember {
+                        derivedStateOf {
+                            val totalItems = listState.layoutInfo.totalItemsCount
+                            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            totalItems > 0 && lastVisibleIndex >= totalItems - 6
+                        }
+                    }
+                    LaunchedEffect(shouldLoadMore) {
+                        if (shouldLoadMore) {
+                            onLoadMore()
+                        }
+                    }
+
                     val groupedEmails = remember(filteredEmails) {
                         filteredEmails.groupBy { DateGrouping.getGroup(it.timestamp) }
                     }
 
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -403,10 +423,14 @@ fun MailListScreen(
                         DateGroup.values().forEach { group ->
                             val emailsInGroup = groupedEmails[group]
                             if (!emailsInGroup.isNullOrEmpty()) {
-                                item(key = "header_${group.name}") {
+                                item(key = "header_${group.name}", contentType = "date_header") {
                                     DateSectionHeader(title = group.title, count = emailsInGroup.size)
                                 }
-                                items(emailsInGroup, key = { it.id }) { email ->
+                                items(
+                                    items = emailsInGroup,
+                                    key = { it.id },
+                                    contentType = { "email_card" }
+                                ) { email ->
                                     SwipeableEmailCard(
                                         email = email,
                                         onClick = { onEmailClick(email) },

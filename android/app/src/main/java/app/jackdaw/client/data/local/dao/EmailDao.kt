@@ -10,14 +10,50 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface EmailDao {
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND folderId = :folderId 
+        ORDER BY timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int): Flow<List<EmailEntity>>
+
     @Query("SELECT * FROM emails WHERE accountId = :accountId AND folderId = :folderId ORDER BY timestamp DESC")
     fun getEmailsInFolder(accountId: String, folderId: String): Flow<List<EmailEntity>>
+
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED')) 
+        ORDER BY timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getPagedOutboxEmails(accountId: String, folderId: String, limit: Int): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED')) ORDER BY timestamp DESC")
     fun getOutboxEmails(accountId: String, folderId: String): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC")
     fun getAllEmails(accountId: String): Flow<List<EmailEntity>>
+
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND slaSeverity != 'NONE' AND slaSeverity != 'COMPLETED' 
+        ORDER BY slaDeadlineTimestamp ASC, timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getPagedSlaEmails(accountId: String, limit: Int): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE accountId = :accountId AND slaSeverity != 'NONE' AND slaSeverity != 'COMPLETED' ORDER BY slaDeadlineTimestamp ASC, timestamp DESC")
     fun getSlaEmails(accountId: String): Flow<List<EmailEntity>>
@@ -27,6 +63,20 @@ interface EmailDao {
 
     @Query("SELECT * FROM emails WHERE id = :id LIMIT 1")
     suspend fun getEmailEntityById(id: String): EmailEntity?
+
+    @Query("""
+        SELECT emails.id, emails.accountId, emails.folderId, emails.senderName, emails.senderEmail, 
+               emails.toRecipients, emails.ccRecipients, emails.subject, emails.snippet, 
+               '' AS bodyText, NULL AS bodyHtml, emails.timestamp, emails.isRead, emails.isStarred, 
+               emails.hasAttachments, emails.slaSeverity, emails.slaDeadlineTimestamp, 
+               emails.slaRemainingLabel, emails.threadId, emails.relatedEmailsCount, emails.deliveryStatus 
+        FROM emails 
+        JOIN emails_fts ON emails.rowid = emails_fts.rowid 
+        WHERE emails_fts MATCH :query 
+        ORDER BY emails.timestamp DESC 
+        LIMIT :limit
+    """)
+    fun searchEmailsPaged(query: String, limit: Int): Flow<List<EmailEntity>>
 
     @Query("SELECT emails.* FROM emails JOIN emails_fts ON emails.rowid = emails_fts.rowid WHERE emails_fts MATCH :query ORDER BY emails.timestamp DESC")
     fun searchEmails(query: String): Flow<List<EmailEntity>>
@@ -58,8 +108,63 @@ interface EmailDao {
     @Query("SELECT COUNT(*) FROM emails")
     suspend fun getEmailCount(): Int
 
-    @Query("SELECT COUNT(*) FROM emails WHERE isRead = 0 AND folderId NOT LIKE '%trash%' AND folderId NOT LIKE '%archive%'")
+    @Query("""
+        SELECT COUNT(DISTINCT emails.id) 
+        FROM emails 
+        JOIN folders ON emails.folderId = folders.id 
+        WHERE emails.isRead = 0 
+          AND folders.isMuted = 0 
+          AND emails.folderId NOT LIKE '%trash%' 
+          AND emails.folderId NOT LIKE '%archive%'
+    """)
     fun getTotalUnreadCountFlow(): Flow<Int>
+
+    @Query("""
+        SELECT COUNT(DISTINCT emails.id) 
+        FROM emails 
+        JOIN folders ON emails.folderId = folders.id 
+        WHERE emails.isRead = 0 
+          AND folders.isMuted = 0 
+          AND emails.folderId NOT LIKE '%trash%' 
+          AND emails.folderId NOT LIKE '%archive%'
+    """)
+    fun getUnmutedUnreadCountFlow(): Flow<Int>
+
+    @Query("""
+        SELECT emails.id, emails.accountId, emails.folderId, emails.senderName, emails.senderEmail, 
+               emails.toRecipients, emails.ccRecipients, emails.subject, emails.snippet, 
+               '' AS bodyText, NULL AS bodyHtml, emails.timestamp, emails.isRead, emails.isStarred, 
+               emails.hasAttachments, emails.slaSeverity, emails.slaDeadlineTimestamp, 
+               emails.slaRemainingLabel, emails.threadId, emails.relatedEmailsCount, emails.deliveryStatus 
+        FROM emails 
+        JOIN folders ON emails.folderId = folders.id 
+        WHERE emails.isRead = 0 
+          AND folders.isMuted = 0 
+          AND emails.folderId NOT LIKE '%trash%' 
+          AND emails.folderId NOT LIKE '%archive%' 
+        GROUP BY emails.id 
+        ORDER BY emails.timestamp DESC 
+        LIMIT :limit
+    """)
+    fun getUnmutedUnreadEmailsFlow(limit: Int = 10): Flow<List<EmailEntity>>
+
+    @Query("""
+        SELECT emails.id, emails.accountId, emails.folderId, emails.senderName, emails.senderEmail, 
+               emails.toRecipients, emails.ccRecipients, emails.subject, emails.snippet, 
+               '' AS bodyText, NULL AS bodyHtml, emails.timestamp, emails.isRead, emails.isStarred, 
+               emails.hasAttachments, emails.slaSeverity, emails.slaDeadlineTimestamp, 
+               emails.slaRemainingLabel, emails.threadId, emails.relatedEmailsCount, emails.deliveryStatus 
+        FROM emails 
+        JOIN folders ON emails.folderId = folders.id 
+        WHERE emails.isRead = 0 
+          AND folders.isMuted = 0 
+          AND emails.folderId NOT LIKE '%trash%' 
+          AND emails.folderId NOT LIKE '%archive%' 
+        GROUP BY emails.id 
+        ORDER BY emails.timestamp DESC 
+        LIMIT :limit
+    """)
+    suspend fun getUnmutedUnreadEmails(limit: Int = 10): List<EmailEntity>
 
     @Query("SELECT * FROM emails WHERE deliveryStatus = 'QUEUED' ORDER BY timestamp ASC")
     suspend fun getPendingOutgoingEmails(): List<EmailEntity>

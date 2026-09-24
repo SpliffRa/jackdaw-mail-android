@@ -347,6 +347,9 @@ fun JackdawMainApp(
                     },
                     onToggleStar = { emailId, isStarred ->
                         viewModel.toggleStar(emailId, isStarred)
+                    },
+                    onLoadMore = {
+                        viewModel.loadMoreEmails()
                     }
                 )
             }

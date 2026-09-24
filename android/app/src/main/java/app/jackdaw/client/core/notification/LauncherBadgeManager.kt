@@ -19,7 +19,7 @@ object LauncherBadgeManager {
 
     private const val TAG = "LauncherBadgeManager"
     private const val BADGE_CHANNEL_ID = "jackdaw_app_badge_channel_v1"
-    private const val BADGE_NOTIFICATION_ID = 8888
+    internal const val BADGE_NOTIFICATION_ID = 8888
 
     /**
      * Устанавливает число непрочитанных сообщений на ярлыке приложения.
@@ -43,62 +43,10 @@ object LauncherBadgeManager {
     private fun updateNotificationBadge(context: Context, count: Int) {
         val notificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                BADGE_CHANNEL_ID,
-                "Счетчик непрочитанных на ярлыке",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Отображение бейджа с количеством непрочитанных писем на значке приложения"
-                setShowBadge(true)
-                enableVibration(false)
-                setSound(null, null)
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        if (count > 0) {
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                BADGE_NOTIFICATION_ID,
-                launchIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            val unreadText = PluralRules.formatUnreadCount(count)
-            val builder = NotificationCompat.Builder(context, BADGE_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setContentTitle("Jackdaw Mail")
-                .setContentText(unreadText)
-                .setNumber(count)
-                .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setSilent(true)
-                .setShowWhen(false)
-                .setAutoCancel(false)
-                .setOngoing(false)
-                .setContentIntent(pendingIntent)
-
-            val notification = builder.build()
-
-            // Xiaomi MIUI notification reflection for badge number
-            try {
-                val field = notification.javaClass.getDeclaredField("extraNotification")
-                val extraNotification = field.get(notification)
-                val method = extraNotification.javaClass.getDeclaredMethod("setMessageCount", Int::class.javaPrimitiveType)
-                method.invoke(extraNotification, count)
-            } catch (_: Throwable) {}
-
-            try {
-                notificationManager.notify(BADGE_NOTIFICATION_ID, notification)
-            } catch (_: SecurityException) {}
-        } else {
+        // Ensure legacy duplicate badge notification is cancelled so only ONE notification exists in system tray
+        try {
             notificationManager.cancel(BADGE_NOTIFICATION_ID)
-        }
+        } catch (_: SecurityException) {}
     }
 
     private fun applyOemBadges(context: Context, count: Int) {

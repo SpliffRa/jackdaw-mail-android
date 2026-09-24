@@ -16,8 +16,23 @@ class JackdawApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        // Initialize notification channels and sound system
-        app.jackdaw.client.core.notification.NotificationHelper.getInstance(this)
+        val notificationHelper = app.jackdaw.client.core.notification.NotificationHelper.getInstance(this)
+        val database = app.jackdaw.client.data.local.JackdawDatabase.getInstance(this)
+        val repository = app.jackdaw.client.data.repository.OfflineFirstMailRepository(database)
+
+        // Reactive notification updates on any change: new email, mark read, delete, mute toggle
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(
+                repository.getUnmutedUnreadEmails(10),
+                repository.getUnmutedUnreadCount()
+            ) { emails, count ->
+                Pair(emails, count)
+            }.collect { (emails, count) ->
+                notificationHelper.updateUnreadNotification(emails, count)
+                app.jackdaw.client.core.notification.LauncherBadgeManager.setBadge(this@JackdawApp, count)
+            }
+        }
+
         // Register periodic background sync via WorkManager (fast 3 min chaining + 15 min fallback)
         SyncScheduler.schedulePeriodicSync(this)
 

@@ -53,20 +53,16 @@ class MailSyncWorker(
                 }
             }
 
-            if (allUnmutedEmails.isNotEmpty()) {
-                val totalUnread = repository.getTotalUnreadCount().first()
-                notificationHelper.showNewEmailsNotification(allUnmutedEmails, totalUnread)
+            val totalUnread = repository.getUnmutedUnreadCount().first()
+            val unmutedEmails = repository.getUnmutedUnreadEmails(10).first()
+            if (totalUnread > 0) {
+                val hasNew = allUnmutedEmails.isNotEmpty()
+                notificationHelper.updateUnreadNotification(unmutedEmails, totalUnread, playSound = hasNew)
+            } else {
+                notificationHelper.clearMailNotifications()
             }
 
-            // 3. Check for urgent SLA emails and trigger system notification if necessary
-            val urgentEmails = database.emailDao().getUrgentSlaEmails()
-            if (urgentEmails.isNotEmpty()) {
-                val mostUrgent = urgentEmails.firstOrNull { it.slaSeverity == SlaSeverity.URGENT } ?: urgentEmails.first()
-                notificationHelper.showSlaAlertNotification(mostUrgent.toDomain(emptyList()))
-            }
-
-            // 4. Synchronize launcher icon badge with actual unread count
-            val totalUnread = repository.getTotalUnreadCount().first()
+            // 3. Synchronize launcher icon badge with actual unmuted unread count
             app.jackdaw.client.core.notification.LauncherBadgeManager.setBadge(context, totalUnread)
 
             Log.d(TAG, "MailSyncWorker completed successfully")

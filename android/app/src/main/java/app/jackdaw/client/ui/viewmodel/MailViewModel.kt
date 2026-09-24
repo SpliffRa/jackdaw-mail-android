@@ -19,7 +19,9 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -88,21 +90,36 @@ class MailViewModel(
         initialValue = null
     )
 
+    private data class EmailQueryParams(
+        val account: MailAccount?,
+        val folder: Folder?,
+        val query: String,
+        val limit: Int
+    )
+
+    private val _currentLimit = MutableStateFlow(50)
+
+    fun loadMoreEmails() {
+        _currentLimit.value += 50
+    }
+
     val emails: StateFlow<List<EmailMessage>> = combine(
         currentAccount,
         selectedFolder,
-        _searchQuery
-    ) { account, folder, query ->
-        Triple(account, folder, query)
-    }.flatMapLatest { (account, folder, query) ->
+        _searchQuery,
+        _currentLimit
+    ) { account, folder, query, limit ->
+        EmailQueryParams(account, folder, query, limit)
+    }.flatMapLatest { (account, folder, query, limit) ->
         if (account == null || folder == null) {
             flowOf(emptyList())
         } else if (query.isNotBlank()) {
-            repository.searchEmails(query)
+            repository.searchEmailsPaged(query, limit)
         } else {
-            repository.getEmailsInFolder(account.id, folder.id)
+            repository.getPagedEmailsInFolder(account.id, folder.id, limit)
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.IO)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = emptyList()
@@ -171,11 +188,13 @@ class MailViewModel(
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     fun selectFolder(folder: Folder) {
+        _currentLimit.value = 50
         _selectedFolderId.value = folder.id
         _searchQuery.value = ""
     }
 
     fun selectAccount(account: MailAccount) {
+        _currentLimit.value = 50
         viewModelScope.launch {
             _manualSelectedAccountId.value = account.id
             val accountFolders = repository.getFolders(account.id).first()
@@ -186,6 +205,7 @@ class MailViewModel(
     }
 
     fun setSearchQuery(query: String) {
+        _currentLimit.value = 50
         _searchQuery.value = query
     }
 

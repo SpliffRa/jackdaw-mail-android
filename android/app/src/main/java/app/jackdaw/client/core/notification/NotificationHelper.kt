@@ -13,6 +13,7 @@ import androidx.core.app.NotificationManagerCompat
 import app.jackdaw.client.MainActivity
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.SlaSeverity
+import app.jackdaw.client.core.util.PluralRules
 import app.jackdaw.client.core.util.cleanEmailPreview
 import app.jackdaw.client.core.util.cleanEmailSubject
 import java.util.concurrent.ConcurrentLinkedDeque
@@ -80,107 +81,88 @@ class NotificationHelper(private val context: Context) {
         }
     }
 
-    fun showNewEmailsNotification(emails: List<EmailMessage>, totalUnread: Int = 1) {
+    fun updateUnreadNotification(
+        unreadEmails: List<EmailMessage>,
+        totalUnread: Int,
+        playSound: Boolean = false
+    ) {
         val soundManager = SoundNotificationManager.getInstance(context)
-        if (!soundManager.isNotificationsEnabled || emails.isEmpty()) return
+        val manager = NotificationManagerCompat.from(context)
 
-        for (email in emails) {
-            val cleanSubj = email.subject.cleanEmailSubject()
-            val cleanSnip = email.snippet.cleanEmailPreview()
+        // Cancel old legacy duplicate notification IDs so no ghost notifications linger
+        try {
+            manager.cancel(LauncherBadgeManager.BADGE_NOTIFICATION_ID)
+            manager.cancel(1042)
+        } catch (_: SecurityException) {}
+
+        if (totalUnread <= 0 || unreadEmails.isEmpty()) {
+            clearMailNotifications()
+            return
+        }
+
+        // Exact Russian pluralization: "1 новое письмо" / "N новых писем"
+        val countText = PluralRules.pluralize(totalUnread, "новое письмо", "новых письма", "новых писем")
+
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (totalUnread == 1 && unreadEmails.isNotEmpty()) {
+                putExtra("EXTRA_EMAIL_ID", unreadEmails.first().id)
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            SUMMARY_NOTIFICATION_ID,
+            launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Single expandable InboxStyle notification with senders and subjects of unmuted emails
+        val inboxStyle = NotificationCompat.InboxStyle()
+            .setBigContentTitle("Jackdaw Mail")
+            .setSummaryText(countText)
+
+        unreadEmails.take(8).forEach { email ->
             val sender = email.senderName.ifBlank { email.senderEmail }
-
-            recentEmails.removeAll { it.id == email.id }
-            recentEmails.addFirst(NotificationItem(email.id, sender, cleanSubj, cleanSnip))
+            val cleanSubj = email.subject.cleanEmailSubject()
+            inboxStyle.addLine("$sender: $cleanSubj")
         }
 
-        while (recentEmails.size > 10) {
-            recentEmails.removeLast()
-        }
-
-        val totalDisplayCount = totalUnread.coerceAtLeast(recentEmails.size)
-        val latest = recentEmails.firstOrNull() ?: return
-
-        val notification = if (totalDisplayCount <= 1 || recentEmails.size == 1) {
-            // Single email: expandable BigTextStyle showing subject & snippet, clicking opens this email
-            val launchIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                putExtra("EXTRA_EMAIL_ID", latest.id)
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                latest.id.hashCode(),
-                launchIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            NotificationCompat.Builder(context, CHANNEL_INCOMING_MAIL)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setContentTitle(latest.sender)
-                .setContentText(latest.subject)
-                .setStyle(
-                    NotificationCompat.BigTextStyle()
-                        .setBigContentTitle(latest.sender)
-                        .bigText("${latest.subject}\n\n${latest.snippet}")
-                        .setSummaryText("Jackdaw Mail")
-                )
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setNumber(1)
-                .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
-                .setAutoCancel(true)
-                .setSilent(true)
-                .setContentIntent(pendingIntent)
-                .build()
-        } else {
-            // Multiple emails: expandable InboxStyle showing list of senders & subjects
-            val summaryLaunchIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            }
-            val summaryPendingIntent = PendingIntent.getActivity(
-                context,
-                0,
-                summaryLaunchIntent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-
-            val inboxStyle = NotificationCompat.InboxStyle()
-                .setBigContentTitle("Входящие ($totalDisplayCount)")
-                .setSummaryText("Jackdaw Mail")
-
-            recentEmails.take(6).forEach { item ->
-                inboxStyle.addLine("${item.sender}: ${item.subject}")
-            }
-
-            NotificationCompat.Builder(context, CHANNEL_INCOMING_MAIL)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
-                .setContentTitle("Jackdaw Mail")
-                .setContentText("$totalDisplayCount новых писем")
-                .setStyle(inboxStyle)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setSilent(true)
-                .setNumber(totalDisplayCount)
-                .setContentIntent(summaryPendingIntent)
-                .build()
-        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_INCOMING_MAIL)
+            .setSmallIcon(android.R.drawable.ic_dialog_email)
+            .setContentTitle("Jackdaw Mail")
+            .setContentText(countText)
+            .setStyle(inboxStyle)
+            .setNumber(totalUnread)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .setContentIntent(pendingIntent)
+            .build()
 
         try {
-            val manager = NotificationManagerCompat.from(context)
             manager.notify(SUMMARY_NOTIFICATION_ID, notification)
-        } catch (_: SecurityException) {
-            // Permission not yet granted
-        }
+        } catch (_: SecurityException) {}
 
-        soundManager.playIncomingMailSound()
+        if (playSound && soundManager.isNotificationsEnabled) {
+            soundManager.playIncomingMailSound()
+        }
+    }
+
+    fun showNewEmailsNotification(emails: List<EmailMessage>, totalUnread: Int = 1) {
+        updateUnreadNotification(emails, totalUnread, playSound = true)
     }
 
     fun showNewEmailNotification(email: EmailMessage, unreadCount: Int = 1) {
-        showNewEmailsNotification(listOf(email), unreadCount)
+        updateUnreadNotification(listOf(email), unreadCount, playSound = true)
     }
 
     fun clearMailNotifications() {
-        recentEmails.clear()
         try {
-            NotificationManagerCompat.from(context).cancel(SUMMARY_NOTIFICATION_ID)
+            val manager = NotificationManagerCompat.from(context)
+            manager.cancel(SUMMARY_NOTIFICATION_ID)
+            manager.cancel(LauncherBadgeManager.BADGE_NOTIFICATION_ID)
+            manager.cancel(1042)
         } catch (_: SecurityException) {}
     }
 
