@@ -93,4 +93,13 @@ interface EmailDao {
 
     @Query("SELECT id FROM emails WHERE id IN (:ids)")
     suspend fun getExistingEmailIds(ids: List<String>): List<String>
+
+    @Query("SELECT id FROM emails WHERE accountId = :accountId AND folderId = :folderId")
+    suspend fun getEmailIdsInFolder(accountId: String, folderId: String): List<String>
+
+    @Query("DELETE FROM emails WHERE id IN (:emailIds)")
+    suspend fun deleteEmailsByIds(emailIds: List<String>)
+
+    @Query("DELETE FROM emails WHERE folderId NOT IN (SELECT id FROM folders)")
+    suspend fun deleteOrphanedEmails()
 }

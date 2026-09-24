@@ -349,6 +349,19 @@ class OfflineFirstMailRepository(
     override suspend fun emptyTrash(accountId: String, folderId: String) {
         attachmentDao.deleteAttachmentsInFolder(accountId, folderId)
         emailDao.deleteEmailsInFolder(accountId, folderId)
+        folderDao.updateCounts(folderId, 0, 0)
+
+        repositoryScope.launch {
+            try {
+                val account = accountDao.getAccountById(accountId)?.toDomain() ?: return@launch
+                if (account.serverHost.isNotBlank()) {
+                    val success = mailProtocolEngine.emptyTrash(account)
+                    android.util.Log.i("MailRepository", "emptyTrash on server result: $success")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MailRepository", "Error syncing emptyTrash for $accountId", e)
+            }
+        }
     }
 
     override suspend fun markSlaCompleted(emailId: String) {
@@ -591,6 +604,7 @@ class OfflineFirstMailRepository(
                             folderDao.deleteFolder(f.id)
                         }
                     }
+                    emailDao.deleteOrphanedEmails()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("MailRepository", "Failed to sync remote folders", e)
@@ -625,7 +639,19 @@ class OfflineFirstMailRepository(
                     }
                     try {
                         val newEmails = mailProtocolEngine.fetchNewEmails(account, folder.id, 0L)
+                        val localEmailIds = emailDao.getEmailIdsInFolder(account.id, folder.id).toSet()
+
                         if (newEmails.isNotEmpty()) {
+                            // Reconcile deletions: remove any local emails that no longer exist on the server
+                            val serverEmailIds = newEmails.map { it.id }.toSet()
+                            val toDeleteLocally = localEmailIds - serverEmailIds
+                            if (toDeleteLocally.isNotEmpty()) {
+                                val deleteList = toDeleteLocally.toList()
+                                attachmentDao.deleteAttachmentsForEmails(deleteList)
+                                emailDao.deleteEmailsByIds(deleteList)
+                                android.util.Log.i("MailRepository", "syncAll: pruned ${toDeleteLocally.size} deleted emails from folder ${folder.name}")
+                            }
+
                             val emailEntities = newEmails.map { email ->
                                 val effectiveIsRead = pendingReadStatusUpdates[email.id] ?: email.isRead
                                 val existing = emailDao.getEmailEntityById(email.id)
@@ -659,6 +685,11 @@ class OfflineFirstMailRepository(
                             if (!folder.isMuted) {
                                 unmutedNewEmails += newEmails.size
                             }
+                        } else if (folder.totalCount == 0 && localEmailIds.isNotEmpty()) {
+                            // Server explicitly reports 0 items in folder (e.g. emptied trash or cleared folder)
+                            attachmentDao.deleteAttachmentsInFolder(account.id, folder.id)
+                            emailDao.deleteEmailsInFolder(account.id, folder.id)
+                            android.util.Log.i("MailRepository", "syncAll: cleared ${localEmailIds.size} local emails for empty remote folder ${folder.name}")
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("MailRepository", "Error syncing folder ${folder.name} (${folder.id})", e)
@@ -667,7 +698,15 @@ class OfflineFirstMailRepository(
             } else {
                 // Fallback to inbox folder if folder list is not yet populated
                 val newEmails = mailProtocolEngine.fetchNewEmails(account, inboxFolder, 0L)
+                val localEmailIds = emailDao.getEmailIdsInFolder(account.id, inboxFolder).toSet()
                 if (newEmails.isNotEmpty()) {
+                    val serverEmailIds = newEmails.map { it.id }.toSet()
+                    val toDeleteLocally = localEmailIds - serverEmailIds
+                    if (toDeleteLocally.isNotEmpty()) {
+                        val deleteList = toDeleteLocally.toList()
+                        attachmentDao.deleteAttachmentsForEmails(deleteList)
+                        emailDao.deleteEmailsByIds(deleteList)
+                    }
                     android.util.Log.i("MailRepository", "syncAll: inbox fallback synced ${newEmails.size} emails")
                     val emailEntities = newEmails.map { email ->
                         val existing = emailDao.getEmailEntityById(email.id)

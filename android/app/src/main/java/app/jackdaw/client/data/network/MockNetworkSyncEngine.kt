@@ -60,4 +60,9 @@ class MockNetworkSyncEngine : MailProtocolEngine {
         delay(100)
         return true
     }
+
+    override suspend fun emptyTrash(account: MailAccount): Boolean {
+        delay(100)
+        return true
+    }
 }

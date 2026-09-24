@@ -23,4 +23,7 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE rowid NOT IN (SELECT MIN(rowid) FROM attachments GROUP BY emailId, fileName, sizeBytes)")
     suspend fun deduplicateAttachments()
+
+    @Query("DELETE FROM attachments WHERE emailId IN (:emailIds)")
+    suspend fun deleteAttachmentsForEmails(emailIds: List<String>)
 }

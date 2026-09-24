@@ -204,13 +204,39 @@ class OwaProtocolEngine : MailProtocolEngine {
         val (cookies, canary) = ensureSession(account)
 
         val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
-        val requestBody = buildFindItemEmailPayload(folderId)
+        val allRawEmails = mutableListOf<EmailMessage>()
+        var offset = 0
+        val pageSize = 200
+        val maxTotalToFetch = 1000
 
         try {
-            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
-            val emails = if (responseJson != null) parseEmailsFromFindItemResponse(account, folderId, responseJson) else emptyList()
-            val finalEmails = if (emails.isNotEmpty()) {
-                emails.map { email ->
+            var firstResponseJson: JSONObject? = null
+            while (offset < maxTotalToFetch) {
+                val requestBody = buildFindItemEmailPayload(folderId, offset, pageSize)
+                val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+                if (responseJson == null) {
+                    break
+                }
+                if (firstResponseJson == null) {
+                    firstResponseJson = responseJson
+                }
+
+                val pageEmails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
+                if (pageEmails.isEmpty()) {
+                    break
+                }
+                allRawEmails.addAll(pageEmails)
+
+                val rootFolder = extractRootFolder(responseJson)
+                val includesLast = rootFolder?.optBoolean("IncludesLastItemInRange", true) ?: true
+                if (includesLast || pageEmails.size < pageSize) {
+                    break
+                }
+                offset += pageEmails.size
+            }
+
+            val finalEmails = if (allRawEmails.isNotEmpty()) {
+                allRawEmails.map { email ->
                     val timestamp = email.timestamp
                     val isRead = email.isRead
                     val slaSeverity = if (!isRead) {
@@ -239,8 +265,8 @@ class OwaProtocolEngine : MailProtocolEngine {
                         slaInfo = newSla
                     )
                 }
-            } else if (responseJson != null) {
-                // OWA FindItem succeeded, but folder is empty on server
+            } else if (firstResponseJson != null) {
+                // OWA FindItem succeeded, but folder is genuinely empty on server
                 emptyList()
             } else {
                 // OWA FindItem failed/null, silently try EWS SOAP if explicitly configured
@@ -489,8 +515,48 @@ class OwaProtocolEngine : MailProtocolEngine {
                     return@withContext true
                 }
             }
+            if (hardDelete) {
+                // Fallback to SoftDelete
+                val fallbackBody = buildDeleteItemPayload(emailId, hardDelete = false, deleteTypeOverride = "SoftDelete")
+                val fallbackJson = executeOwaJsonPost(owaServiceUrl, fallbackBody, cookies, canary, account)
+                if (fallbackJson != null) {
+                    val respMessages = fallbackJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                    val firstMsg = respMessages?.optJSONObject(0)
+                    val responseClass = firstMsg?.optString("ResponseClass")
+                    if (responseClass == "Success") {
+                        Log.i(TAG, "Exchange DeleteItem SoftDelete successful for $emailId")
+                        return@withContext true
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error in deleteEmail for $emailId", e)
+        }
+        return@withContext false
+    }
+
+    override suspend fun emptyTrash(account: MailAccount): Boolean = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        val (cookies, canary) = ensureSession(account)
+        if (serverUrl.isBlank() || cookies.isBlank()) return@withContext false
+
+        try {
+            val owaServiceUrl = buildOwaServiceUrl(serverUrl, "EmptyFolder")
+            for (delType in listOf("HardDelete", "SoftDelete")) {
+                val requestBody = buildEmptyFolderPayload("deleteditems", delType)
+                val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
+                if (responseJson != null) {
+                    val respMessages = responseJson.optJSONObject("Body")?.optJSONObject("ResponseMessages")?.optJSONArray("Items")
+                    val firstMsg = respMessages?.optJSONObject(0)
+                    val responseClass = firstMsg?.optString("ResponseClass")
+                    if (responseClass == "Success") {
+                        Log.i(TAG, "Exchange EmptyFolder successful with $delType")
+                        return@withContext true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in emptyTrash", e)
         }
         return@withContext false
     }
@@ -965,7 +1031,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
-    internal fun buildFindItemEmailPayload(folderId: String): JSONObject {
+    internal fun buildFindItemEmailPayload(folderId: String, offset: Int = 0, maxEntries: Int = 200): JSONObject {
         val targetFolder = when {
             folderId.endsWith("inbox", ignoreCase = true) || folderId.equals("inbox", ignoreCase = true) -> "inbox"
             folderId.endsWith("sent", ignoreCase = true) || folderId.equals("sentitems", ignoreCase = true) -> "sentitems"
@@ -1009,8 +1075,8 @@ class OwaProtocolEngine : MailProtocolEngine {
         val paging = JSONObject().apply {
             put("__type", "IndexedPageView:#Exchange")
             put("BasePoint", "Beginning")
-            put("Offset", 0)
-            put("MaxEntriesReturned", 100)
+            put("Offset", offset)
+            put("MaxEntriesReturned", maxEntries)
         }
 
         val sortOrder = JSONArray().apply {
@@ -1212,7 +1278,7 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
     }
 
-    private fun buildDeleteItemPayload(emailId: String, hardDelete: Boolean): JSONObject {
+    private fun buildDeleteItemPayload(emailId: String, hardDelete: Boolean, deleteTypeOverride: String? = null): JSONObject {
         val header = JSONObject().apply {
             put("__type", "JsonRequestHeaders:#Exchange")
             put("RequestServerVersion", "Exchange2013")
@@ -1223,13 +1289,38 @@ class OwaProtocolEngine : MailProtocolEngine {
                 put("Id", emailId)
             })
         }
+        val deleteType = deleteTypeOverride ?: if (hardDelete) "HardDelete" else "MoveToDeletedItems"
         val body = JSONObject().apply {
             put("__type", "DeleteItemRequest:#Exchange")
-            put("DeleteType", if (hardDelete) "HardDelete" else "MoveToDeletedItems")
+            put("DeleteType", deleteType)
             put("ItemIds", itemIds)
         }
         return JSONObject().apply {
             put("__type", "DeleteItemJsonRequest:#Exchange")
+            put("Header", header)
+            put("Body", body)
+        }
+    }
+
+    private fun buildEmptyFolderPayload(folderDistinguishedId: String = "deleteditems", deleteType: String = "HardDelete"): JSONObject {
+        val header = JSONObject().apply {
+            put("__type", "JsonRequestHeaders:#Exchange")
+            put("RequestServerVersion", "Exchange2013")
+        }
+        val folderIds = JSONArray().apply {
+            put(JSONObject().apply {
+                put("__type", "DistinguishedFolderId:#Exchange")
+                put("Id", folderDistinguishedId)
+            })
+        }
+        val body = JSONObject().apply {
+            put("__type", "EmptyFolderRequest:#Exchange")
+            put("FolderIds", folderIds)
+            put("DeleteType", deleteType)
+            put("DeleteSubFolders", false)
+        }
+        return JSONObject().apply {
+            put("__type", "EmptyFolderJsonRequest:#Exchange")
             put("Header", header)
             put("Body", body)
         }
@@ -1481,6 +1572,22 @@ class OwaProtocolEngine : MailProtocolEngine {
         }
 
         return result
+    }
+
+    private fun extractRootFolder(response: JSONObject): JSONObject? {
+        val body = response.optJSONObject("Body")
+        val root = body ?: response
+
+        val responseMessages = root.optJSONObject("ResponseMessages")
+        if (responseMessages != null) {
+            val items = responseMessages.optJSONArray("Items")
+            if (items != null && items.length() > 0) {
+                val first = items.optJSONObject(0)
+                val rootFolder = first?.optJSONObject("RootFolder")
+                if (rootFolder != null) return rootFolder
+            }
+        }
+        return root.optJSONObject("RootFolder")
     }
 
     private fun extractItemsArray(response: JSONObject): JSONArray? {

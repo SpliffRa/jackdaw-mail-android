@@ -19,5 +19,6 @@ interface MailProtocolEngine {
     suspend fun deleteEmail(account: MailAccount, emailId: String, hardDelete: Boolean = false): Boolean = false
     suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = false
     suspend fun updateEmailStarStatus(account: MailAccount, emailId: String, isStarred: Boolean): Boolean = false
+    suspend fun emptyTrash(account: MailAccount): Boolean = false
 }
 
