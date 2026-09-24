@@ -29,4 +29,7 @@ interface AttachmentDao {
 
     @Query("UPDATE attachments SET localUri = :localUri WHERE id = :attachmentId")
     suspend fun updateAttachmentLocalUri(attachmentId: String, localUri: String)
+
+    @Query("UPDATE attachments SET sizeBytes = :sizeBytes WHERE id = :attachmentId")
+    suspend fun updateAttachmentSize(attachmentId: String, sizeBytes: Long)
 }

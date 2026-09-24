@@ -281,9 +281,16 @@ class MailViewModel(
     private val loadingEmailBodyIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun loadEmailBodyIfNeeded(email: EmailMessage) {
-        val hasPlaceholderAttachment = email.attachments.any { it.fileName == "Вложение" && it.sizeBytes == 24500L }
-        // Full body is already present if bodyHtml is non-empty or bodyText is longer than the 255-char FindItem preview
-        val isFullBodyLoaded = (!email.bodyHtml.isNullOrBlank() || (email.bodyText.isNotBlank() && email.bodyText.length > 300)) && !hasPlaceholderAttachment
+        val hasPlaceholderAttachment = email.attachments.any { 
+            it.fileName == "Вложение" || it.sizeBytes == 24500L || it.id.contains("_att_") 
+        }
+        val hasCidInHtml = email.bodyHtml?.contains("cid:", ignoreCase = true) == true
+        val needsAttachmentDetails = email.hasAttachments && (email.attachments.isEmpty() || hasPlaceholderAttachment)
+        // Full body is considered loaded only if HTML is present without unresolved CID images and attachments are authoritative
+        val isFullBodyLoaded = (!email.bodyHtml.isNullOrBlank() || (email.bodyText.isNotBlank() && email.bodyText.length > 300)) 
+            && !hasPlaceholderAttachment 
+            && !hasCidInHtml 
+            && !needsAttachmentDetails
 
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {
             if (!loadingEmailBodyIds.add(email.id)) return

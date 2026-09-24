@@ -364,24 +364,39 @@ class OwaProtocolEngine : MailProtocolEngine {
                             val isInline = attObj.optBoolean("IsInline", false)
                             val contentId = attObj.optString("ContentId", "")
 
-                            // If inline image (e.g. signature logo), resolve CID into inline base64 data URI
-                            if (isInline && contentId.isNotBlank() && (mime.startsWith("image/") || name.endsWith(".png", true) || name.endsWith(".jpg", true))) {
+                            val cleanCid = contentId.removePrefix("<").removeSuffix(">").trim()
+                            val isReferencedInBody = cleanCid.isNotBlank() && (
+                                resolvedHtml.contains("cid:$cleanCid", ignoreCase = true) ||
+                                resolvedHtml.contains("cid:<$cleanCid>", ignoreCase = true)
+                            )
+                            val isImage = mime.startsWith("image/", ignoreCase = true) ||
+                                name.endsWith(".png", true) || name.endsWith(".jpg", true) ||
+                                name.endsWith(".jpeg", true) || name.endsWith(".gif", true) || name.endsWith(".webp", true)
+
+                            // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI
+                            if ((isInline || isReferencedInBody) && isImage) {
                                 try {
                                     val imgBytes = downloadAttachment(account, attId)
                                     if (imgBytes != null && imgBytes.isNotEmpty()) {
                                         val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
-                                        val cleanCid = contentId.removePrefix("<").removeSuffix(">")
-                                        val dataUri = "data:$mime;base64,$b64"
-                                        resolvedHtml = resolvedHtml.replace("cid:$cleanCid", dataUri)
-                                        resolvedHtml = resolvedHtml.replace("cid:<$cleanCid>", dataUri)
+                                        val effectiveMime = if (mime.startsWith("image/", ignoreCase = true)) mime else when {
+                                            name.endsWith(".png", true) -> "image/png"
+                                            name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
+                                            name.endsWith(".gif", true) -> "image/gif"
+                                            else -> "image/png"
+                                        }
+                                        val dataUri = "data:$effectiveMime;base64,$b64"
+                                        if (cleanCid.isNotBlank()) {
+                                            resolvedHtml = resolvedHtml.replace(Regex("cid:<?" + Regex.escape(cleanCid) + ">?", RegexOption.IGNORE_CASE), dataUri)
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     Log.w(TAG, "Failed to resolve inline CID image $contentId", e)
                                 }
                             }
 
-                            // Only add as visible download attachment if it's not purely a small inline decorative image
-                            if (!isInline || !mime.startsWith("image/")) {
+                            // Only add as visible download attachment if it's NOT an inline decorative/signature image
+                            if (!isReferencedInBody && (!isInline || !isImage)) {
                                 attachmentsList.add(
                                     Attachment(
                                         id = attId,
@@ -1560,6 +1575,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         val item = JSONObject().apply {
             put("__type", "Message:#Exchange")
             put("Flag", JSONObject().apply {
+                put("__type", "FlagType:#Exchange")
+                put("CompleteDate", JSONObject.NULL)
+                put("DueDate", JSONObject.NULL)
+                put("StartDate", JSONObject.NULL)
                 put("FlagStatus", if (isStarred) "Flagged" else "NotFlagged")
             })
         }
@@ -1580,6 +1599,8 @@ class OwaProtocolEngine : MailProtocolEngine {
             put("__type", "UpdateItemRequest:#Exchange")
             put("MessageDisposition", "SaveOnly")
             put("ConflictResolution", "AlwaysOverwrite")
+            put("SendCalendarInvitationsOrCancellations", "SendToNone")
+            put("SuppressReadReceipts", true)
             put("ItemChanges", JSONArray().apply { put(itemChange) })
         }
         return JSONObject().apply {
@@ -1688,9 +1709,10 @@ class OwaProtocolEngine : MailProtocolEngine {
                 for (a in 0 until attachmentsArray.length()) {
                     val attObj = attachmentsArray.optJSONObject(a) ?: continue
                     val attId = attObj.optJSONObject("AttachmentId")?.optString("Id")
-                        ?: attObj.optString("Id", "${itemId}_att_$a")
+                        ?: attObj.optString("Id", "")
+                    if (attId.isBlank()) continue
                     val name = attObj.optString("Name", "Вложение").ifBlank { "Вложение" }
-                    val size = attObj.optLong("Size", 24500L)
+                    val size = attObj.optLong("Size", 0L)
                     val mime = attObj.optString("ContentType", "application/octet-stream")
                     attachmentsList.add(
                         Attachment(

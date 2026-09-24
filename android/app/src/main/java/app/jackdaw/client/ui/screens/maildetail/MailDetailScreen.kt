@@ -15,10 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -64,6 +69,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.jackdaw.client.core.util.cleanEmailPreview
@@ -250,295 +256,397 @@ fun MailDetailScreen(
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { paddingValues ->
+        var displayedEmail by remember(email.id) { mutableStateOf(email) }
+        val isSystemDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        var forceLightMode by remember(displayedEmail.id) { mutableStateOf(false) }
+        val effectiveDark = isSystemDark && !forceLightMode
+
+        val isSent = displayedEmail.folderId.contains("sent", ignoreCase = true)
+        val currentSenderEmail = displayedEmail.senderEmail.cleanDisplayEmail(
+            isSentFolder = isSent,
+            accountEmail = currentAccount?.email
+        )
+        val currentRecipients = displayedEmail.toRecipients.mapNotNull { rec ->
+            val c = rec.cleanDisplayEmail(isSentFolder = false)
+            c.ifBlank { null }
+        }
+        val currentFormattedDate = remember(displayedEmail.timestamp) {
+            dateFormat.format(Date(displayedEmail.timestamp))
+        }
+
+        val allThreadMessages = remember(email.id, threadEmails) {
+            val list = if (threadEmails.any { it.id == email.id }) {
+                threadEmails
+            } else {
+                listOf(email) + threadEmails
+            }
+            list.sortedByDescending { it.timestamp }
+        }
+
+        var downloadingAttachmentId by remember { mutableStateOf<String?>(null) }
+        val handleOpenAttachment = { attachment: Attachment ->
+            val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
+            val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
+            val targetFile = File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
+            val localFile = if (!attachment.localUri.isNullOrBlank()) File(attachment.localUri) else null
+
+            if (downloadingAttachmentId == attachment.id) {
+                Toast.makeText(context, "Файл уже загружается, пожалуйста подождите...", Toast.LENGTH_SHORT).show()
+            } else if (localFile != null && localFile.exists() && localFile.length() > 0L) {
+                openFile(context, localFile, attachment.mimeType)
+            } else if (targetFile.exists() && targetFile.length() > 0L) {
+                openFile(context, targetFile, attachment.mimeType)
+            } else {
+                downloadingAttachmentId = attachment.id
+                Toast.makeText(context, "Загрузка вложения «${attachment.fileName}»...", Toast.LENGTH_SHORT).show()
+                onDownloadAttachment(attachment) { file ->
+                    downloadingAttachmentId = null
+                    if (file != null && file.exists() && file.length() > 0L) {
+                        openFile(context, file, attachment.mimeType)
+                    } else {
+                        Toast.makeText(context, "Не удалось загрузить «${attachment.fileName}». Файл недоступен на сервере.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Email Subject
-            Text(
-                text = email.subject.cleanEmailSubject(),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Sender Information Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // Top Header: Subject, Reading mode toggle, Sender, SLA, Thread selector, Attachments
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(JackdawAmber),
-                    contentAlignment = Alignment.Center
+                // Row with Subject and reading mode pill
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
                     Text(
-                        text = email.senderName.firstOrNull()?.uppercase() ?: "J",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = displayedEmail.subject.cleanEmailSubject(),
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Black
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
                     )
+
+                    Surface(
+                        onClick = { forceLightMode = !forceLightMode },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (forceLightMode) JackdawAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (forceLightMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                                contentDescription = null,
+                                tint = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (forceLightMode) "Тёмный" else "Светлый",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = email.senderName,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (cleanSenderEmail.isNotBlank()) {
+                // Sender Info Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(JackdawAmber),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
-                            text = "<$cleanSenderEmail>",
+                            text = displayedEmail.senderName.firstOrNull()?.uppercase() ?: "J",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = displayedEmail.senderName,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        if (currentSenderEmail.isNotBlank()) {
+                            Text(
+                                text = "<$currentSenderEmail>",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (currentRecipients.isNotEmpty()) {
+                            Text(
+                                text = "кому: ${currentRecipients.joinToString(", ")}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
-                    if (cleanRecipients.isNotEmpty()) {
+
+                    Text(
+                        text = currentFormattedDate,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // SLA Indicator (if incoming and SLA active)
+                val isIncoming = displayedEmail.folderId.contains("inbox", ignoreCase = true)
+                val sla = displayedEmail.slaInfo
+                if (isIncoming && sla != null && sla.severity != SlaSeverity.NONE) {
+                    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                    val visuals = if (sla.severity == SlaSeverity.COMPLETED) {
+                        val isLate = sla.remainingLabel.contains("опоздан", ignoreCase = true)
+                        if (isLate) {
+                            SlaItemVisuals(
+                                if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
+                                if (isDark) SlaWarningAmber else Color(0xFFB45309),
+                                Icons.Rounded.Check,
+                                "Ответ дан с нарушением 30-минутного регламента"
+                            )
+                        } else {
+                            SlaItemVisuals(
+                                if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
+                                if (isDark) SlaGoodGreen else Color(0xFF047857),
+                                Icons.Rounded.Check,
+                                "Ответ дан вовремя (регламент 30 мин соблюден)"
+                            )
+                        }
+                    } else {
+                        val now = System.currentTimeMillis()
+                        val deadline = if (sla.deadlineTimestamp > 0L) sla.deadlineTimestamp else displayedEmail.timestamp + 30 * 60 * 1000L
+                        val remainingMs = deadline - now
+
+                        when {
+                            remainingMs <= 0 -> SlaItemVisuals(
+                                if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                                if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
+                                Icons.Rounded.WarningAmber,
+                                "Время на ответ истекло (регламент 30 мин)"
+                            )
+                            remainingMs <= 10 * 60 * 1000L -> {
+                                val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                                SlaItemVisuals(
+                                    if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
+                                    if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
+                                    Icons.Rounded.WarningAmber,
+                                    "Ответить в течение: $mins мин (регламент 30 мин)"
+                                )
+                            }
+                            remainingMs <= 20 * 60 * 1000L -> {
+                                val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
+                                SlaItemVisuals(
+                                    if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
+                                    if (isDark) SlaWarningAmber else Color(0xFFB45309),
+                                    Icons.Rounded.AccessTime,
+                                    "Ответить в течение: $mins мин (регламент 30 мин)"
+                                )
+                            }
+                            else -> {
+                                val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                                SlaItemVisuals(
+                                    if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
+                                    if (isDark) SlaGoodGreen else Color(0xFF047857),
+                                    Icons.Rounded.AccessTime,
+                                    "Ответить в течение: $mins мин (регламент 30 мин)"
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(visuals.bg)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = visuals.icon,
+                            contentDescription = null,
+                            tint = visuals.textColor,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "кому: ${cleanRecipients.joinToString(", ")}",
+                            text = visuals.text,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = FontWeight.Bold,
+                            color = visuals.textColor
                         )
                     }
                 }
 
-                Text(
-                    text = formattedDate,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Thread switcher chips (if more than 1 email in conversation)
+                if (allThreadMessages.size > 1) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Цепочка писем (${allThreadMessages.size}):",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = JackdawAmber,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val threadTimeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(allThreadMessages, key = { it.id }) { threadMsg ->
+                            val isSelected = threadMsg.id == displayedEmail.id
+                            Surface(
+                                onClick = { displayedEmail = threadMsg },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) JackdawAmber.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(1.dp, if (isSelected) JackdawAmber else Color.Transparent)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = threadTimeFormat.format(Date(threadMsg.timestamp)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = threadMsg.senderName.take(15),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Attachments row (horizontal scroll chips)
+                if (displayedEmail.attachments.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(displayedEmail.attachments, key = { it.id }) { attachment ->
+                            val isDownloading = downloadingAttachmentId == attachment.id
+                            val sizeLabel = when {
+                                attachment.sizeBytes > 1024 * 1024 -> "${attachment.sizeBytes / (1024 * 1024)} МБ"
+                                attachment.sizeBytes > 1024 -> "${attachment.sizeBytes / 1024} КБ"
+                                attachment.sizeBytes > 0 -> "${attachment.sizeBytes} Б"
+                                else -> ""
+                            }
+
+                            Surface(
+                                onClick = { handleOpenAttachment(attachment) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    if (isDownloading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = JackdawAmber
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AttachFile,
+                                            contentDescription = null,
+                                            tint = JackdawAmber,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = attachment.fileName,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.widthIn(max = 140.dp)
+                                    )
+                                    if (sizeLabel.isNotBlank()) {
+                                        Text(
+                                            text = sizeLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            Spacer(modifier = Modifier.height(16.dp))
 
-            // Email Body
-            val isSystemDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-            var forceLightMode by remember(email.id) { mutableStateOf(false) }
-            val effectiveDark = isSystemDark && !forceLightMode
-
-            // Prepare HTML content: either from rich bodyHtml or converted plain text with clickable links
-            val rawHtmlContent = remember(email.id, email.bodyHtml, email.bodyText, email.snippet) {
-                if (!email.bodyHtml.isNullOrBlank()) {
-                    email.bodyHtml!!
+            // Body HTML Document
+            val rawBodyContent = remember(displayedEmail.id, displayedEmail.bodyHtml, displayedEmail.bodyText, displayedEmail.snippet) {
+                if (!displayedEmail.bodyHtml.isNullOrBlank()) {
+                    displayedEmail.bodyHtml!!
                 } else {
                     val displayText = when {
-                        email.bodyText.isNotBlank() && email.bodyText != email.subject -> email.bodyText
-                        email.snippet.isNotBlank() -> email.snippet
+                        displayedEmail.bodyText.isNotBlank() && displayedEmail.bodyText != displayedEmail.subject -> displayedEmail.bodyText
+                        displayedEmail.snippet.isNotBlank() -> displayedEmail.snippet
                         else -> "(Письмо не содержит текста)"
                     }
                     plainTextToHtml(displayText)
                 }
             }
 
-            // Reading mode pill to switch between light and dark backgrounds
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    onClick = { forceLightMode = !forceLightMode },
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (forceLightMode) JackdawAmber.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (forceLightMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                            contentDescription = null,
-                            tint = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = if (forceLightMode) "Тёмный фон" else "Светлый фон",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (forceLightMode) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            val htmlDocument = remember(displayedEmail.id, effectiveDark, rawBodyContent.hashCode()) {
+                prepareEmailHtml(rawBodyContent, effectiveDark)
             }
 
-            // Dynamic height measurement of exact content to eliminate clipping and empty space
-            var webViewHeightDp by remember(email.id, effectiveDark, rawHtmlContent.hashCode()) { mutableStateOf(200.dp) }
+            val webViewTag = "${displayedEmail.id}_${effectiveDark}_${rawBodyContent.hashCode()}"
 
-            val textColor = if (effectiveDark) "#E6E1E5" else "#1C1B1F"
-            val linkColor = if (effectiveDark) "#64B5F6" else "#1976D2"
-
-            val htmlDoc = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-                <style>
-                  * { box-sizing: border-box; -webkit-text-size-adjust: 100%%; }
-                  html, body {
-                    margin: 0; padding: 0;
-                    width: 100%% !important;
-                    background: transparent !important;
-                    color: $textColor !important;
-                    font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-                    font-size: 15px;
-                    line-height: 1.55;
-                    word-break: break-word;
-                    overflow-wrap: break-word;
-                    overflow-y: visible !important;
-                    height: auto !important;
-                  }
-                  #jackdaw-content-root {
-                    margin: 0;
-                    padding: 10px 12px 24px 12px;
-                    width: 100%% !important;
-                    box-sizing: border-box;
-                    overflow-y: visible !important;
-                    height: auto !important;
-                  }
-                  /* Visible, distinct links that redirect to external browser */
-                  a, a:link, a:visited {
-                    color: $linkColor !important;
-                    text-decoration: underline !important;
-                    cursor: pointer !important;
-                  }
-                  a * {
-                    color: inherit !important;
-                    text-decoration: inherit !important;
-                  }
-                  /* Strip Word/Outlook grammar/spell artifacts */
-                  .SpellE, .GramE, [class*="Spell"], [class*="Gram"], span[style*="border-bottom: 1px"], span[style*="text-decoration: underline wavy"] {
-                    text-decoration: none !important;
-                    border-bottom: none !important;
-                    box-shadow: none !important;
-                  }
-                  img { max-width: 100%% !important; height: auto !important; }
-                  pre, code { white-space: pre-wrap; word-break: break-all; }
-                  table { max-width: 100%% !important; }
-                  p { margin: 0 0 8px 0; }
-                  blockquote { margin: 8px 0; padding-left: 10px; border-left: 3px solid ${if (effectiveDark) "#444" else "#ccc"}; color: ${if (effectiveDark) "#aaa" else "#666"}; }
-                  hr { border: none; border-top: 1px solid ${if (effectiveDark) "#333" else "#ddd"}; margin: 12px 0; }
-                </style>
-                <script>
-                  function reportHeight() {
-                    var r = document.getElementById('jackdaw-content-root');
-                    var b = document.body;
-                    var d = document.documentElement;
-                    var h = 0;
-                    if (r) {
-                      h = Math.max(r.scrollHeight || 0, r.offsetHeight || 0, r.getBoundingClientRect().height || 0);
-                    }
-                    if (b) {
-                      h = Math.max(h, b.scrollHeight || 0, b.offsetHeight || 0);
-                    }
-                    if (d) {
-                      h = Math.max(h, d.scrollHeight || 0, d.offsetHeight || 0);
-                    }
-                    var finalH = Math.ceil(h);
-                    if (window.JackdawBridge && finalH > 0) {
-                      window.JackdawBridge.onHeightChanged(finalH);
-                    }
-                  }
-                  function adaptContent() {
-                    var spells = document.querySelectorAll('.SpellE, .GramE, [class*="Spell"], [class*="Gram"]');
-                    for (var i = 0; i < spells.length; i++) {
-                      spells[i].style.setProperty('text-decoration', 'none', 'important');
-                      spells[i].style.setProperty('border-bottom', 'none', 'important');
-                    }
-                    var links = document.querySelectorAll('a');
-                    for (var k = 0; k < links.length; k++) {
-                      links[k].style.setProperty('color', '$linkColor', 'important');
-                      links[k].style.setProperty('text-decoration', 'underline', 'important');
-                    }
-
-                    var isDark = $effectiveDark;
-                    if (isDark) {
-                      var all = document.querySelectorAll('#jackdaw-content-root, #jackdaw-content-root *');
-                      for (var j = 0; j < all.length; j++) {
-                        var el = all[j];
-                        if (el.tagName === 'A' || el.closest('a')) continue;
-                        var cs = window.getComputedStyle(el);
-                        var c = cs.color;
-                        var match = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                        if (match) {
-                          var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
-                          var brightness = (r * 299 + g * 587 + b * 114) / 1000;
-                          if (brightness < 140) {
-                            el.style.setProperty('color', '#E6E1E5', 'important');
-                          }
-                        }
-                        var bg = cs.backgroundColor;
-                        if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-                          var bgMatch = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-                          if (bgMatch) {
-                            var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
-                            var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
-                            if (bgBrightness > 160) {
-                              el.style.setProperty('background-color', 'transparent', 'important');
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                  document.addEventListener('DOMContentLoaded', function() {
-                    adaptContent();
-                    reportHeight();
-                  });
-                  window.addEventListener('load', function() {
-                    adaptContent();
-                    reportHeight();
-                    setTimeout(reportHeight, 300);
-                    setTimeout(reportHeight, 800);
-                    setTimeout(reportHeight, 1800);
-                  });
-                  if (window.ResizeObserver) {
-                    new ResizeObserver(function() { reportHeight(); }).observe(document.body);
-                    var contentRoot = document.getElementById('jackdaw-content-root');
-                    if (contentRoot) {
-                      new ResizeObserver(function() { reportHeight(); }).observe(contentRoot);
-                    }
-                  }
-                </script>
-                </head>
-                <body><div id="jackdaw-content-root">${rawHtmlContent}</div></body>
-                </html>
-            """.trimIndent()
-
-            val contentHash = rawHtmlContent.hashCode()
-            val viewTag = "${email.id}_${effectiveDark}_$contentHash"
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
-                        tag = viewTag
-                        addJavascriptInterface(object {
-                            @android.webkit.JavascriptInterface
-                            fun onHeightChanged(h: Int) {
-                                if (h > 0) {
-                                    post {
-                                        val measuredDp = (h + 48).coerceAtLeast(140).dp
-                                        if (measuredDp > webViewHeightDp) {
-                                            webViewHeightDp = measuredDp
-                                        }
-                                    }
-                                }
-                            }
-                        }, "JackdawBridge")
+                        tag = webViewTag
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val uri = request?.url ?: return false
@@ -551,361 +659,38 @@ fun MailDetailScreen(
                                 return handleUriRedirect(ctx, uri)
                             }
 
-                            override fun onPageFinished(view: WebView, url: String) {
-                                view.evaluateJavascript("adaptContent(); reportHeight();") { }
-                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 300)
-                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 800)
-                                view.postDelayed({ view.evaluateJavascript("reportHeight();") { } }, 1800)
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                view?.evaluateJavascript("fixDarkColors();", null)
                             }
                         }
                         settings.apply {
                             javaScriptEnabled = true
-                            domStorageEnabled = false
-                            loadWithOverviewMode = false
-                            useWideViewPort = false
-                            setSupportZoom(false)
-                            builtInZoomControls = false
+                            domStorageEnabled = true
+                            loadWithOverviewMode = true
+                            useWideViewPort = true
+                            setSupportZoom(true)
+                            builtInZoomControls = true
                             displayZoomControls = false
                             cacheMode = WebSettings.LOAD_NO_CACHE
                         }
-                        isVerticalScrollBarEnabled = false
-                        isHorizontalScrollBarEnabled = false
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                        isVerticalScrollBarEnabled = true
+                        isHorizontalScrollBarEnabled = true
+                        setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                        loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
                     }
                 },
                 update = { view ->
-                    if (view.tag != viewTag) {
-                        view.tag = viewTag
-                        webViewHeightDp = 200.dp
-                        view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        view.loadDataWithBaseURL(null, htmlDoc, "text/html", "UTF-8", null)
+                    if (view.tag != webViewTag) {
+                        view.tag = webViewTag
+                        view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                        view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
                     }
                 },
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (forceLightMode) Color.White
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                    .height(webViewHeightDp)
             )
-
-            // SLA indicator below email body - compact single row showing remaining time to answer (capped at 30 min)
-            val isIncoming = email.folderId.contains("inbox", ignoreCase = true)
-            val sla = email.slaInfo
-            if (isIncoming && sla != null && sla.severity != SlaSeverity.NONE) {
-                val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-
-                val visuals = if (sla.severity == SlaSeverity.COMPLETED) {
-                    val isLate = sla.remainingLabel.contains("опоздан", ignoreCase = true)
-                    if (isLate) {
-                        SlaItemVisuals(
-                            if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
-                            if (isDark) SlaWarningAmber else Color(0xFFB45309),
-                            Icons.Rounded.Check,
-                            "Ответ дан с нарушением 30-минутного регламента"
-                        )
-                    } else {
-                        SlaItemVisuals(
-                            if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
-                            if (isDark) SlaGoodGreen else Color(0xFF047857),
-                            Icons.Rounded.Check,
-                            "Ответ дан вовремя (регламент 30 мин соблюден)"
-                        )
-                    }
-                } else {
-                    val now = System.currentTimeMillis()
-                    val deadline = if (sla.deadlineTimestamp > 0L) sla.deadlineTimestamp else email.timestamp + 30 * 60 * 1000L
-                    val remainingMs = deadline - now
-
-                    when {
-                        remainingMs <= 0 -> SlaItemVisuals(
-                            if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
-                            if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
-                            Icons.Rounded.WarningAmber,
-                            "Время на ответ истекло (регламент 30 мин)"
-                        )
-                        remainingMs <= 10 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
-                            SlaItemVisuals(
-                                if (isDark) SlaUrgentContainerDark else SlaUrgentContainerLight,
-                                if (isDark) SlaUrgentRed else Color(0xFFB91C1C),
-                                Icons.Rounded.WarningAmber,
-                                "Ответить в течение: $mins мин (регламент 30 мин)"
-                            )
-                        }
-                        remainingMs <= 20 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceAtLeast(1)
-                            SlaItemVisuals(
-                                if (isDark) SlaWarningContainerDark else SlaWarningContainerLight,
-                                if (isDark) SlaWarningAmber else Color(0xFFB45309),
-                                Icons.Rounded.AccessTime,
-                                "Ответить в течение: $mins мин (регламент 30 мин)"
-                            )
-                        }
-                        else -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
-                            SlaItemVisuals(
-                                if (isDark) SlaGoodContainerDark else SlaGoodContainerLight,
-                                if (isDark) SlaGoodGreen else Color(0xFF047857),
-                                Icons.Rounded.AccessTime,
-                                "Ответить в течение: $mins мин (регламент 30 мин)"
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(visuals.bg)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = visuals.icon,
-                        contentDescription = null,
-                        tint = visuals.textColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = visuals.text,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = visuals.textColor
-                    )
-                }
-            }
-
-            // Attachments
-            if (email.attachments.isNotEmpty()) {
-                var downloadingAttachmentId by remember { mutableStateOf<String?>(null) }
-                val handleOpenAttachment = { attachment: Attachment ->
-                    val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
-                    val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
-                    val targetFile = File(attachmentsDir, "${attachment.id.take(8)}_$safeFileName")
-                    val localFile = if (!attachment.localUri.isNullOrBlank()) File(attachment.localUri) else null
-
-                    if (downloadingAttachmentId == attachment.id) {
-                        Toast.makeText(context, "Файл уже загружается, пожалуйста подождите...", Toast.LENGTH_SHORT).show()
-                    } else if (localFile != null && localFile.exists() && localFile.length() > 0L) {
-                        openFile(context, localFile, attachment.mimeType)
-                    } else if (targetFile.exists() && targetFile.length() > 0L) {
-                        openFile(context, targetFile, attachment.mimeType)
-                    } else {
-                        downloadingAttachmentId = attachment.id
-                        Toast.makeText(context, "Загрузка вложения «${attachment.fileName}»...", Toast.LENGTH_SHORT).show()
-                        onDownloadAttachment(attachment) { file ->
-                            downloadingAttachmentId = null
-                            if (file != null && file.exists() && file.length() > 0L) {
-                                openFile(context, file, attachment.mimeType)
-                            } else {
-                                Toast.makeText(context, "Не удалось загрузить «${attachment.fileName}». Файл недоступен на сервере.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    text = "Вложения (${email.attachments.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    email.attachments.forEach { attachment ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { handleOpenAttachment(attachment) },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.AttachFile,
-                                    contentDescription = null,
-                                    tint = JackdawAmber,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = attachment.fileName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    val sizeKb = attachment.sizeBytes / 1024
-                                    val sizeLabel = if (sizeKb > 1024) "${sizeKb / 1024} МБ" else if (sizeKb > 0) "$sizeKb КБ" else "${attachment.sizeBytes} Б"
-                                    Text(
-                                        text = sizeLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                IconButton(onClick = { handleOpenAttachment(attachment) }) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Download,
-                                        contentDescription = "Скачать и открыть",
-                                        tint = JackdawAmber
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            val otherThreadEmails = threadEmails.filter { it.id != email.id }
-                .sortedWith(compareByDescending<EmailMessage> { it.timestamp }.thenByDescending { it.id })
-            if (otherThreadEmails.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AttachFile,
-                        contentDescription = null,
-                        tint = JackdawAmber,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "История переписки (${otherThreadEmails.size + 1} сообщений)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = JackdawAmber
-                    )
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    otherThreadEmails.forEach { threadMsg ->
-                        var isExpanded by remember { mutableStateOf(false) }
-                        val msgDateFormat = SimpleDateFormat("d MMM, HH:mm", Locale.getDefault())
-                        val threadTime = msgDateFormat.format(Date(threadMsg.timestamp))
-
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { isExpanded = !isExpanded },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(JackdawAmber.copy(alpha = 0.8f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = threadMsg.senderName.firstOrNull()?.uppercase() ?: "J",
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Black
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = threadMsg.senderName,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Text(
-                                            text = threadTime,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Text(
-                                        text = if (isExpanded) "Свернуть" else "Показать",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = JackdawAmber
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                if (isExpanded) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                                    )
-                                    val threadDisplayText = when {
-                                        threadMsg.bodyText.isNotBlank() && threadMsg.bodyText != threadMsg.subject -> threadMsg.bodyText
-                                        !threadMsg.bodyHtml.isNullOrBlank() -> runCatching {
-                                            android.text.Html.fromHtml(threadMsg.bodyHtml, android.text.Html.FROM_HTML_MODE_LEGACY).toString().trim()
-                                        }.getOrDefault(threadMsg.bodyText)
-                                        threadMsg.bodyText.isNotBlank() -> threadMsg.bodyText
-                                        threadMsg.snippet.isNotBlank() -> threadMsg.snippet
-                                        else -> "(Письмо не содержит текста)"
-                                    }
-                                    Text(
-                                        text = threadDisplayText.cleanEmailPreview(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        lineHeight = 20.sp
-                                    )
-                                } else {
-                                    Text(
-                                        text = threadMsg.snippet.cleanEmailPreview(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 2
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } else if (email.relatedEmailsCount > 0) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = "Связанные письма в цепочке (${email.relatedEmailsCount})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = JackdawAmber
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Jackdaw Mail автоматически группирует историю переписки и хронологию ответов по этому вопросу.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(40.dp))
         }
     }
 
@@ -956,6 +741,142 @@ fun MailDetailScreen(
             }
         )
     }
+}
+
+private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
+    val textColor = if (isDark) "#E6E1E5" else "#1C1B1F"
+    val bgColor = if (isDark) "#121212" else "#FFFFFF"
+    val linkColor = if (isDark) "#64B5F6" else "#1976D2"
+
+    val injectedHead = """
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+        <style>
+          html, body {
+            margin: 0;
+            padding: 12px 14px 24px 14px;
+            background-color: $bgColor !important;
+            color: $textColor !important;
+            font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.55;
+            word-break: normal;
+            overflow-wrap: break-word;
+          }
+          a, a:link, a:visited {
+            color: $linkColor !important;
+            text-decoration: underline !important;
+          }
+          img {
+            max-width: 100% !important;
+            height: auto !important;
+          }
+          table {
+            max-width: 100% !important;
+          }
+          pre, code {
+            white-space: pre-wrap;
+            word-break: break-all;
+          }
+          .SpellE, .GramE, [class*="Spell"], [class*="Gram"],
+          span[style*="border-bottom: 1px"], span[style*="text-decoration: underline wavy"] {
+            text-decoration: none !important;
+            border-bottom: none !important;
+            box-shadow: none !important;
+          }
+          blockquote {
+            margin: 8px 0;
+            padding-left: 10px;
+            border-left: 3px solid ${if (isDark) "#444" else "#ccc"};
+            color: ${if (isDark) "#aaa" else "#666"};
+          }
+          hr {
+            border: none;
+            border-top: 1px solid ${if (isDark) "#333" else "#ddd"};
+            margin: 12px 0;
+          }
+          ${if (isDark) """
+          /* In dark mode, ensure any text styled with black or dark colors is readable */
+          [style*="color:black"], [style*="color: black"],
+          [style*="color:#000"], [style*="color: #000"],
+          [style*="color:#1"], [style*="color: #1"],
+          [style*="color:#2"], [style*="color: #2"],
+          [style*="color:#3"], [style*="color: #3"],
+          [style*="color:windowtext"], [style*="color: windowtext"],
+          font[color="#000000"], font[color="black"], font[color="#000"] {
+            color: #E6E1E5 !important;
+          }
+          /* In dark mode, transparentize forced white backgrounds so they don't blindingly flash */
+          [style*="background-color:white"], [style*="background-color: white"],
+          [style*="background-color:#fff"], [style*="background-color: #fff"],
+          [style*="background-color:#FFF"], [style*="background-color: #FFF"],
+          [style*="background:white"], [style*="background: white"],
+          [style*="background:#fff"], [style*="background: #fff"] {
+            background-color: transparent !important;
+          }
+          p, span, div, font, td, th, li {
+            color: #E6E1E5;
+          }
+          """ else ""}
+        </style>
+        <script>
+          function fixDarkColors() {
+            var spells = document.querySelectorAll('.SpellE, .GramE, [class*="Spell"], [class*="Gram"]');
+            for (var i = 0; i < spells.length; i++) {
+              spells[i].style.setProperty('text-decoration', 'none', 'important');
+              spells[i].style.setProperty('border-bottom', 'none', 'important');
+            }
+            if ($isDark) {
+              var all = document.querySelectorAll('*');
+              for (var j = 0; j < all.length; j++) {
+                var el = all[j];
+                if (el.tagName === 'A' || el.closest('a')) continue;
+                var cs = window.getComputedStyle(el);
+                var c = cs.color;
+                var match = c.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                if (match) {
+                  var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                  var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                  if (brightness < 130) {
+                    el.style.setProperty('color', '#E6E1E5', 'important');
+                  }
+                }
+                var bg = cs.backgroundColor;
+                if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                  var bgMatch = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+                  if (bgMatch) {
+                    var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
+                    var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
+                    if (bgBrightness > 160) {
+                      el.style.setProperty('background-color', 'transparent', 'important');
+                    }
+                  }
+                }
+              }
+            }
+          }
+          document.addEventListener('DOMContentLoaded', fixDarkColors);
+          window.addEventListener('load', fixDarkColors);
+          fixDarkColors();
+          setTimeout(fixDarkColors, 50);
+          setTimeout(fixDarkColors, 250);
+          setTimeout(fixDarkColors, 800);
+        </script>
+    """.trimIndent()
+
+    val headRegex = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE)
+    val htmlRegex = Regex("<html\\b[^>]*>", RegexOption.IGNORE_CASE)
+
+    val headMatch = headRegex.find(rawHtml)
+    if (headMatch != null) {
+        val insertPos = headMatch.range.last + 1
+        return rawHtml.substring(0, insertPos) + "\n" + injectedHead + rawHtml.substring(insertPos)
+    }
+    val htmlMatch = htmlRegex.find(rawHtml)
+    if (htmlMatch != null) {
+        val insertPos = htmlMatch.range.last + 1
+        return rawHtml.substring(0, insertPos) + "\n<head>" + injectedHead + "</head>" + rawHtml.substring(insertPos)
+    }
+    return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">$injectedHead</head><body>$rawHtml</body></html>"
 }
 
 private fun openFile(context: Context, file: File, mimeType: String) {

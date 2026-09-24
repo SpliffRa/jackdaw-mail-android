@@ -1,13 +1,20 @@
 package app.jackdaw.client
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -61,11 +68,33 @@ class MainActivity : ComponentActivity() {
 
     private val pendingEmailIdState = androidx.compose.runtime.mutableStateOf<String?>(null)
 
+    private val openEmailReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val emailId = intent?.getStringExtra("EXTRA_EMAIL_ID") ?: intent?.getStringExtra("emailId")
+            if (!emailId.isNullOrBlank()) {
+                pendingEmailIdState.value = emailId
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableEdgeToEdge()
 
         pendingEmailIdState.value = intent.getStringExtra("EXTRA_EMAIL_ID")
+
+        val filter = android.content.IntentFilter("app.jackdaw.client.OPEN_EMAIL")
+        ContextCompat.registerReceiver(
+            this,
+            openEmailReceiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -123,6 +152,11 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         app.jackdaw.client.data.worker.SyncScheduler.triggerImmediateSync(applicationContext)
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        runCatching { unregisterReceiver(openEmailReceiver) }
+    }
 }
 
 @Composable
@@ -138,16 +172,16 @@ fun JackdawMainApp(
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
-    androidx.compose.runtime.LaunchedEffect(pendingEmailId) {
-        if (!pendingEmailId.isNullOrBlank()) {
+    val accounts by viewModel.accounts.collectAsState()
+    val currentAccount by viewModel.currentAccount.collectAsState()
+
+    androidx.compose.runtime.LaunchedEffect(pendingEmailId, currentAccount) {
+        if (!pendingEmailId.isNullOrBlank() && currentAccount != null) {
             navController.navigate(Screen.MailDetail.createRoute(pendingEmailId))
             onClearPendingEmail()
         }
     }
     val scope = rememberCoroutineScope()
-
-    val accounts by viewModel.accounts.collectAsState()
-    val currentAccount by viewModel.currentAccount.collectAsState()
     val folders by viewModel.folders.collectAsState()
     val selectedFolder by viewModel.selectedFolder.collectAsState()
     val emails by viewModel.emails.collectAsState()
@@ -360,9 +394,17 @@ fun JackdawMainApp(
 
             composable(
                 route = Screen.MailDetail.route,
-                arguments = listOf(navArgument("emailId") { type = NavType.StringType })
+                arguments = listOf(navArgument("emailId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                })
             ) { backStackEntry ->
-                val emailId = backStackEntry.arguments?.getString("emailId") ?: ""
+                val rawEmailId = backStackEntry.arguments?.getString("emailId") ?: ""
+                val emailId = if (rawEmailId.contains("%")) {
+                    runCatching { java.net.URLDecoder.decode(rawEmailId, "UTF-8") }.getOrDefault(rawEmailId)
+                } else {
+                    rawEmailId
+                }
                 val initialEmail = remember(emailId) { emails.find { it.id == emailId } }
                 val detailEmail by viewModel.getEmailById(emailId).collectAsState(initial = initialEmail)
                 val currentEmail = detailEmail ?: initialEmail
@@ -412,7 +454,14 @@ fun JackdawMainApp(
                         }
                     )
                 } else {
-                    navController.popBackStack()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = JackdawAmber)
+                    }
                 }
             }
 

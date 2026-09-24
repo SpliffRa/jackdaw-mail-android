@@ -851,8 +851,9 @@ class OfflineFirstMailRepository(
         if (details.isStarred != null) {
             emailDao.updateStarredStatus(emailId, details.isStarred)
         }
+        // Always purge placeholder/stale attachments for this email and replace with actual attachments
+        attachmentDao.deleteAttachmentsForEmail(emailId)
         if (details.attachments.isNotEmpty()) {
-            attachmentDao.deleteAttachmentsForEmail(emailId)
             attachmentDao.insertAttachments(details.attachments.map { 
                 app.jackdaw.client.data.local.entity.AttachmentEntity.fromDomain(it, emailId) 
             })
@@ -883,6 +884,7 @@ class OfflineFirstMailRepository(
                 targetFile.writeBytes(bytes)
                 if (targetFile.exists() && targetFile.length() > 0L) {
                     attachmentDao.updateAttachmentLocalUri(attachment.id, targetFile.absolutePath)
+                    attachmentDao.updateAttachmentSize(attachment.id, targetFile.length())
                     return targetFile
                 }
             } else if (targetFile.exists()) {
