@@ -109,6 +109,9 @@ import app.jackdaw.client.core.readstatus.ReadStatusManager
 import app.jackdaw.client.core.signature.SignatureManager
 import app.jackdaw.client.core.update.AppUpdateInfo
 import app.jackdaw.client.core.update.UpdateManager
+import app.jackdaw.client.data.network.OwaSyncDiagnostics
+import android.content.ClipData
+import android.content.ClipboardManager
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -153,6 +156,8 @@ fun SettingsScreen(
     var accountToDelete by remember { mutableStateOf<MailAccount?>(null) }
     var accountToEdit by remember { mutableStateOf<MailAccount?>(null) }
     var showEditOwaLoginDialog by remember { mutableStateOf(false) }
+    var isTestingSync by remember { mutableStateOf(false) }
+    var testSyncResultMsg by remember { mutableStateOf<String?>(null) }
 
 
     // Settings switches
@@ -565,6 +570,183 @@ fun SettingsScreen(
                                         onCheckedChange = { slaAlertsEnabled = it },
                                         colors = jackdawSwitchColors()
                                     )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Diagnostics Card
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "ДИАГНОСТИКА ПОДКЛЮЧЕНИЯ",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = JackdawAmber
+                                    )
+                                    val isOk = OwaSyncDiagnostics.lastHttpCode == 200 || OwaSyncDiagnostics.lastSyncStatus.startsWith("Успешно")
+                                    val hasRun = OwaSyncDiagnostics.lastSyncTimestamp > 0L
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(
+                                                when {
+                                                    !hasRun -> MaterialTheme.colorScheme.surfaceVariant
+                                                    isOk -> SlaGoodGreen.copy(alpha = 0.15f)
+                                                    else -> SlaUrgentRed.copy(alpha = 0.15f)
+                                                }
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = when {
+                                                !hasRun -> "Не проверялась"
+                                                isOk -> "HTTP 200 OK"
+                                                OwaSyncDiagnostics.lastHttpCode > 0 -> "HTTP ${OwaSyncDiagnostics.lastHttpCode}"
+                                                else -> "Ошибка"
+                                            },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = when {
+                                                !hasRun -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                isOk -> SlaGoodGreen
+                                                else -> SlaUrgentRed
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = "Аккаунт: ${currentAccountObj.email} (${currentAccountObj.protocol.displayName})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Сервер: ${currentAccountObj.serverHost.ifBlank { "не указан" }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Статус сессии: ${if (currentAccountObj.isAuthorized) "Авторизован (Cookies: ${currentAccountObj.authSessionCookies.length} симв.)" else "Требуется веб-вход OWA"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (currentAccountObj.isAuthorized) SlaGoodGreen else SlaUrgentRed
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                HorizontalDivider(color = dividerColor)
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = "Последний статус: ${OwaSyncDiagnostics.lastSyncStatus}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (OwaSyncDiagnostics.lastAction != "Нет") {
+                                    Text(
+                                        text = "Действие: ${OwaSyncDiagnostics.lastAction} | Папок: ${OwaSyncDiagnostics.lastFoldersCount} | Писем: ${OwaSyncDiagnostics.lastEmailsFetchedCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (!OwaSyncDiagnostics.lastError.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(SlaUrgentRed.copy(alpha = 0.12f))
+                                            .padding(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Ошибка: ${OwaSyncDiagnostics.lastError}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SlaUrgentRed,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+
+                                if (!testSyncResultMsg.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = testSyncResultMsg!!,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = JackdawAmber,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            if (isTestingSync) return@Button
+                                            isTestingSync = true
+                                            testSyncResultMsg = "Проверка соединения..."
+                                            onTriggerSync?.invoke { result ->
+                                                isTestingSync = false
+                                                testSyncResultMsg = result
+                                                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = JackdawAmber,
+                                            contentColor = Color.Black
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        if (isTestingSync) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Color.Black
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        } else {
+                                            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        Text("Проверить", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val report = OwaSyncDiagnostics.generateReport(currentAccountObj)
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                            val clip = ClipData.newPlainText("Jackdaw Sync Diagnostics", report)
+                                            clipboard?.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Диагностический отчет скопирован", Toast.LENGTH_SHORT).show()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Отчет", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    }
                                 }
                             }
                         }

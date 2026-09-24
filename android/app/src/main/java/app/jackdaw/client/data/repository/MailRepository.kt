@@ -313,6 +313,24 @@ class OfflineFirstMailRepository(
 
             val account = accountEntity.toDomain()
             android.util.Log.i("MailRepository", "syncAll started for account: ${account.email} on server ${account.serverHost}")
+
+            if (account.serverHost.isBlank()) {
+                val err = "Не указан адрес сервера почты в настройках аккаунта"
+                app.jackdaw.client.data.network.OwaSyncDiagnostics.recordError("Validate", "", 0, err)
+                return SyncResult(isSuccess = false, errorMessage = err)
+            }
+
+            if (account.protocol == app.jackdaw.client.core.model.AccountProtocol.IMAP) {
+                val err = "Протокол IMAP в разработке. Для Exchange переключитесь на протокол OWA"
+                app.jackdaw.client.data.network.OwaSyncDiagnostics.recordError("Validate", account.serverHost, 0, err)
+                return SyncResult(isSuccess = false, errorMessage = err)
+            }
+
+            if (!account.isAuthorized && account.savedPassword.isBlank()) {
+                val err = "Требуется авторизация: выполните вход через веб-интерфейс OWA в настройках"
+                app.jackdaw.client.data.network.OwaSyncDiagnostics.recordError("Auth", account.serverHost, 401, err)
+                return SyncResult(isSuccess = false, errorMessage = err)
+            }
             val outboxFolder = folderDao.getFolderByType(account.id, FolderType.OUTBOX)?.id ?: "${account.id}_outbox"
             val sentFolder = folderDao.getFolderByType(account.id, FolderType.SENT)?.id ?: "${account.id}_sent"
             val inboxFolder = folderDao.getFolderByType(account.id, FolderType.INBOX)?.id ?: "${account.id}_inbox"
@@ -515,8 +533,9 @@ class OfflineFirstMailRepository(
             }
 
             val diagError = app.jackdaw.client.data.network.OwaSyncDiagnostics.lastError
-            val isOwa = account.protocol == app.jackdaw.client.core.model.AccountProtocol.EXCHANGE_OWA
-            val reportSuccess = if (isOwa && totalNewEmails == 0 && diagError != null && app.jackdaw.client.data.network.OwaSyncDiagnostics.lastHttpCode != 200) {
+            val lastHttpCode = app.jackdaw.client.data.network.OwaSyncDiagnostics.lastHttpCode
+            val hasExplicitError = diagError != null && lastHttpCode != 200
+            val reportSuccess = if (totalNewEmails == 0 && (hasExplicitError || (diagError != null && totalNewEmails == 0 && lastHttpCode != 0))) {
                 false
             } else {
                 true
@@ -528,7 +547,7 @@ class OfflineFirstMailRepository(
                 unmutedNewMessagesCount = unmutedNewEmails,
                 sentMessagesCount = sentCount,
                 syncedAtTimestamp = System.currentTimeMillis(),
-                errorMessage = if (!reportSuccess) diagError else null
+                errorMessage = if (!reportSuccess) (diagError ?: "Ошибка подключения к серверу") else null
             )
 
         } catch (e: Exception) {
