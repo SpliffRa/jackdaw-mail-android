@@ -42,36 +42,33 @@ Write-Host "Publishing GitHub Release $Tag for $repoOwner/$repoName..." -Foregro
 
 # Check if release exists
 $release = $null
+$releaseNotes = @"
+## Что нового в ${Tag}:
+- 🔔 **Умные уведомления без повторных звуков**:
+  - Внедрен NotificationTracker для отслеживания просмотренных писем (lastViewedTimestamp) и дедупликации звуковых алертов.
+  - Если непрочитанные письма остаются в ящике, повторные фоновые звуки о них больше не звучат.
+  - Честный подсчет дельты реально новых писем при синхронизации.
+  - Автоматическое скрытие шторки уведомлений при открытии ящика.
+- 🚀 **Устранение скачков интерфейса на старте**:
+  - Экран авторизации больше не проскакивает при холодном старте приложения. Сразу плавно открывается список писем.
+- 🎨 **Улучшенная индикация синхронизации**:
+  - Убран нависающий над карточками писем спиннер PullToRefreshBox.
+  - Статус синхронизации аккуратно отображается янтарным текстом «Синхронизация...» под названием открытой папки в шапке.
+"@
+
 try {
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases/tags/$Tag" -Headers $headers -Method Get
     Write-Host "Found existing release $Tag (ID: $($release.id))" -ForegroundColor Green
     $updatePayload = @{
+        name = "Jackdaw Mail $Tag"
+        body = $releaseNotes
         make_latest = "true"
         prerelease = $false
         draft = $false
-    } | ConvertTo-Json
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases/$($release.id)" -Headers $headers -Method Patch -Body $updatePayload -ContentType "application/json; charset=utf-8"
+    } | ConvertTo-Json -Depth 5
+    $updateBytes = [System.Text.Encoding]::UTF8.GetBytes($updatePayload)
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases/$($release.id)" -Headers $headers -Method Patch -Body $updateBytes -ContentType "application/json; charset=utf-8"
 } catch {
-    $releaseNotes = @"
-## Что нового в ${Tag}:
-- 📄 **Полный и читаемый текст писем**:
-  - Нативный скроллинг без обрезки по высоте.
-  - Автоматическая коррекция контрастности для темной темы (устранен невидимый черный текст на темном фоне).
-  - Переключатель темной/светлой подложки для писем со сложной версткой и поддержка зума.
-- 📎 **Точные вложения и файлы**:
-  - Устранены синтетические заглушки «Вложение 24 КБ» — теперь отображаются точные имена и реальный размер файлов из Exchange.
-  - Надёжное скачивание и открытие файлов из вложений.
-- 🖼️ **Встроенные изображения и логотипы подписи**:
-  - Автоматический резолвинг CID-изображений (логотипы SMART DS, DPD и др.) непосредственно в тело письма.
-  - Встроенные изображения подписей больше не засоряют список вложений.
-- ⭐ **Двусторонняя синхронизация избранного**:
-  - Отметка письма звездочкой/флагом синхронизируется с сервером Exchange и видна на десктопе.
-- 🗂️ **Эргономика и фильтры**:
-  - Удобные фильтры «Входящие», «Непрочитанные», «Избранное».
-- ⚡ **Фоновая синхронизация**:
-  - Усилена стабильность фоновой работы WorkManager и предотвращение засыпания службы синхронизации.
-"@
-
     $payload = @{
         tag_name = $Tag
         name = "Jackdaw Mail $Tag"
@@ -79,8 +76,9 @@ try {
         draft = $false
         prerelease = $false
         make_latest = "true"
-    } | ConvertTo-Json
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases" -Headers $headers -Method Post -Body $payload -ContentType "application/json; charset=utf-8"
+    } | ConvertTo-Json -Depth 5
+    $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($payload)
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoOwner/$repoName/releases" -Headers $headers -Method Post -Body $payloadBytes -ContentType "application/json; charset=utf-8"
 }
 
 # Upload APK
