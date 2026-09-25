@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import app.jackdaw.client.core.designsystem.theme.JackdawAmber
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -172,6 +173,7 @@ fun JackdawMainApp(
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
+    val isAccountsLoaded by viewModel.isAccountsLoaded.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
     val currentAccount by viewModel.currentAccount.collectAsState()
 
@@ -199,6 +201,15 @@ fun JackdawMainApp(
     val context = androidx.compose.ui.platform.LocalContext.current
     val readStatusManager = remember { app.jackdaw.client.core.readstatus.ReadStatusManager.getInstance(context) }
     val totalUnreadCount by viewModel.totalUnreadCount.collectAsState()
+
+    // Wait until accounts are queried from Room to eliminate cold-start auth screen jump
+    if (!isAccountsLoaded || (accounts.isNotEmpty() && currentAccount == null)) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {}
+        return
+    }
 
     if (accounts.isEmpty() || currentAccount == null) {
         SetupAccountScreen(

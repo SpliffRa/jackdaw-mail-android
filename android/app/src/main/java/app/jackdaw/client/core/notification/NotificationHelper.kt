@@ -135,6 +135,7 @@ class NotificationHelper(private val context: Context) {
             .setNumber(totalUnread)
             .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .setSilent(true)
             .setContentIntent(pendingIntent)
@@ -150,11 +151,22 @@ class NotificationHelper(private val context: Context) {
     }
 
     fun showNewEmailsNotification(emails: List<EmailMessage>, totalUnread: Int = 1) {
-        updateUnreadNotification(emails, totalUnread, playSound = true)
+        val tracker = NotificationTracker.getInstance(context)
+        val candidateEmails = emails.filter { tracker.shouldNotify(it.id, it.timestamp) }
+        val shouldPlaySound = candidateEmails.isNotEmpty()
+        if (shouldPlaySound) {
+            tracker.markNotified(candidateEmails.map { it.id })
+        }
+        updateUnreadNotification(emails, totalUnread, playSound = shouldPlaySound)
     }
 
     fun showNewEmailNotification(email: EmailMessage, unreadCount: Int = 1) {
-        updateUnreadNotification(listOf(email), unreadCount, playSound = true)
+        val tracker = NotificationTracker.getInstance(context)
+        val shouldPlaySound = tracker.shouldNotify(email.id, email.timestamp)
+        if (shouldPlaySound) {
+            tracker.markNotified(listOf(email.id))
+        }
+        updateUnreadNotification(listOf(email), unreadCount, playSound = shouldPlaySound)
     }
 
     fun clearMailNotifications() {

@@ -35,10 +35,11 @@ class MailSyncWorker(
             repository.initializeSampleDataIfEmpty()
 
             val notificationHelper = app.jackdaw.client.core.notification.NotificationHelper.getInstance(context)
+            val notificationTracker = app.jackdaw.client.core.notification.NotificationTracker.getInstance(context)
 
             // 2. Perform sync across all accounts
             val accounts = repository.getAccounts().first()
-            val allUnmutedEmails = mutableListOf<app.jackdaw.client.core.model.EmailMessage>()
+            val candidateEmailsForSound = mutableListOf<app.jackdaw.client.core.model.EmailMessage>()
             for (account in accounts) {
                 val syncResult = repository.syncAll(account.id)
                 Log.d(TAG, "Sync finished for account ${account.email}: new=${syncResult.newMessagesCount}, sent=${syncResult.sentMessagesCount}")
@@ -46,8 +47,10 @@ class MailSyncWorker(
                     val latestEmails = database.emailDao().getRecentEmails(account.id, syncResult.newMessagesCount)
                     for (emailEntity in latestEmails) {
                         val folder = database.folderDao().getFolderById(emailEntity.folderId)
-                        if (folder?.isMuted != true) {
-                            allUnmutedEmails.add(emailEntity.toDomain(emptyList()))
+                        if (folder?.isMuted != true && !emailEntity.isRead) {
+                            if (notificationTracker.shouldNotify(emailEntity.id, emailEntity.timestamp)) {
+                                candidateEmailsForSound.add(emailEntity.toDomain(emptyList()))
+                            }
                         }
                     }
                 }
@@ -55,9 +58,20 @@ class MailSyncWorker(
 
             val totalUnread = repository.getUnmutedUnreadCount().first()
             val unmutedEmails = repository.getUnmutedUnreadEmails(10).first()
+            val shouldPlaySound = candidateEmailsForSound.isNotEmpty()
+
+            if (shouldPlaySound) {
+                notificationTracker.markNotified(candidateEmailsForSound.map { it.id })
+            }
+
             if (totalUnread > 0) {
-                val hasNew = allUnmutedEmails.isNotEmpty()
-                notificationHelper.updateUnreadNotification(unmutedEmails, totalUnread, playSound = hasNew)
+                if (app.jackdaw.client.JackdawApp.isAppInForeground) {
+                    if (shouldPlaySound && app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(context).isNotificationsEnabled) {
+                        app.jackdaw.client.core.notification.SoundNotificationManager.getInstance(context).playIncomingMailSound()
+                    }
+                } else {
+                    notificationHelper.updateUnreadNotification(unmutedEmails, totalUnread, playSound = shouldPlaySound)
+                }
             } else {
                 notificationHelper.clearMailNotifications()
             }

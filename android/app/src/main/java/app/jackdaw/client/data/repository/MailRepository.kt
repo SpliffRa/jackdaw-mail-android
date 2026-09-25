@@ -716,9 +716,10 @@ class OfflineFirstMailRepository(
                                     }
                                 }
                             }
-                            totalNewEmails += newEmails.size
+                            val trulyNewEmailCount = newEmails.count { it.id !in localEmailIds }
+                            totalNewEmails += trulyNewEmailCount
                             if (!folder.isMuted) {
-                                unmutedNewEmails += newEmails.size
+                                unmutedNewEmails += trulyNewEmailCount
                             }
                         } else if (folder.totalCount == 0 && localEmailIds.isNotEmpty()) {
                             // Server explicitly reports 0 items in folder (e.g. emptied trash or cleared folder)
@@ -758,8 +759,9 @@ class OfflineFirstMailRepository(
                         ))
                     }
                     emailDao.insertEmails(emailEntities)
-                    totalNewEmails += newEmails.size
-                    unmutedNewEmails += newEmails.size
+                    val trulyNewCount = newEmails.count { it.id !in localEmailIds }
+                    totalNewEmails += trulyNewCount
+                    unmutedNewEmails += trulyNewCount
                 }
             }
 

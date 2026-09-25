@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -50,6 +51,12 @@ class MailViewModel(
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
     val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
     val syncMessage: StateFlow<String?> = _syncMessage.asStateFlow()
+
+    val isAccountsLoaded: StateFlow<Boolean> = repository.getAccounts().map { true }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = false
+    )
 
     val accounts: StateFlow<List<MailAccount>> = repository.getAccounts().stateIn(
         scope = viewModelScope,
@@ -184,6 +191,8 @@ class MailViewModel(
         _currentLimit.value = 50
         _selectedFolderId.value = folder.id
         _searchQuery.value = ""
+        app.jackdaw.client.core.notification.NotificationTracker.getInstance(app.jackdaw.client.JackdawApp.instance).markViewed()
+        app.jackdaw.client.core.notification.NotificationHelper.getInstance(app.jackdaw.client.JackdawApp.instance).clearMailNotifications()
     }
 
     fun selectAccount(account: MailAccount) {

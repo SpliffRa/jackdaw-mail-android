@@ -87,14 +87,6 @@ import app.jackdaw.client.ui.components.SwipeableEmailCard
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.draw.rotate
-import androidx.compose.material.icons.rounded.Sync
 
 enum class MailFilter(val label: String) {
     INBOX("Входящие"),
@@ -367,10 +359,11 @@ fun MailListScreen(
                 }
             }
 
-            // Emails LazyColumn with Pull-to-Refresh
+            // Emails LazyColumn with Pull-to-Refresh (indicator removed as requested, sync status displayed under folder title)
             PullToRefreshBox(
                 isRefreshing = isSyncing,
                 onRefresh = onSyncClick,
+                indicator = {},
                 modifier = Modifier.fillMaxSize()
             ) {
                 if (filteredEmails.isEmpty()) {
