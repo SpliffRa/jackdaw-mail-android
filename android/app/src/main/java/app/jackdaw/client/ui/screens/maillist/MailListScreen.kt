@@ -429,7 +429,15 @@ fun MailListScreen(
                                         onClick = { onEmailClick(email) },
                                         onToggleStar = { isStarred -> onToggleStar(email.id, isStarred) },
                                         onSwipeArchive = { onSwipeArchive(email) },
-                                        onSwipeDelete = { emailToDeletePending = email }
+                                        onSwipeDelete = {
+                                            val isInTrash = isTrashFolder || email.folderId.contains("trash", ignoreCase = true)
+                                            if (isInTrash) {
+                                                emailToDeletePending = email
+                                            } else {
+                                                onSwipeDelete(email)
+                                            }
+                                        },
+                                        modifier = Modifier.animateItem()
                                     )
                                 }
                             }

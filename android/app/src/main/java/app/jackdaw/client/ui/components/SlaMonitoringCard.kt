@@ -182,10 +182,11 @@ fun SlaMonitoringCard(
                             tint = JackdawAmber,
                             modifier = Modifier.size(12.dp)
                         )
-                        if (email.attachments.size > 1) {
+                        val attCount = email.attachments.size
+                        if (attCount > 0) {
                             Spacer(modifier = Modifier.width(2.dp))
                             Text(
-                                text = "${email.attachments.size}",
+                                text = "$attCount",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface

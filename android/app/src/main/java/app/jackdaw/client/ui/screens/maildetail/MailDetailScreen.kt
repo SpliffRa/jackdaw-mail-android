@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.automirrored.rounded.Reply
 import androidx.compose.material.icons.automirrored.rounded.ReplyAll
 import androidx.compose.material.icons.rounded.AccessTime
@@ -42,6 +46,8 @@ import androidx.compose.material.icons.rounded.Forward
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.MarkEmailRead
 import androidx.compose.material.icons.rounded.MarkEmailUnread
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
@@ -105,6 +111,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import app.jackdaw.client.core.model.Attachment
+import app.jackdaw.client.core.util.AttachmentHelper
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -308,28 +315,93 @@ fun MailDetailScreen(
         }
 
         var downloadingAttachmentId by remember { mutableStateOf<String?>(null) }
-        val handleOpenAttachment = { attachment: Attachment ->
+        var selectedAttachmentForAction by remember { mutableStateOf<Attachment?>(null) }
+        var pendingFileToSaveWithPicker by remember { mutableStateOf<Pair<File, Attachment>?>(null) }
+
+        val createDocumentLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("*/*")
+        ) { destinationUri ->
+            val pair = pendingFileToSaveWithPicker
+            pendingFileToSaveWithPicker = null
+            if (destinationUri != null && pair != null) {
+                val success = AttachmentHelper.saveToUri(context, pair.first, destinationUri)
+                if (success) {
+                    Toast.makeText(context, "Файл «${pair.second.fileName}» сохранен", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Не удалось сохранить файл", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        fun ensureAttachmentFile(attachment: Attachment, onReady: (File) -> Unit) {
             val attachmentsDir = File(context.cacheDir, "attachments").apply { mkdirs() }
             val safeAttId = attachment.id.replace("[^a-zA-Z0-9]".toRegex(), "_").take(16)
             val safeFileName = attachment.fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
             val targetFile = File(attachmentsDir, "${safeAttId}_$safeFileName")
             val localFile = if (!attachment.localUri.isNullOrBlank()) File(attachment.localUri) else null
 
-            if (downloadingAttachmentId == attachment.id) {
-                Toast.makeText(context, "Файл уже загружается, пожалуйста подождите...", Toast.LENGTH_SHORT).show()
-            } else if (localFile != null && localFile.exists() && localFile.length() > 0L) {
-                openFile(context, localFile, attachment.mimeType)
+            if (localFile != null && localFile.exists() && localFile.length() > 0L) {
+                onReady(localFile)
             } else if (targetFile.exists() && targetFile.length() > 0L) {
-                openFile(context, targetFile, attachment.mimeType)
+                onReady(targetFile)
             } else {
+                if (downloadingAttachmentId == attachment.id) {
+                    Toast.makeText(context, "Файл уже загружается, пожалуйста подождите...", Toast.LENGTH_SHORT).show()
+                    return
+                }
                 downloadingAttachmentId = attachment.id
                 Toast.makeText(context, "Загрузка вложения «${attachment.fileName}»...", Toast.LENGTH_SHORT).show()
                 onDownloadAttachment(attachment) { file ->
                     downloadingAttachmentId = null
                     if (file != null && file.exists() && file.length() > 0L) {
-                        openFile(context, file, attachment.mimeType)
+                        onReady(file)
                     } else {
                         Toast.makeText(context, "Не удалось загрузить «${attachment.fileName}». Файл недоступен на сервере.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        val handleOpenAttachment = { attachment: Attachment ->
+            ensureAttachmentFile(attachment) { file ->
+                AttachmentHelper.openFile(context, file, attachment.mimeType)
+            }
+        }
+
+        val handleSaveToDownloads = { attachment: Attachment ->
+            ensureAttachmentFile(attachment) { file ->
+                val uri = AttachmentHelper.saveToDownloads(context, file, attachment.fileName, attachment.mimeType)
+                if (uri != null) {
+                    Toast.makeText(context, "Файл сохранен в Загрузки: «${attachment.fileName}»", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Не удалось сохранить «${attachment.fileName}» в Загрузки", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        val handleSaveWithPicker = { attachment: Attachment ->
+            ensureAttachmentFile(attachment) { file ->
+                pendingFileToSaveWithPicker = Pair(file, attachment)
+                try {
+                    createDocumentLauncher.launch(attachment.fileName)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Не удалось открыть выбор папки: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        val handleSaveAllAttachmentsToDownloads = {
+            val atts = displayedEmail.attachments
+            if (atts.isNotEmpty()) {
+                Toast.makeText(context, "Сохранение ${atts.size} вложений в Загрузки...", Toast.LENGTH_SHORT).show()
+                var savedCount = 0
+                for (att in atts) {
+                    ensureAttachmentFile(att) { file ->
+                        val uri = AttachmentHelper.saveToDownloads(context, file, att.fileName, att.mimeType)
+                        if (uri != null) savedCount++
+                        if (savedCount == atts.size) {
+                            Toast.makeText(context, "Все вложения ($savedCount) сохранены в Загрузки", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             }
@@ -556,9 +628,54 @@ fun MailDetailScreen(
                     }
                 }
 
-                // Attachments row (horizontal scroll chips)
+                // Attachments section (header with count + horizontal scroll chips)
                 if (displayedEmail.attachments.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AttachFile,
+                                contentDescription = null,
+                                tint = JackdawAmber,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Вложения (${displayedEmail.attachments.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        if (displayedEmail.attachments.size > 1) {
+                            TextButton(
+                                onClick = { handleSaveAllAttachmentsToDownloads() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Download,
+                                    contentDescription = null,
+                                    tint = JackdawAmber,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Сохранить все в Загрузки",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = JackdawAmber
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -573,7 +690,7 @@ fun MailDetailScreen(
                             }
 
                             Surface(
-                                onClick = { handleOpenAttachment(attachment) },
+                                onClick = { selectedAttachmentForAction = attachment },
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -613,6 +730,12 @@ fun MailDetailScreen(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
+                                    Icon(
+                                        imageVector = Icons.Rounded.Download,
+                                        contentDescription = "Сохранить",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(14.dp)
+                                    )
                                 }
                             }
                         }
@@ -721,6 +844,197 @@ fun MailDetailScreen(
                     .weight(1f)
                     .fillMaxWidth()
             )
+        }
+        if (selectedAttachmentForAction != null) {
+            val att = selectedAttachmentForAction
+            if (att != null) {
+                val sizeText = when {
+                    att.sizeBytes > 1024 * 1024 -> "${att.sizeBytes / (1024 * 1024)} МБ"
+                    att.sizeBytes > 1024 -> "${att.sizeBytes / 1024} КБ"
+                    att.sizeBytes > 0 -> "${att.sizeBytes} Б"
+                    else -> ""
+                }
+
+                AlertDialog(
+                    onDismissRequest = { selectedAttachmentForAction = null },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.AttachFile,
+                            contentDescription = null,
+                            tint = JackdawAmber,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    },
+                    title = {
+                        Text(
+                            text = att.fileName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (sizeText.isNotBlank()) {
+                                Text(
+                                    text = "Размер: $sizeText",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // 1. Сохранить в Загрузки (по умолчанию)
+                            Surface(
+                                onClick = {
+                                    val target = att
+                                    selectedAttachmentForAction = null
+                                    handleSaveToDownloads(target)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(JackdawAmber.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Download,
+                                            contentDescription = null,
+                                            tint = JackdawAmber,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Сохранить в Загрузки",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Папка по умолчанию (Download)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 2. Выбрать папку для сохранения...
+                            Surface(
+                                onClick = {
+                                    val target = att
+                                    selectedAttachmentForAction = null
+                                    handleSaveWithPicker(target)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.FolderOpen,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Выбрать другую папку...",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Сохранить через проводник Android",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 3. Открыть файл
+                            Surface(
+                                onClick = {
+                                    val target = att
+                                    selectedAttachmentForAction = null
+                                    handleOpenAttachment(target)
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.secondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Открыть файл",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Просмотр в установленном приложении",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { selectedAttachmentForAction = null }) {
+                            Text("Отмена")
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -1093,42 +1407,7 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
 }
 
 private fun openFile(context: Context, file: File, mimeType: String) {
-    if (!file.exists() || file.length() <= 0L) {
-        Toast.makeText(context, "Файл не найден или пуст", Toast.LENGTH_SHORT).show()
-        return
-    }
-    try {
-        val effectiveMime = when {
-            mimeType.isNotBlank() && mimeType != "application/octet-stream" -> mimeType
-            file.name.endsWith(".xml", true) -> "text/xml"
-            file.name.endsWith(".pdf", true) -> "application/pdf"
-            file.name.endsWith(".xlsx", true) -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            file.name.endsWith(".xls", true) -> "application/vnd.ms-excel"
-            file.name.endsWith(".docx", true) -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            file.name.endsWith(".doc", true) -> "application/msword"
-            file.name.endsWith(".png", true) -> "image/png"
-            file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true) -> "image/jpeg"
-            file.name.endsWith(".txt", true) -> "text/plain"
-            file.name.endsWith(".zip", true) -> "application/zip"
-            else -> "*/*"
-        }
-        val contentUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(contentUri, effectiveMime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        val chooser = Intent.createChooser(intent, "Открыть: ${file.name}").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(chooser)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Не удалось открыть файл: ${e.message}", Toast.LENGTH_SHORT).show()
-    }
+    AttachmentHelper.openFile(context, file, mimeType)
 }
 
 private val URL_REGEX = Regex("""(?i)\b(https?://[^\s<>"]+)""")

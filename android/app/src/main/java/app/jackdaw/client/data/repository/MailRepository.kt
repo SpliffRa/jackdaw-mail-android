@@ -53,6 +53,7 @@ interface MailRepository {
     suspend fun updateEmailBody(id: String, bodyText: String, bodyHtml: String?, snippet: String)
     suspend fun fetchEmailBodyDirect(account: MailAccount, itemId: String): Pair<String, String>?
     suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean
+    suspend fun fetchEmailBatchDetails(account: MailAccount, emailIds: List<String>): Int
     suspend fun downloadAttachment(account: MailAccount, attachment: app.jackdaw.client.core.model.Attachment): java.io.File?
     fun getTotalUnreadCount(): Flow<Int>
     fun getUnmutedUnreadCount(): Flow<Int>
@@ -705,15 +706,11 @@ class OfflineFirstMailRepository(
                                 attachmentDao.deletePlaceholderAttachments()
                             } catch (_: Exception) {}
 
-                            // Proactively fetch full details (including real attachments) for inbox emails with attachments
-                            if (folder.type == app.jackdaw.client.core.model.FolderType.INBOX) {
-                                val emailsNeedingAtts = newEmails.filter { it.hasAttachments && it.attachments.isEmpty() }.take(5)
-                                if (emailsNeedingAtts.isNotEmpty()) {
-                                    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                                        for (e in emailsNeedingAtts) {
-                                            runCatching { fetchEmailFullDetails(account, e.id) }
-                                        }
-                                    }
+                            // Proactively fetch full details (including real attachments) for emails with attachments
+                            val emailsNeedingAtts = newEmails.filter { it.hasAttachments && it.attachments.isEmpty() }
+                            if (emailsNeedingAtts.isNotEmpty()) {
+                                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                                    fetchEmailBatchDetails(account, emailsNeedingAtts.map { it.id })
                                 }
                             }
                             val trulyNewEmailCount = newEmails.count { it.id !in localEmailIds }
@@ -901,6 +898,46 @@ class OfflineFirstMailRepository(
             })
         }
         return true
+    }
+
+    override suspend fun fetchEmailBatchDetails(account: MailAccount, emailIds: List<String>): Int {
+        if (emailIds.isEmpty()) return 0
+        var count = 0
+        try {
+            val owaEngine = mailProtocolEngine as? app.jackdaw.client.data.network.OwaProtocolEngine
+            if (owaEngine != null) {
+                for (chunk in emailIds.chunked(20)) {
+                    val detailsMap = owaEngine.fetchEmailDetails(account, chunk)
+                    for ((id, details) in detailsMap) {
+                        val hasAtt = details.attachments.isNotEmpty() || (details.hasAttachments == true)
+                        emailDao.updateEmailBodyWithAttachments(
+                            id,
+                            details.bodyText,
+                            details.bodyHtml,
+                            details.bodyText.take(150),
+                            hasAtt
+                        )
+                        if (details.isStarred != null) {
+                            emailDao.updateStarredStatus(id, details.isStarred)
+                        }
+                        attachmentDao.deleteAttachmentsForEmail(id)
+                        if (details.attachments.isNotEmpty()) {
+                            attachmentDao.insertAttachments(details.attachments.map {
+                                app.jackdaw.client.data.local.entity.AttachmentEntity.fromDomain(it, id)
+                            })
+                        }
+                        count++
+                    }
+                }
+            } else {
+                for (id in emailIds) {
+                    if (fetchEmailFullDetails(account, id)) count++
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MailRepository", "Error in fetchEmailBatchDetails: ${e.message}", e)
+        }
+        return count
     }
 
     override suspend fun downloadAttachment(

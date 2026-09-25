@@ -183,6 +183,20 @@ class MailViewModel(
                 }
             }
         }
+        // Proactive prefetch of attachment details for visible emails with attachments
+        viewModelScope.launch(Dispatchers.IO) {
+            emails.collect { list ->
+                val needingAtts = list.filter { 
+                    it.hasAttachments && it.attachments.isEmpty() && !it.id.startsWith("mock_") 
+                }
+                if (needingAtts.isNotEmpty()) {
+                    val accList = repository.getAccounts().firstOrNull().orEmpty()
+                    val account = currentAccount.value ?: accList.firstOrNull() ?: return@collect
+                    val idsToFetch = needingAtts.map { it.id }.take(25)
+                    repository.fetchEmailBatchDetails(account, idsToFetch)
+                }
+            }
+        }
     }
 
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()

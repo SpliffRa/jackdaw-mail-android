@@ -13,8 +13,8 @@ android {
         applicationId = "app.jackdaw.client"
         minSdk = 26
         targetSdk = 35
-        versionCode = 63
-        versionName = "1.5.4"
+        versionCode = 64
+        versionName = "1.5.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

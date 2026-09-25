@@ -24,12 +24,31 @@ import androidx.compose.material.icons.rounded.DeleteForever
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarOutline
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -225,10 +244,11 @@ fun EmailCard(
                                 tint = JackdawAmber,
                                 modifier = Modifier.size(13.dp)
                             )
-                            if (email.attachments.size > 1) {
+                            val attCount = email.attachments.size
+                            if (attCount > 0) {
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = "${email.attachments.size}",
+                                    text = "$attCount",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -305,7 +325,6 @@ fun EmailCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeableEmailCard(
     email: EmailMessage,
@@ -315,101 +334,172 @@ fun SwipeableEmailCard(
     onSwipeDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        positionalThreshold = { totalDistance -> totalDistance * 0.65f },
-        confirmValueChange = { dismissValue ->
-            when (dismissValue) {
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    onSwipeArchive()
-                    true
-                }
-                SwipeToDismissBoxValue.EndToStart -> {
-                    onSwipeDelete()
-                    false
-                }
-                SwipeToDismissBoxValue.Settled -> false
-            }
-        }
-    )
+    val coroutineScope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+    var layoutWidth by remember { mutableIntStateOf(0) }
+    var wasThresholdReached by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+
+    // Reset offset when email changes or is recycled
+    LaunchedEffect(email.id) {
+        offsetX.snapTo(0f)
+        wasThresholdReached = false
+    }
 
     val isInArchive = email.folderId.contains("archive", ignoreCase = true)
+    val isInTrash = email.folderId.contains("trash", ignoreCase = true)
 
-    SwipeToDismissBox(
-        state = dismissState,
-        modifier = modifier.clip(RoundedCornerShape(8.dp)),
-        backgroundContent = {
-            val direction = dismissState.dismissDirection
-            if (direction == SwipeToDismissBoxValue.Settled) {
-                // When settled (not swiping), render completely empty container so no text/icons ever bleed through
-                Box(modifier = Modifier.fillMaxSize())
-            } else {
-                val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
-                val color = if (isStartToEnd) {
-                    if (isInArchive) Color(0xFF3B82F6) else Color(0xFF10B981)
+    val currentOffset = offsetX.value
+    val threshold = if (layoutWidth > 0) layoutWidth * 0.5f else Float.MAX_VALUE
+    val isThresholdCrossed = abs(currentOffset) >= threshold
+    val isSwiping = abs(currentOffset) > 1f
+    val isStartToEnd = currentOffset > 0
+
+    val draggableState = rememberDraggableState { delta ->
+        val current = offsetX.value
+        // Apply elastic rubber-band resistance when dragging beyond container bounds
+        val effectiveDelta = if (layoutWidth > 0 && abs(current) > layoutWidth) {
+            delta * 0.35f
+        } else {
+            delta
+        }
+        val newOffset = current + effectiveDelta
+        coroutineScope.launch {
+            offsetX.snapTo(newOffset)
+        }
+
+        val crossed = abs(newOffset) >= threshold
+        if (crossed != wasThresholdReached) {
+            wasThresholdReached = crossed
+            if (crossed) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+    }
+
+    val progress = if (threshold > 0f) (abs(currentOffset) / threshold).coerceIn(0f, 1f) else 0f
+    val iconScale by animateFloatAsState(
+        targetValue = if (isThresholdCrossed) 1.15f else (0.8f + progress * 0.2f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "swipeIconScale"
+    )
+
+    val color = if (isStartToEnd) {
+        if (isInArchive) Color(0xFF3B82F6) else Color(0xFF10B981)
+    } else {
+        Color(0xFFEF4444)
+    }
+
+    val bgAlpha = if (isThresholdCrossed) 1f else (progress * 0.85f).coerceIn(0.2f, 0.85f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .onSizeChanged { layoutWidth = it.width }
+    ) {
+        // 1. Background action layer
+        if (isSwiping) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(color.copy(alpha = bgAlpha))
+                    .padding(horizontal = 24.dp),
+                contentAlignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+            ) {
+                if (isStartToEnd) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = iconScale
+                            scaleY = iconScale
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isInArchive) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                            contentDescription = if (isInArchive) "Из архива" else "В архив",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isInArchive) "Из архива" else "В архив",
+                            color = Color.White,
+                            fontWeight = if (isThresholdCrossed) FontWeight.ExtraBold else FontWeight.Bold,
+                            fontSize = if (isThresholdCrossed) 15.sp else 14.sp
+                        )
+                    }
                 } else {
-                    Color(0xFFEF4444)
-                }
-
-                val progress = dismissState.progress
-                val iconScale = (0.75f + progress * 0.4f).coerceIn(0.75f, 1.15f)
-                val bgAlpha = (progress * 1.5f).coerceIn(0.35f, 1f)
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(color.copy(alpha = bgAlpha))
-                        .padding(horizontal = 24.dp),
-                    contentAlignment = if (isStartToEnd) Alignment.CenterStart else Alignment.CenterEnd
-                ) {
-                    if (isStartToEnd) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                        ) {
-                            Icon(
-                                imageVector = if (isInArchive) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
-                                contentDescription = if (isInArchive) "Из архива" else "В архив",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isInArchive) "Из архива" else "В архив",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = iconScale
+                            scaleY = iconScale
                         }
-                    } else {
-                        val isInTrash = email.folderId.contains("trash", ignoreCase = true)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                        ) {
-                            Text(
-                                text = if (isInTrash) "Удалить навсегда" else "Удалить",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = if (isInTrash) Icons.Rounded.DeleteForever else Icons.Rounded.Delete,
-                                contentDescription = if (isInTrash) "Удалить навсегда" else "Удалить",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                    ) {
+                        Text(
+                            text = if (isInTrash) "Удалить навсегда" else "В корзину",
+                            color = Color.White,
+                            fontWeight = if (isThresholdCrossed) FontWeight.ExtraBold else FontWeight.Bold,
+                            fontSize = if (isThresholdCrossed) 15.sp else 14.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = if (isInTrash) Icons.Rounded.DeleteForever else Icons.Rounded.Delete,
+                            contentDescription = if (isInTrash) "Удалить навсегда" else "В корзину",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
-        },
-        content = {
+        }
+
+        // 2. Foreground Card with smooth offset & dragging
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(currentOffset.roundToInt(), 0) }
+                .draggable(
+                    state = draggableState,
+                    orientation = Orientation.Horizontal,
+                    onDragStopped = {
+                        coroutineScope.launch {
+                            if (abs(offsetX.value) >= threshold) {
+                                // Completed swipe: smoothly slide off-screen, trigger action, then reset
+                                val target = if (offsetX.value > 0) layoutWidth.toFloat() + 120f else -layoutWidth.toFloat() - 120f
+                                offsetX.animateTo(
+                                    targetValue = target,
+                                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                                )
+                                if (currentOffset > 0) {
+                                    onSwipeArchive()
+                                } else {
+                                    onSwipeDelete()
+                                }
+                                offsetX.snapTo(0f)
+                            } else {
+                                // Cancelled swipe (less than 50% threshold): smooth silk spring return
+                                offsetX.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = 0.82f,
+                                        stiffness = Spring.StiffnessLow
+                                    )
+                                )
+                            }
+                            wasThresholdReached = false
+                        }
+                    }
+                )
+        ) {
             EmailCard(
                 email = email,
                 onClick = onClick,
                 onToggleStar = onToggleStar
             )
         }
-    )
+    }
 }
 
 
