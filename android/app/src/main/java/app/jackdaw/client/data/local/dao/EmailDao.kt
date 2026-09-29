@@ -81,27 +81,6 @@ interface EmailDao {
                hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
                relatedEmailsCount, deliveryStatus 
         FROM emails 
-        WHERE accountId = :accountId 
-          AND folderId = :folderId 
-          AND (:filterUnread = 0 OR isRead = 0)
-          AND (:filterStarred = 0 OR isStarred = 1)
-        ORDER BY timestamp DESC 
-        LIMIT :limit
-    """)
-    fun getPagedEmailsInFolderFiltered(
-        accountId: String,
-        folderId: String,
-        limit: Int,
-        filterUnread: Boolean = false,
-        filterStarred: Boolean = false
-    ): Flow<List<EmailEntity>>
-
-    @Query("""
-        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
-               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
-               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
-               relatedEmailsCount, deliveryStatus 
-        FROM emails 
         WHERE accountId = :accountId AND folderId = :folderId 
         ORDER BY timestamp DESC
     """)
@@ -197,7 +176,7 @@ interface EmailDao {
     """)
     fun searchEmails(query: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE threadId = :threadId AND threadId != '' ORDER BY timestamp DESC, id DESC LIMIT 50")
+    @Query("SELECT * FROM emails WHERE threadId = :threadId ORDER BY timestamp DESC, id DESC")
     fun getEmailsInThread(threadId: String): Flow<List<EmailEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -336,12 +315,6 @@ interface EmailDao {
 
     @Query("SELECT id FROM emails WHERE accountId = :accountId AND folderId = :folderId")
     suspend fun getEmailIdsInFolder(accountId: String, folderId: String): List<String>
-
-    @Query("SELECT id FROM emails WHERE accountId = :accountId AND folderId = :folderId AND timestamp >= :sinceTimestamp")
-    suspend fun getEmailIdsInFolderSince(accountId: String, folderId: String, sinceTimestamp: Long): List<String>
-
-    @Query("SELECT COUNT(*) FROM emails WHERE accountId = :accountId AND folderId = :folderId")
-    suspend fun getEmailCountInFolder(accountId: String, folderId: String): Int
 
     @Query("DELETE FROM emails WHERE id IN (:emailIds)")
     suspend fun deleteEmailsByIds(emailIds: List<String>)

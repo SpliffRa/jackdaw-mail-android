@@ -32,6 +32,5 @@ interface MailProtocolEngine {
     suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = false
     suspend fun updateEmailStarStatus(account: MailAccount, emailId: String, isStarred: Boolean): Boolean = false
     suspend fun emptyTrash(account: MailAccount): Boolean = false
-    suspend fun fetchOlderEmails(account: MailAccount, folderId: String, offset: Int, limit: Int = 100): List<EmailMessage> = emptyList()
 }
 

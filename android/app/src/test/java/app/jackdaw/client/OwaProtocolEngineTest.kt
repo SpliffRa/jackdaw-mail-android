@@ -189,48 +189,5 @@ class OwaProtocolEngineTest {
         assertEquals("DistinguishedFolderId:#Exchange", parent.getString("__type"))
         assertEquals("inbox", parent.getString("Id"))
     }
-
-    @Test
-    fun testFindItemPayloadOffsetAndPaging() {
-        val engine = OwaProtocolEngine()
-        val payload = engine.buildFindItemEmailPayload("deleteditems", offset = 1000, maxEntries = 200)
-        val body = payload.getJSONObject("Body")
-        val paging = body.getJSONObject("Paging")
-        assertEquals("IndexedPageView:#Exchange", paging.getString("__type"))
-        assertEquals("Beginning", paging.getString("BasePoint"))
-        assertEquals(1000, paging.getInt("Offset"))
-        assertEquals(200, paging.getInt("MaxEntriesReturned"))
-    }
-
-    @Test
-    fun testFolderCountResolutionLogic() {
-        // Scenario 1: Folder has 1500 emails and 45 unread on server.
-        // Local database currently only cached 50 items with 3 unread.
-        val serverTotal = 1500
-        val serverUnread = 45
-        val localTotal = 50
-        val localUnread = 3
-
-        val resolvedUnread = if (localTotal >= serverTotal && serverTotal > 0) {
-            localUnread
-        } else {
-            maxOf(localUnread, serverUnread)
-        }
-        val resolvedTotal = maxOf(localTotal, serverTotal)
-
-        assertEquals(45, resolvedUnread)
-        assertEquals(1500, resolvedTotal)
-
-        // Scenario 2: All 1500 emails are cached locally, user reads 1 email locally so localUnread becomes 44
-        val fullyCachedLocalTotal = 1500
-        val fullyCachedLocalUnread = 44
-
-        val resolvedUnreadAfterRead = if (fullyCachedLocalTotal >= serverTotal && serverTotal > 0) {
-            fullyCachedLocalUnread
-        } else {
-            maxOf(fullyCachedLocalUnread, serverUnread)
-        }
-        assertEquals(44, resolvedUnreadAfterRead)
-    }
 }
 

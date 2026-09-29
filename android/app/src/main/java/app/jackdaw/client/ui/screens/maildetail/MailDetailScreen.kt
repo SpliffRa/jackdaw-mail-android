@@ -7,8 +7,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -771,6 +769,14 @@ fun MailDetailScreen(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
+            if (isBodyFetching) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = JackdawAmber,
+                    trackColor = Color.Transparent
+                )
+            }
+
             val rawBodyContent = remember(displayedEmail.id, displayedEmail.bodyHtml, displayedEmail.bodyText, displayedEmail.snippet) {
                 if (!displayedEmail.bodyHtml.isNullOrBlank()) {
                     displayedEmail.bodyHtml!!
@@ -784,29 +790,8 @@ fun MailDetailScreen(
                 }
             }
 
-            var htmlDocument by remember(displayedEmail.id, effectiveDark) {
-                mutableStateOf(if (rawBodyContent.length < 50_000) prepareEmailHtml(rawBodyContent, effectiveDark) else "")
-            }
-
-            androidx.compose.runtime.LaunchedEffect(displayedEmail.id, effectiveDark, rawBodyContent) {
-                if (rawBodyContent.length >= 50_000) {
-                    val processed = withContext(Dispatchers.Default) {
-                        prepareEmailHtml(rawBodyContent, effectiveDark)
-                    }
-                    htmlDocument = processed
-                } else {
-                    htmlDocument = prepareEmailHtml(rawBodyContent, effectiveDark)
-                }
-            }
-
-            val isPreparingHtml = htmlDocument.isBlank() && rawBodyContent.isNotBlank()
-
-            if (isBodyFetching || isPreparingHtml) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
-                    color = JackdawAmber,
-                    trackColor = Color.Transparent
-                )
+            val htmlDocument = remember(displayedEmail.id, effectiveDark, rawBodyContent.hashCode()) {
+                prepareEmailHtml(rawBodyContent, effectiveDark)
             }
 
             val webViewTag = "${displayedEmail.id}_${effectiveDark}_${rawBodyContent.hashCode()}"
@@ -814,6 +799,7 @@ fun MailDetailScreen(
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        tag = webViewTag
                         webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                                 val uri = request?.url ?: return false
@@ -824,6 +810,11 @@ fun MailDetailScreen(
                             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                                 val uri = url?.let { Uri.parse(it) } ?: return false
                                 return handleUriRedirect(ctx, uri)
+                            }
+
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                view?.evaluateJavascript("if (typeof fixDarkColors === 'function') { fixDarkColors(); }", null)
                             }
                         }
                         settings.apply {
@@ -839,14 +830,11 @@ fun MailDetailScreen(
                         isVerticalScrollBarEnabled = true
                         isHorizontalScrollBarEnabled = true
                         setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
-                        if (htmlDocument.isNotBlank()) {
-                            tag = webViewTag
-                            loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
-                        }
+                        loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
                     }
                 },
                 update = { view ->
-                    if (htmlDocument.isNotBlank() && view.tag != webViewTag) {
+                    if (view.tag != webViewTag) {
                         view.tag = webViewTag
                         view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
                         view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
@@ -1099,22 +1087,6 @@ fun MailDetailScreen(
     }
 }
 
-private val REGEX_BGCOLOR_ATTR = Regex("""\s+bgcolor=["'][^"']*["']""", RegexOption.IGNORE_CASE)
-private val REGEX_LIGHT_BG = Regex("""background(-color)?\s*:\s*(white|#fff\b|#ffffff\b|#efefef\b|#d9d8d1\b|#f\w{2,5}\b|#e\w{2,5}\b)[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_DARK_TEXT = Regex("""color\s*:\s*(#0\w{2,5}|#1\w{2,5}|#2\w{2,5}|#3\w{2,5}|#4\w{2,5}|#5\w{2,5}|#6\w{2,5}|black|windowtext)[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_MARGIN_LEFT = Regex("""margin-left\s*:\s*36[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_TEXT_INDENT = Regex("""text-indent\s*:\s*-18[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_CONSECUTIVE_BR = Regex("""(<br\s*/?>\s*){3,}""", RegexOption.IGNORE_CASE)
-private val REGEX_LINE_HEIGHT = Regex("""line-height\s*:\s*\d+(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_MSO_LINE_HEIGHT = Regex("""mso-line-height-rule\s*:\s*exactly[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_FONT_SIZE = Regex("""font-size\s*:\s*(2[0-9]|[3-9][0-9])(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_NEGATIVE_MARGIN = Regex("""margin-(left|right)\s*:\s*-[0-9.]+pt[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_FIXED_WIDTH_ATTR = Regex("""\s+width=["'](0|[1-9]\d{2,})["']""", RegexOption.IGNORE_CASE)
-private val REGEX_WIDTH_PT = Regex("""width\s*:\s*\d+(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_FLOAT = Regex("""float\s*:\s*(left|right)[^;}"']*""", RegexOption.IGNORE_CASE)
-private val REGEX_HEAD_TAG = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE)
-private val REGEX_HTML_TAG = Regex("<html\\b[^>]*>", RegexOption.IGNORE_CASE)
-
 private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
     val textColor = if (isDark) "#E6E1E5" else "#1C1B1F"
     val bgColor = if (isDark) "#121212" else "#FFFFFF"
@@ -1122,44 +1094,42 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
 
     var processedHtml = rawHtml
     if (isDark) {
-        if (processedHtml.contains("bgcolor=", ignoreCase = true)) {
-            processedHtml = REGEX_BGCOLOR_ATTR.replace(processedHtml, "")
-        }
-        if (processedHtml.contains("background", ignoreCase = true)) {
-            processedHtml = REGEX_LIGHT_BG.replace(processedHtml, "background: transparent")
-        }
-        if (processedHtml.contains("color", ignoreCase = true)) {
-            processedHtml = REGEX_DARK_TEXT.replace(processedHtml, "color: #E6E1E5")
-        }
+        // Strip bgcolor attributes (e.g. bgcolor="#efefef", bgcolor="white")
+        processedHtml = processedHtml.replace(Regex("""\s+bgcolor=["'][^"']*["']""", RegexOption.IGNORE_CASE), "")
+        // Transparentize light inline background colors
+        processedHtml = processedHtml.replace(
+            Regex("""background(-color)?\s*:\s*(white|#fff\b|#ffffff\b|#efefef\b|#d9d8d1\b|#f\w{2,5}\b|#e\w{2,5}\b)[^;}"']*""", RegexOption.IGNORE_CASE),
+            "background: transparent"
+        )
+        // Lighten dark inline text colors to match dark canvas
+        processedHtml = processedHtml.replace(
+            Regex("""color\s*:\s*(#0\w{2,5}|#1\w{2,5}|#2\w{2,5}|#3\w{2,5}|#4\w{2,5}|#5\w{2,5}|#6\w{2,5}|black|windowtext)[^;}"']*""", RegexOption.IGNORE_CASE),
+            "color: #E6E1E5"
+        )
     }
-    if (processedHtml.contains("margin-left", ignoreCase = true)) {
-        processedHtml = REGEX_MARGIN_LEFT.replace(processedHtml, "margin-left: 0")
-    }
-    if (processedHtml.contains("text-indent", ignoreCase = true)) {
-        processedHtml = REGEX_TEXT_INDENT.replace(processedHtml, "text-indent: 0")
-    }
-    if (processedHtml.contains("<br", ignoreCase = true)) {
-        processedHtml = REGEX_CONSECUTIVE_BR.replace(processedHtml, "<br/><br/>")
-    }
-    if (processedHtml.contains("line-height", ignoreCase = true)) {
-        processedHtml = REGEX_LINE_HEIGHT.replace(processedHtml, "line-height: 1.55")
-        processedHtml = REGEX_MSO_LINE_HEIGHT.replace(processedHtml, "")
-    }
-    if (processedHtml.contains("font-size", ignoreCase = true)) {
-        processedHtml = REGEX_FONT_SIZE.replace(processedHtml, "font-size: 20px")
-    }
-    if (processedHtml.contains("margin-", ignoreCase = true)) {
-        processedHtml = REGEX_NEGATIVE_MARGIN.replace(processedHtml, "margin-$1: 0")
-    }
-    if (processedHtml.contains("width=", ignoreCase = true)) {
-        processedHtml = REGEX_FIXED_WIDTH_ATTR.replace(processedHtml, "")
-    }
-    if (processedHtml.contains("width:", ignoreCase = true)) {
-        processedHtml = REGEX_WIDTH_PT.replace(processedHtml, "width: auto")
-    }
-    if (processedHtml.contains("float:", ignoreCase = true)) {
-        processedHtml = REGEX_FLOAT.replace(processedHtml, "float: none")
-    }
+    // Normalize Outlook list indentation so bullets align with text naturally
+    processedHtml = processedHtml.replace(Regex("""margin-left\s*:\s*36[^;}"']*""", RegexOption.IGNORE_CASE), "margin-left: 0")
+    processedHtml = processedHtml.replace(Regex("""text-indent\s*:\s*-18[^;}"']*""", RegexOption.IGNORE_CASE), "text-indent: 0")
+
+    // Collapse excessive consecutive <br> spacer walls (Word/Outlook desktop artifacts) to max 2
+    processedHtml = processedHtml.replace(Regex("""(<br\s*/?>\s*){3,}""", RegexOption.IGNORE_CASE), "<br/><br/>")
+
+    // Fix inline cramped line-heights and word wrap from Word templates
+    processedHtml = processedHtml.replace(Regex("""line-height\s*:\s*\d+(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE), "line-height: 1.55")
+    processedHtml = processedHtml.replace(Regex("""mso-line-height-rule\s*:\s*exactly[^;}"']*""", RegexOption.IGNORE_CASE), "")
+
+    // Cap oversized desktop heading font sizes (e.g. 25.5pt -> 20px) so words don't hyphenate/break
+    processedHtml = processedHtml.replace(Regex("""font-size\s*:\s*(2[0-9]|[3-9][0-9])(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE), "font-size: 20px")
+
+    // Strip negative Word layout margins
+    processedHtml = processedHtml.replace(Regex("""margin-(left|right)\s*:\s*-[0-9.]+pt[^;}"']*""", RegexOption.IGNORE_CASE), "margin-$1: 0")
+
+    // Remove desktop fixed width constraints on Word/Outlook layout tables and cells
+    processedHtml = processedHtml.replace(Regex("""\s+width=["'](0|[1-9]\d{2,})["']""", RegexOption.IGNORE_CASE), "")
+    processedHtml = processedHtml.replace(Regex("""width\s*:\s*\d+(\.\d+)?pt[^;}"']*""", RegexOption.IGNORE_CASE), "width: auto")
+
+    // Remove desktop floats that force multi-column side-by-side squishing on mobile
+    processedHtml = processedHtml.replace(Regex("""float\s*:\s*(left|right)[^;}"']*""", RegexOption.IGNORE_CASE), "float: none")
 
     val injectedHead = """
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
@@ -1278,7 +1248,7 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
             padding-left: 0 !important;
           }
           ${if (isDark) """
-          /* Transparent canvas and readable text for dark mode */
+          /* Transparent canvas for dark mode matching uugsx */
           table, tbody, tr, td, th, div, p {
             background-color: transparent !important;
           }
@@ -1288,18 +1258,68 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
           p, span, div, font, td, th, li {
             color: #E6E1E5;
           }
-          [style*="color: #0"], [style*="color:#0"],
-          [style*="color: #1"], [style*="color:#1"],
-          [style*="color: #2"], [style*="color:#2"],
-          [style*="color: #3"], [style*="color:#3"],
-          [style*="color: black"], [style*="color:black"],
-          [style*="color: windowtext"], [style*="color:windowtext"] {
-            color: #E6E1E5 !important;
-          }
           """ else ""}
         </style>
         <script>
-          document.addEventListener('DOMContentLoaded', function() {
+          function fixDarkColors() {
+            var spells = document.querySelectorAll('.SpellE, .GramE, [class*="Spell"], [class*="Gram"]');
+            for (var i = 0; i < spells.length; i++) {
+              spells[i].style.setProperty('text-decoration', 'none', 'important');
+              spells[i].style.setProperty('border-bottom', 'none', 'important');
+            }
+            var allUnderlines = document.querySelectorAll('a, a *, u, u *');
+            for (var uIdx = 0; uIdx < allUnderlines.length; uIdx++) {
+              allUnderlines[uIdx].style.setProperty('text-decoration', 'none', 'important');
+            }
+            var linksAndEmails = document.querySelectorAll('a, a *, u, u *, span, font, b, strong');
+            for (var k = 0; k < linksAndEmails.length; k++) {
+              var elem = linksAndEmails[k];
+              var txt = elem.textContent || '';
+              var isLinkOrEmail = elem.tagName === 'A' || elem.closest('a') || elem.tagName === 'U' || elem.closest('u') ||
+                                  txt.indexOf('@') !== -1 || txt.indexOf('http') !== -1 || txt.indexOf('www.') !== -1;
+              if (isLinkOrEmail) {
+                elem.style.setProperty('text-decoration', 'none', 'important');
+                var csElem = window.getComputedStyle(elem);
+                var colElem = csElem.color;
+                var matchElem = colElem.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (matchElem) {
+                  var cr = parseInt(matchElem[1]), cg = parseInt(matchElem[2]), cb = parseInt(matchElem[3]);
+                  if (cr > 150 && cr > (cg + cb)) {
+                    elem.style.setProperty('color', '$linkColor', 'important');
+                  }
+                }
+              }
+            }
+            if ($isDark) {
+              var all = document.querySelectorAll('*');
+              for (var j = 0; j < all.length; j++) {
+                var el = all[j];
+                if (el.tagName === 'A' || el.closest('a')) continue;
+                var cs = window.getComputedStyle(el);
+                var c = cs.color;
+                var match = c.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (match) {
+                  var r = parseInt(match[1]), g = parseInt(match[2]), b = parseInt(match[3]);
+                  var brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                  if (brightness < 130) {
+                    el.style.setProperty('color', '#E6E1E5', 'important');
+                  }
+                }
+                var bg = cs.backgroundColor;
+                if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                  var bgMatch = bg.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                  if (bgMatch) {
+                    var br = parseInt(bgMatch[1]), bgCol = parseInt(bgMatch[2]), bb = parseInt(bgMatch[3]);
+                    var bgBrightness = (br * 299 + bgCol * 587 + bb * 114) / 1000;
+                    if (bgBrightness > 160) {
+                      el.style.setProperty('background-color', 'transparent', 'important');
+                    }
+                  }
+                }
+              }
+            }
+
+            // Normalize layout for mobile readability
             var alignTables = document.querySelectorAll('table[align="left"], table[align="right"]');
             for (var a = 0; a < alignTables.length; a++) {
               alignTables[a].removeAttribute('align');
@@ -1321,20 +1341,64 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
               singleCells[sc].style.setProperty('max-width', '100%', 'important');
             }
 
-            var emptyCells = document.querySelectorAll('td[width="0"], td[width="0px"], td[style*="width: 0"], td[style*="width:0"]');
-            for (var ec = 0; ec < emptyCells.length; ec++) {
-              emptyCells[ec].style.setProperty('display', 'none', 'important');
+            var allCells = document.querySelectorAll('tr > td');
+            for (var c = 0; c < allCells.length; c++) {
+              var cell = allCells[c];
+              if (cell.parentElement && cell.parentElement.children.length > 1) {
+                if (cell.textContent.trim() === '' && !cell.querySelector('img, svg')) {
+                  var w = cell.getAttribute('width') || cell.style.width;
+                  if (w === '0' || w === '0px' || parseInt(w) < 25) {
+                    cell.style.setProperty('display', 'none', 'important');
+                  }
+                }
+              }
+              var pl = parseFloat(window.getComputedStyle(cell).paddingLeft) || 0;
+              var pr = parseFloat(window.getComputedStyle(cell).paddingRight) || 0;
+              if (pl > 12) cell.style.setProperty('padding-left', '4px', 'important');
+              if (pr > 12) cell.style.setProperty('padding-right', '4px', 'important');
             }
-          });
+
+            var rows = document.querySelectorAll('table[border="0"] > tbody > tr, table:not([border]) > tbody > tr');
+            for (var r = 0; r < rows.length; r++) {
+              var row = rows[r];
+              var visibleCells = Array.from(row.children).filter(function(el) {
+                return el.style.display !== 'none' && (el.textContent.trim().length > 0 || el.querySelector('img'));
+              });
+              if (visibleCells.length > 1 && row.querySelector('p, h1, h2, h3') && row.querySelector('img')) {
+                for (var vc = 0; vc < visibleCells.length; vc++) {
+                  visibleCells[vc].style.setProperty('display', 'block', 'important');
+                  visibleCells[vc].style.setProperty('width', '100%', 'important');
+                  visibleCells[vc].style.setProperty('max-width', '100%', 'important');
+                }
+              }
+            }
+
+            var spans = document.querySelectorAll('p span, td span, li span');
+            for (var s = 0; s < spans.length; s++) {
+              var fs = parseFloat(window.getComputedStyle(spans[s]).fontSize) || 0;
+              if (fs > 0 && fs < 14) {
+                spans[s].style.setProperty('font-size', '15px', 'important');
+              }
+            }
+          }
+          document.addEventListener('DOMContentLoaded', fixDarkColors);
+          window.addEventListener('load', fixDarkColors);
+          fixDarkColors();
+          setTimeout(fixDarkColors, 50);
+          setTimeout(fixDarkColors, 250);
+          setTimeout(fixDarkColors, 800);
         </script>
     """.trimIndent()
 
-    val headMatch = REGEX_HEAD_TAG.find(processedHtml)
+    val headRegex = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE)
+    val htmlRegex = Regex("<html\\b[^>]*>", RegexOption.IGNORE_CASE)
+
+    val headMatch = headRegex.find(processedHtml)
     if (headMatch != null) {
         val insertPos = headMatch.range.last + 1
         return processedHtml.substring(0, insertPos) + "\n" + injectedHead + processedHtml.substring(insertPos)
     }
-    val htmlMatch = REGEX_HTML_TAG.find(processedHtml)
+    val htmlMatch = htmlRegex.find(processedHtml)
     if (htmlMatch != null) {
         val insertPos = htmlMatch.range.last + 1
         return processedHtml.substring(0, insertPos) + "\n<head>" + injectedHead + "</head>" + processedHtml.substring(insertPos)

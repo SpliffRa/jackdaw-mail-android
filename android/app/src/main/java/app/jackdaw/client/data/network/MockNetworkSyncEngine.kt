@@ -65,9 +65,4 @@ class MockNetworkSyncEngine : MailProtocolEngine {
         delay(100)
         return true
     }
-
-    override suspend fun fetchOlderEmails(account: MailAccount, folderId: String, offset: Int, limit: Int): List<EmailMessage> {
-        delay(100)
-        return emptyList()
-    }
 }

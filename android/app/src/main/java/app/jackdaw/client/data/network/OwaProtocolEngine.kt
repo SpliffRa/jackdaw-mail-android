@@ -209,11 +209,10 @@ class OwaProtocolEngine : MailProtocolEngine {
         val allRawEmails = mutableListOf<EmailMessage>()
         var offset = 0
         val pageSize = 200
-        val maxTotalToFetch = 3000
+        val maxTotalToFetch = 1000
 
         try {
             var firstResponseJson: JSONObject? = null
-            var includesLast = false
             while (offset < maxTotalToFetch) {
                 val requestBody = buildFindItemEmailPayload(folderId, offset, pageSize)
                 val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
@@ -231,13 +230,12 @@ class OwaProtocolEngine : MailProtocolEngine {
                 allRawEmails.addAll(pageEmails)
 
                 val rootFolder = extractRootFolder(responseJson)
-                includesLast = rootFolder?.optBoolean("IncludesLastItemInRange", true) ?: true
+                val includesLast = rootFolder?.optBoolean("IncludesLastItemInRange", true) ?: true
                 if (includesLast || pageEmails.size < pageSize) {
                     break
                 }
                 offset += pageEmails.size
             }
-            Log.i(TAG, "fetchNewEmails for folder $folderId: fetched ${allRawEmails.size} emails (offset=$offset, includesLast=$includesLast)")
 
             val finalEmails = if (allRawEmails.isNotEmpty()) {
                 allRawEmails.map { email ->
@@ -376,15 +374,12 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 name.endsWith(".jpeg", true) || name.endsWith(".gif", true) || name.endsWith(".webp", true)
 
                             // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI
-                            // Only inline small images (<= 150KB) to prevent bloating bodyHtml and exceeding SQLite/WebView limits
-                            val isSmallImage = size == 0L || size <= 150 * 1024L
-                            var wasInlinedAsBase64 = false
-                            if ((isInline || isReferencedInBody) && isImage && isSmallImage) {
+                            if ((isInline || isReferencedInBody) && isImage) {
                                 try {
                                     val imgBytes = kotlinx.coroutines.withTimeoutOrNull(2500L) {
                                         downloadAttachment(account, attId)
                                     }
-                                    if (imgBytes != null && imgBytes.isNotEmpty() && imgBytes.size <= 200 * 1024) {
+                                    if (imgBytes != null && imgBytes.isNotEmpty()) {
                                         val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
                                         val effectiveMime = if (mime.startsWith("image/", ignoreCase = true)) mime else when {
                                             name.endsWith(".png", true) -> "image/png"
@@ -395,7 +390,6 @@ class OwaProtocolEngine : MailProtocolEngine {
                                         val dataUri = "data:$effectiveMime;base64,$b64"
                                         if (cleanCid.isNotBlank()) {
                                             resolvedHtml = resolvedHtml.replace(Regex("cid:<?" + Regex.escape(cleanCid) + ">?", RegexOption.IGNORE_CASE), dataUri)
-                                            wasInlinedAsBase64 = true
                                         }
                                     }
                                 } catch (e: Exception) {
@@ -403,8 +397,9 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 }
                             }
 
-                            // If it wasn't inlined into the HTML body as base64, keep it visible in the attachments list
-                            if (!wasInlinedAsBase64) {
+                            // Only filter out if it's purely an inline decorative/signature image referenced in HTML body
+                            val isPureInlineSignature = isReferencedInBody && (isInline || isImage)
+                            if (!isPureInlineSignature) {
                                 attachmentsList.add(
                                     Attachment(
                                         id = attId,
@@ -766,51 +761,6 @@ class OwaProtocolEngine : MailProtocolEngine {
             Log.e(TAG, "Error in emptyTrash", e)
         }
         return@withContext false
-    }
-
-    override suspend fun fetchOlderEmails(
-        account: MailAccount,
-        folderId: String,
-        offset: Int,
-        limit: Int
-    ): List<EmailMessage> = withContext(Dispatchers.IO) {
-        val serverUrl = account.serverHost.trim()
-        if (serverUrl.isBlank()) return@withContext emptyList()
-        if (System.currentTimeMillis() < mailboxSessionCooldownUntil) return@withContext emptyList()
-
-        val (cookies, canary) = ensureSession(account)
-        val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
-        try {
-            val requestBody = buildFindItemEmailPayload(folderId, offset, limit)
-            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account) ?: return@withContext emptyList()
-            val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
-            emails.map { email ->
-                val timestamp = email.timestamp
-                val isRead = email.isRead
-                val slaSeverity = if (!isRead) {
-                    val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
-                    when {
-                        ageMinutes > 30 -> SlaSeverity.BREACHED
-                        ageMinutes > 20 -> SlaSeverity.URGENT
-                        ageMinutes > 10 -> SlaSeverity.WARNING
-                        else -> SlaSeverity.NORMAL
-                    }
-                } else {
-                    SlaSeverity.COMPLETED
-                }
-                email.copy(
-                    bodyText = email.bodyText.ifBlank { email.snippet },
-                    slaInfo = SlaInfo(
-                        severity = slaSeverity,
-                        deadlineTimestamp = timestamp + (30 * 60 * 1000L),
-                        remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in fetchOlderEmails for folder $folderId offset $offset", e)
-            emptyList()
-        }
     }
 
     override suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = withContext(Dispatchers.IO) {

@@ -6,11 +6,8 @@ import androidx.lifecycle.viewModelScope
 import app.jackdaw.client.core.model.Attachment
 import app.jackdaw.client.core.model.EmailMessage
 import app.jackdaw.client.core.model.Folder
-import app.jackdaw.client.core.model.FolderType
 import app.jackdaw.client.core.model.MailAccount
-import app.jackdaw.client.ui.screens.maillist.MailFilter
 import app.jackdaw.client.data.repository.MailRepository
-import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -100,71 +97,33 @@ class MailViewModel(
         initialValue = null
     )
 
-    val mailFilter = MutableStateFlow(MailFilter.INBOX)
-
-    fun setMailFilter(filter: MailFilter) {
-        _currentLimit.value = 50
-        mailFilter.value = filter
-    }
-
     private data class EmailQueryParams(
         val account: MailAccount?,
         val folder: Folder?,
         val query: String,
-        val limit: Int,
-        val filter: MailFilter
+        val limit: Int
     )
 
     private val _currentLimit = MutableStateFlow(50)
-    private var isFetchingOlderEmails = false
 
     fun loadMoreEmails() {
         _currentLimit.value += 50
-        triggerFetchOlderIfNeeded()
-    }
-
-    private fun triggerFetchOlderIfNeeded() {
-        val account = currentAccount.value ?: return
-        val folder = selectedFolder.value ?: return
-        if (folder.type == FolderType.OUTBOX || folder.type == FolderType.SLA_ALERTS) return
-        if (isFetchingOlderEmails) return
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val localCount = repository.getEmailCountInFolder(account.id, folder.id)
-            if (folder.totalCount > localCount && _currentLimit.value >= localCount - 25) {
-                isFetchingOlderEmails = true
-                try {
-                    repository.fetchOlderEmails(account, folder.id, offset = localCount, limit = 100)
-                } catch (e: Exception) {
-                    Log.e("MailViewModel", "Error fetching older emails for folder ${folder.name}", e)
-                } finally {
-                    isFetchingOlderEmails = false
-                }
-            }
-        }
     }
 
     val emails: StateFlow<List<EmailMessage>> = combine(
         currentAccount,
         selectedFolder,
         _searchQuery,
-        _currentLimit,
-        mailFilter
-    ) { account, folder, query, limit, filter ->
-        EmailQueryParams(account, folder, query, limit, filter)
-    }.flatMapLatest { (account, folder, query, limit, filter) ->
+        _currentLimit
+    ) { account, folder, query, limit ->
+        EmailQueryParams(account, folder, query, limit)
+    }.flatMapLatest { (account, folder, query, limit) ->
         if (account == null || folder == null) {
             flowOf(emptyList())
         } else if (query.isNotBlank()) {
             repository.searchEmailsPaged(query, limit)
         } else {
-            repository.getPagedEmailsInFolder(
-                accountId = account.id,
-                folderId = folder.id,
-                limit = limit,
-                filterUnread = (filter == MailFilter.UNREAD),
-                filterStarred = (filter == MailFilter.STARRED)
-            )
+            repository.getPagedEmailsInFolder(account.id, folder.id, limit)
         }
     }.flowOn(Dispatchers.IO)
     .stateIn(
@@ -244,7 +203,6 @@ class MailViewModel(
 
     fun selectFolder(folder: Folder) {
         _currentLimit.value = 50
-        mailFilter.value = MailFilter.INBOX
         _selectedFolderId.value = folder.id
         _searchQuery.value = ""
         app.jackdaw.client.core.notification.NotificationTracker.getInstance(app.jackdaw.client.JackdawApp.instance).markViewed()
@@ -253,7 +211,6 @@ class MailViewModel(
 
     fun selectAccount(account: MailAccount) {
         _currentLimit.value = 50
-        mailFilter.value = MailFilter.INBOX
         viewModelScope.launch {
             _manualSelectedAccountId.value = account.id
             val accountFolders = repository.getFolders(account.id).first()
