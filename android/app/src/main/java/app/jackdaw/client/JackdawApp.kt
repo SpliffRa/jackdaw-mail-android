@@ -17,6 +17,16 @@ class JackdawApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // Expand CursorWindow buffer size to 32MB to support reading large emails and email threads
+        try {
+            val field = android.database.CursorWindow::class.java.getDeclaredField("sCursorWindowSize")
+            field.isAccessible = true
+            field.set(null, 32 * 1024 * 1024)
+        } catch (e: Throwable) {
+            android.util.Log.w("JackdawApp", "Could not increase CursorWindow size", e)
+        }
+
         val notificationHelper = app.jackdaw.client.core.notification.NotificationHelper.getInstance(this)
         val database = app.jackdaw.client.data.local.JackdawDatabase.getInstance(this)
         val repository = app.jackdaw.client.data.repository.OfflineFirstMailRepository(database)

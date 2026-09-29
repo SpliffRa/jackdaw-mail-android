@@ -376,12 +376,15 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 name.endsWith(".jpeg", true) || name.endsWith(".gif", true) || name.endsWith(".webp", true)
 
                             // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI
-                            if ((isInline || isReferencedInBody) && isImage) {
+                            // Only inline small images (<= 150KB) to prevent bloating bodyHtml and exceeding SQLite/WebView limits
+                            val isSmallImage = size == 0L || size <= 150 * 1024L
+                            var wasInlinedAsBase64 = false
+                            if ((isInline || isReferencedInBody) && isImage && isSmallImage) {
                                 try {
                                     val imgBytes = kotlinx.coroutines.withTimeoutOrNull(2500L) {
                                         downloadAttachment(account, attId)
                                     }
-                                    if (imgBytes != null && imgBytes.isNotEmpty()) {
+                                    if (imgBytes != null && imgBytes.isNotEmpty() && imgBytes.size <= 200 * 1024) {
                                         val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
                                         val effectiveMime = if (mime.startsWith("image/", ignoreCase = true)) mime else when {
                                             name.endsWith(".png", true) -> "image/png"
@@ -392,6 +395,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                                         val dataUri = "data:$effectiveMime;base64,$b64"
                                         if (cleanCid.isNotBlank()) {
                                             resolvedHtml = resolvedHtml.replace(Regex("cid:<?" + Regex.escape(cleanCid) + ">?", RegexOption.IGNORE_CASE), dataUri)
+                                            wasInlinedAsBase64 = true
                                         }
                                     }
                                 } catch (e: Exception) {
@@ -399,9 +403,8 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 }
                             }
 
-                            // Only filter out if it's purely an inline decorative/signature image referenced in HTML body
-                            val isPureInlineSignature = isReferencedInBody && (isInline || isImage)
-                            if (!isPureInlineSignature) {
+                            // If it wasn't inlined into the HTML body as base64, keep it visible in the attachments list
+                            if (!wasInlinedAsBase64) {
                                 attachmentsList.add(
                                     Attachment(
                                         id = attId,
