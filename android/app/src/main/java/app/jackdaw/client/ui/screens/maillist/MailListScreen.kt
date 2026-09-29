@@ -120,24 +120,34 @@ fun MailListScreen(
     onSwipeDelete: (EmailMessage) -> Unit = {},
     onEmptyTrash: () -> Unit = {},
     onLoadMore: () -> Unit = {},
+    selectedFilter: MailFilter = MailFilter.INBOX,
+    onSelectFilter: (MailFilter) -> Unit = {},
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     modifier: Modifier = Modifier
 ) {
     val isTrashFolder = currentFolder.type == FolderType.TRASH
     var isSearchActive by remember { mutableStateOf(searchQuery.isNotBlank()) }
-    var selectedFilter by remember { mutableStateOf(MailFilter.INBOX) }
     var emailToDeletePending by remember { mutableStateOf<EmailMessage?>(null) }
     var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
-    val unreadCount = remember(emails) { emails.count { !it.isRead } }
+    val folderUnreadCount = currentFolder.unreadCount
+    val displayUnreadCount = if (isSearchActive || searchQuery.isNotBlank()) {
+        emails.count { !it.isRead }
+    } else {
+        folderUnreadCount
+    }
 
-    val filteredEmails = remember(emails, selectedFilter) {
-        emails.filter { email ->
-            when (selectedFilter) {
-                MailFilter.INBOX -> true
-                MailFilter.UNREAD -> !email.isRead
-                MailFilter.STARRED -> email.isStarred
+    val filteredEmails = remember(emails, selectedFilter, searchQuery) {
+        if (searchQuery.isNotBlank()) {
+            emails.filter { email ->
+                when (selectedFilter) {
+                    MailFilter.INBOX -> true
+                    MailFilter.UNREAD -> !email.isRead
+                    MailFilter.STARRED -> email.isStarred
+                }
             }
+        } else {
+            emails
         }
     }
 
@@ -177,10 +187,19 @@ fun MailListScreen(
                             Text(
                                 text = if (isSyncing) {
                                     "Синхронизация..."
-                                } else if (unreadCount > 0) {
-                                    "${PluralRules.formatEmailCount(filteredEmails.size)} • ${PluralRules.formatUnreadCount(unreadCount)}"
+                                } else if (isSearchActive || searchQuery.isNotBlank()) {
+                                    if (filteredEmails.isEmpty()) "Ничего не найдено" else "Найдено: ${PluralRules.formatEmailCount(filteredEmails.size)}"
+                                } else if (selectedFilter == MailFilter.UNREAD) {
+                                    if (folderUnreadCount > 0) PluralRules.formatUnreadCount(folderUnreadCount) else "Нет непрочитанных"
+                                } else if (selectedFilter == MailFilter.STARRED) {
+                                    "${PluralRules.formatEmailCount(filteredEmails.size)} в избранном"
                                 } else {
-                                    PluralRules.formatEmailCount(filteredEmails.size)
+                                    val totalCount = maxOf(currentFolder.totalCount, filteredEmails.size)
+                                    if (displayUnreadCount > 0) {
+                                        "${PluralRules.formatEmailCount(totalCount)} • ${PluralRules.formatUnreadCount(displayUnreadCount)}"
+                                    } else {
+                                        PluralRules.formatEmailCount(totalCount)
+                                    }
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (isSyncing) JackdawAmber else MaterialTheme.colorScheme.onSurfaceVariant
@@ -197,7 +216,7 @@ fun MailListScreen(
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        if (unreadCount > 0) {
+                        if (displayUnreadCount > 0) {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
@@ -334,12 +353,12 @@ fun MailListScreen(
                     val isSelected = filter == selectedFilter
                     val filterLabel = when (filter) {
                         MailFilter.INBOX -> if (currentFolder.type == FolderType.INBOX) "Входящие" else currentFolder.name
-                        MailFilter.UNREAD -> if (unreadCount > 0) "${filter.label} ($unreadCount)" else filter.label
+                        MailFilter.UNREAD -> if (folderUnreadCount > 0) "${filter.label} ($folderUnreadCount)" else filter.label
                         MailFilter.STARRED -> filter.label
                     }
                     FilterChip(
                         selected = isSelected,
-                        onClick = { selectedFilter = filter },
+                        onClick = { onSelectFilter(filter) },
                         label = {
                             Text(
                                 text = filterLabel,
@@ -374,15 +393,27 @@ fun MailListScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            val emptyTitle = when {
+                                searchQuery.isNotBlank() -> "Ничего не найдено"
+                                selectedFilter == MailFilter.UNREAD -> "Нет непрочитанных"
+                                selectedFilter == MailFilter.STARRED -> "Нет избранных писем"
+                                else -> "Писем не найдено"
+                            }
+                            val emptySubtitle = when {
+                                searchQuery.isNotBlank() -> "По запросу «$searchQuery» ничего не найдено"
+                                selectedFilter == MailFilter.UNREAD -> "Все письма в этой папке прочитаны"
+                                selectedFilter == MailFilter.STARRED -> "Вы можете отметить важные письма звездочкой"
+                                else -> "В этой папке нет сообщений"
+                            }
                             Text(
-                                text = "Писем не найдено",
+                                text = emptyTitle,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "В этой папке нет сообщений",
+                                text = emptySubtitle,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

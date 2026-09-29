@@ -35,6 +35,12 @@ interface FolderDao {
     @Query("UPDATE folders SET unreadCount = :unreadCount, totalCount = :totalCount WHERE id = :id")
     suspend fun updateCounts(id: String, unreadCount: Int, totalCount: Int)
 
+    @Query("UPDATE folders SET unreadCount = MAX(0, unreadCount - 1) WHERE id = :id")
+    suspend fun decrementUnreadCount(id: String)
+
+    @Query("UPDATE folders SET unreadCount = unreadCount + 1 WHERE id = :id")
+    suspend fun incrementUnreadCount(id: String)
+
     @Query("UPDATE folders SET displayOrder = :displayOrder WHERE id = :id")
     suspend fun updateFolderOrder(id: String, displayOrder: Int)
 

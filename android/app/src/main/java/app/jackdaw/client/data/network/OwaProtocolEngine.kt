@@ -209,10 +209,11 @@ class OwaProtocolEngine : MailProtocolEngine {
         val allRawEmails = mutableListOf<EmailMessage>()
         var offset = 0
         val pageSize = 200
-        val maxTotalToFetch = 1000
+        val maxTotalToFetch = 3000
 
         try {
             var firstResponseJson: JSONObject? = null
+            var includesLast = false
             while (offset < maxTotalToFetch) {
                 val requestBody = buildFindItemEmailPayload(folderId, offset, pageSize)
                 val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account)
@@ -230,12 +231,13 @@ class OwaProtocolEngine : MailProtocolEngine {
                 allRawEmails.addAll(pageEmails)
 
                 val rootFolder = extractRootFolder(responseJson)
-                val includesLast = rootFolder?.optBoolean("IncludesLastItemInRange", true) ?: true
+                includesLast = rootFolder?.optBoolean("IncludesLastItemInRange", true) ?: true
                 if (includesLast || pageEmails.size < pageSize) {
                     break
                 }
                 offset += pageEmails.size
             }
+            Log.i(TAG, "fetchNewEmails for folder $folderId: fetched ${allRawEmails.size} emails (offset=$offset, includesLast=$includesLast)")
 
             val finalEmails = if (allRawEmails.isNotEmpty()) {
                 allRawEmails.map { email ->
@@ -761,6 +763,51 @@ class OwaProtocolEngine : MailProtocolEngine {
             Log.e(TAG, "Error in emptyTrash", e)
         }
         return@withContext false
+    }
+
+    override suspend fun fetchOlderEmails(
+        account: MailAccount,
+        folderId: String,
+        offset: Int,
+        limit: Int
+    ): List<EmailMessage> = withContext(Dispatchers.IO) {
+        val serverUrl = account.serverHost.trim()
+        if (serverUrl.isBlank()) return@withContext emptyList()
+        if (System.currentTimeMillis() < mailboxSessionCooldownUntil) return@withContext emptyList()
+
+        val (cookies, canary) = ensureSession(account)
+        val owaServiceUrl = buildOwaServiceUrl(serverUrl, "FindItem")
+        try {
+            val requestBody = buildFindItemEmailPayload(folderId, offset, limit)
+            val responseJson = executeOwaJsonPost(owaServiceUrl, requestBody, cookies, canary, account) ?: return@withContext emptyList()
+            val emails = parseEmailsFromFindItemResponse(account, folderId, responseJson)
+            emails.map { email ->
+                val timestamp = email.timestamp
+                val isRead = email.isRead
+                val slaSeverity = if (!isRead) {
+                    val ageMinutes = (System.currentTimeMillis() - timestamp) / 60000L
+                    when {
+                        ageMinutes > 30 -> SlaSeverity.BREACHED
+                        ageMinutes > 20 -> SlaSeverity.URGENT
+                        ageMinutes > 10 -> SlaSeverity.WARNING
+                        else -> SlaSeverity.NORMAL
+                    }
+                } else {
+                    SlaSeverity.COMPLETED
+                }
+                email.copy(
+                    bodyText = email.bodyText.ifBlank { email.snippet },
+                    slaInfo = SlaInfo(
+                        severity = slaSeverity,
+                        deadlineTimestamp = timestamp + (30 * 60 * 1000L),
+                        remainingLabel = if (slaSeverity == SlaSeverity.COMPLETED) "Ответ дан вовремя" else "${((timestamp + (30 * 60 * 1000L) - System.currentTimeMillis()) / 60000L).coerceAtLeast(0)} мин"
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in fetchOlderEmails for folder $folderId offset $offset", e)
+            emptyList()
+        }
     }
 
     override suspend fun moveEmail(account: MailAccount, emailId: String, targetFolderType: FolderType): Boolean = withContext(Dispatchers.IO) {

@@ -58,8 +58,16 @@ interface MailRepository {
     fun getTotalUnreadCount(): Flow<Int>
     fun getUnmutedUnreadCount(): Flow<Int>
     fun getUnmutedUnreadEmails(limit: Int = 10): Flow<List<EmailMessage>>
-    fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int = 50): Flow<List<EmailMessage>>
+    fun getPagedEmailsInFolder(
+        accountId: String, 
+        folderId: String, 
+        limit: Int = 50, 
+        filterUnread: Boolean = false, 
+        filterStarred: Boolean = false
+    ): Flow<List<EmailMessage>>
     fun searchEmailsPaged(query: String, limit: Int = 50): Flow<List<EmailMessage>>
+    suspend fun fetchOlderEmails(account: MailAccount, folderId: String, offset: Int, limit: Int = 100): Int
+    suspend fun getEmailCountInFolder(accountId: String, folderId: String): Int
     suspend fun reorderFolders(orderedIds: List<String>)
     suspend fun toggleFolderMute(folderId: String)
 }
@@ -108,11 +116,17 @@ class OfflineFirstMailRepository(
         }.flowOn(Dispatchers.IO)
     }
 
-    override fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int): Flow<List<EmailMessage>> {
+    override fun getPagedEmailsInFolder(
+        accountId: String, 
+        folderId: String, 
+        limit: Int,
+        filterUnread: Boolean,
+        filterStarred: Boolean
+    ): Flow<List<EmailMessage>> {
         val emailFlow = when {
             folderId == "sla_alerts" -> emailDao.getPagedSlaEmails(accountId, limit)
             folderId.contains("outbox") -> emailDao.getPagedOutboxEmails(accountId, folderId, limit)
-            else -> emailDao.getPagedEmailsInFolder(accountId, folderId, limit)
+            else -> emailDao.getPagedEmailsInFolderFiltered(accountId, folderId, limit, filterUnread, filterStarred)
         }
         return emailFlow.map { entities ->
             entities.map { it.toDomain(emptyList()) }
@@ -149,7 +163,13 @@ class OfflineFirstMailRepository(
                     else -> {
                         val stat = statsMap[folderEntity.id]
                         if (stat != null) {
-                            stat.unreadCount to maxOf(stat.totalCount, folderEntity.totalCount)
+                            val effUnread = if (stat.totalCount >= folderEntity.totalCount && folderEntity.totalCount > 0) {
+                                stat.unreadCount
+                            } else {
+                                maxOf(stat.unreadCount, folderEntity.unreadCount)
+                            }
+                            val effTotal = maxOf(stat.totalCount, folderEntity.totalCount)
+                            effUnread to effTotal
                         } else {
                             folderEntity.unreadCount to folderEntity.totalCount
                         }
@@ -227,7 +247,18 @@ class OfflineFirstMailRepository(
     }
 
     override suspend fun markAsRead(emailId: String, isRead: Boolean) {
-        emailDao.updateReadStatus(emailId, isRead)
+        val currentEmail = emailDao.getEmailEntityById(emailId)
+        val wasRead = currentEmail?.isRead ?: false
+        if (wasRead != isRead) {
+            emailDao.updateReadStatus(emailId, isRead)
+            currentEmail?.let { email ->
+                if (isRead) {
+                    folderDao.decrementUnreadCount(email.folderId)
+                } else {
+                    folderDao.incrementUnreadCount(email.folderId)
+                }
+            }
+        }
         pendingReadStatusUpdates[emailId] = isRead
 
         repositoryScope.launch {
@@ -667,9 +698,11 @@ class OfflineFirstMailRepository(
                         val localEmailIds = emailDao.getEmailIdsInFolder(account.id, folder.id).toSet()
 
                         if (newEmails.isNotEmpty()) {
-                            // Reconcile deletions: remove any local emails that no longer exist on the server
+                            // Reconcile deletions: only remove local emails within the fetched timestamp window that no longer exist on the server
                             val serverEmailIds = newEmails.map { it.id }.toSet()
-                            val toDeleteLocally = localEmailIds - serverEmailIds
+                            val oldestTimestamp = newEmails.minOfOrNull { it.timestamp } ?: 0L
+                            val localEmailsInWindow = emailDao.getEmailIdsInFolderSince(account.id, folder.id, oldestTimestamp).toSet()
+                            val toDeleteLocally = localEmailsInWindow - serverEmailIds
                             if (toDeleteLocally.isNotEmpty()) {
                                 val deleteList = toDeleteLocally.toList()
                                 attachmentDao.deleteAttachmentsForEmails(deleteList)
@@ -741,7 +774,9 @@ class OfflineFirstMailRepository(
                 val localEmailIds = emailDao.getEmailIdsInFolder(account.id, inboxFolder).toSet()
                 if (newEmails.isNotEmpty()) {
                     val serverEmailIds = newEmails.map { it.id }.toSet()
-                    val toDeleteLocally = localEmailIds - serverEmailIds
+                    val oldestTimestamp = newEmails.minOfOrNull { it.timestamp } ?: 0L
+                    val localEmailsInWindow = emailDao.getEmailIdsInFolderSince(account.id, inboxFolder, oldestTimestamp).toSet()
+                    val toDeleteLocally = localEmailsInWindow - serverEmailIds
                     if (toDeleteLocally.isNotEmpty()) {
                         val deleteList = toDeleteLocally.toList()
                         attachmentDao.deleteAttachmentsForEmails(deleteList)
@@ -790,11 +825,9 @@ class OfflineFirstMailRepository(
             for (f in updatedFolders) {
                 val unread = emailDao.getFolderUnreadCount(f.id)
                 val total = emailDao.getFolderTotalCount(f.id)
-                folderDao.updateCounts(
-                    f.id,
-                    if (unread > 0 || f.unreadCount == 0) unread else f.unreadCount,
-                    if (total > 0 || f.totalCount == 0) total else f.totalCount
-                )
+                val finalUnread = if (total >= f.totalCount && f.totalCount > 0) unread else maxOf(unread, f.unreadCount)
+                val finalTotal = maxOf(total, f.totalCount)
+                folderDao.updateCounts(f.id, finalUnread, finalTotal)
             }
 
             // 6. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
@@ -990,6 +1023,36 @@ class OfflineFirstMailRepository(
     override suspend fun toggleFolderMute(folderId: String) {
         val folder = folderDao.getFolderById(folderId) ?: return
         folderDao.updateFolderMute(folderId, !folder.isMuted)
+    }
+
+    override suspend fun fetchOlderEmails(
+        account: MailAccount,
+        folderId: String,
+        offset: Int,
+        limit: Int
+    ): Int {
+        val canonicalFolderId = when {
+            folderId.endsWith("_inbox") -> "inbox"
+            folderId.endsWith("_sent") -> "sentitems"
+            folderId.endsWith("_drafts") -> "drafts"
+            folderId.endsWith("_trash") -> "deleteditems"
+            folderId.endsWith("_archive") -> "archive"
+            else -> folderId
+        }
+        val olderEmails = mailProtocolEngine.fetchOlderEmails(account, canonicalFolderId, offset, limit)
+        if (olderEmails.isNotEmpty()) {
+            val entities = olderEmails.map { email ->
+                EmailEntity.fromDomain(email.copy(folderId = folderId))
+            }
+            emailDao.insertEmails(entities)
+            android.util.Log.i("MailRepository", "fetchOlderEmails: saved ${olderEmails.size} older emails for folder $folderId at offset $offset")
+            return olderEmails.size
+        }
+        return 0
+    }
+
+    override suspend fun getEmailCountInFolder(accountId: String, folderId: String): Int {
+        return emailDao.getEmailCountInFolder(accountId, folderId)
     }
 }
 

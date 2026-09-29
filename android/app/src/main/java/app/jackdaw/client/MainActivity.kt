@@ -195,6 +195,7 @@ fun JackdawMainApp(
     val folders by viewModel.folders.collectAsState()
     val selectedFolder by viewModel.selectedFolder.collectAsState()
     val emails by viewModel.emails.collectAsState()
+    val mailFilter by viewModel.mailFilter.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -312,6 +313,8 @@ fun JackdawMainApp(
                     currentFolder = activeFolder,
                     emails = emails,
                     searchQuery = searchQuery,
+                    selectedFilter = mailFilter,
+                    onSelectFilter = { viewModel.setMailFilter(it) },
                     isSyncing = isSyncing,
                     snackbarHostState = snackbarHostState,
                     onSyncClick = {
