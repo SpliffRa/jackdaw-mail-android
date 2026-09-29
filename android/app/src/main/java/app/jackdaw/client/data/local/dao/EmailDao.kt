@@ -8,8 +8,61 @@ import app.jackdaw.client.core.model.SlaSeverity
 import app.jackdaw.client.data.local.entity.EmailEntity
 import kotlinx.coroutines.flow.Flow
 
+data class FolderStat(
+    val folderId: String,
+    val totalCount: Int,
+    val unreadCount: Int
+)
+
+data class SlaRecalculationItem(
+    val id: String,
+    val timestamp: Long,
+    val slaDeadlineTimestamp: Long,
+    val slaSeverity: SlaSeverity,
+    val slaRemainingLabel: String
+)
+
 @Dao
 interface EmailDao {
+    @Query("""
+        SELECT folderId, 
+               COUNT(*) AS totalCount, 
+               COALESCE(SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END), 0) AS unreadCount 
+        FROM emails 
+        WHERE accountId = :accountId 
+        GROUP BY folderId
+
+        UNION ALL
+
+        SELECT '__sla_alerts__' AS folderId, 
+               COUNT(*) AS totalCount, 
+               COALESCE(SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END), 0) AS unreadCount 
+        FROM emails 
+        WHERE accountId = :accountId 
+          AND slaSeverity != 'NONE' 
+          AND slaSeverity != 'COMPLETED'
+
+        UNION ALL
+
+        SELECT '__outbox__' AS folderId, 
+               COUNT(*) AS totalCount, 
+               COALESCE(SUM(CASE WHEN deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED') THEN 1 ELSE 0 END), 0) AS unreadCount 
+        FROM emails 
+        WHERE accountId = :accountId 
+          AND (folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED'))
+    """)
+    fun getFolderStats(accountId: String): Flow<List<FolderStat>>
+
+    @Query("""
+        SELECT id, timestamp, slaDeadlineTimestamp, slaSeverity, slaRemainingLabel 
+        FROM emails 
+        WHERE accountId = :accountId 
+          AND slaDeadlineTimestamp > 0 
+          AND slaSeverity != 'NONE' 
+          AND slaSeverity != 'COMPLETED'
+    """)
+    suspend fun getActiveSlaEmailsForRecalculation(accountId: String): List<SlaRecalculationItem>
+
     @Query("""
         SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
                subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
@@ -22,7 +75,15 @@ interface EmailDao {
     """)
     fun getPagedEmailsInFolder(accountId: String, folderId: String, limit: Int): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId AND folderId = :folderId ORDER BY timestamp DESC")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND folderId = :folderId 
+        ORDER BY timestamp DESC
+    """)
     fun getEmailsInFolder(accountId: String, folderId: String): Flow<List<EmailEntity>>
 
     @Query("""
@@ -37,10 +98,26 @@ interface EmailDao {
     """)
     fun getPagedOutboxEmails(accountId: String, folderId: String, limit: Int): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED')) ORDER BY timestamp DESC")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND (folderId = :folderId OR folderId LIKE '%outbox%' OR deliveryStatus IN ('QUEUED', 'SENDING', 'FAILED')) 
+        ORDER BY timestamp DESC
+    """)
     fun getOutboxEmails(accountId: String, folderId: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId 
+        ORDER BY timestamp DESC
+    """)
     fun getAllEmails(accountId: String): Flow<List<EmailEntity>>
 
     @Query("""
@@ -55,7 +132,15 @@ interface EmailDao {
     """)
     fun getPagedSlaEmails(accountId: String, limit: Int): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId AND slaSeverity != 'NONE' AND slaSeverity != 'COMPLETED' ORDER BY slaDeadlineTimestamp ASC, timestamp DESC")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId AND slaSeverity != 'NONE' AND slaSeverity != 'COMPLETED' 
+        ORDER BY slaDeadlineTimestamp ASC, timestamp DESC
+    """)
     fun getSlaEmails(accountId: String): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE id = :id LIMIT 1")
@@ -78,7 +163,17 @@ interface EmailDao {
     """)
     fun searchEmailsPaged(query: String, limit: Int): Flow<List<EmailEntity>>
 
-    @Query("SELECT emails.* FROM emails JOIN emails_fts ON emails.rowid = emails_fts.rowid WHERE emails_fts MATCH :query ORDER BY emails.timestamp DESC")
+    @Query("""
+        SELECT emails.id, emails.accountId, emails.folderId, emails.senderName, emails.senderEmail, 
+               emails.toRecipients, emails.ccRecipients, emails.subject, emails.snippet, 
+               '' AS bodyText, NULL AS bodyHtml, emails.timestamp, emails.isRead, emails.isStarred, 
+               emails.hasAttachments, emails.slaSeverity, emails.slaDeadlineTimestamp, 
+               emails.slaRemainingLabel, emails.threadId, emails.relatedEmailsCount, emails.deliveryStatus 
+        FROM emails 
+        JOIN emails_fts ON emails.rowid = emails_fts.rowid 
+        WHERE emails_fts MATCH :query 
+        ORDER BY emails.timestamp DESC
+    """)
     fun searchEmails(query: String): Flow<List<EmailEntity>>
 
     @Query("SELECT * FROM emails WHERE threadId = :threadId ORDER BY timestamp DESC, id DESC")
@@ -181,10 +276,26 @@ interface EmailDao {
     @Query("DELETE FROM emails WHERE accountId = :accountId AND folderId = :folderId")
     suspend fun deleteEmailsInFolder(accountId: String, folderId: String)
 
-    @Query("SELECT * FROM emails WHERE slaSeverity = 'URGENT' OR slaSeverity = 'WARNING'")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE slaSeverity = 'URGENT' OR slaSeverity = 'WARNING'
+    """)
     suspend fun getUrgentSlaEmails(): List<EmailEntity>
 
-    @Query("SELECT * FROM emails WHERE accountId = :accountId ORDER BY timestamp DESC LIMIT :limit")
+    @Query("""
+        SELECT id, accountId, folderId, senderName, senderEmail, toRecipients, ccRecipients, 
+               subject, snippet, '' AS bodyText, NULL AS bodyHtml, timestamp, isRead, isStarred, 
+               hasAttachments, slaSeverity, slaDeadlineTimestamp, slaRemainingLabel, threadId, 
+               relatedEmailsCount, deliveryStatus 
+        FROM emails 
+        WHERE accountId = :accountId 
+        ORDER BY timestamp DESC 
+        LIMIT :limit
+    """)
     suspend fun getRecentEmails(accountId: String, limit: Int): List<EmailEntity>
 
     @Query("SELECT COUNT(*) FROM emails WHERE folderId = :folderId AND isRead = 0")

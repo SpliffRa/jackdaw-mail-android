@@ -133,20 +133,27 @@ class OfflineFirstMailRepository(
     override fun getFolders(accountId: String): Flow<List<Folder>> {
         return combine(
             folderDao.getFoldersByAccount(accountId),
-            emailDao.getAllEmails(accountId)
-        ) { folders, emails ->
+            emailDao.getFolderStats(accountId)
+        ) { folders, statsList ->
+            val statsMap = statsList.associateBy { it.folderId }
+            val slaStats = statsMap["__sla_alerts__"]
+            val outboxStats = statsMap["__outbox__"]
+
             folders.map { folderEntity ->
-                val unread = if (folderEntity.type == FolderType.SLA_ALERTS) {
-                    emails.count { it.slaSeverity != SlaSeverity.NONE && it.slaSeverity != SlaSeverity.COMPLETED && !it.isRead }
-                } else {
-                    emails.count { it.folderId == folderEntity.id && !it.isRead }
-                }
-                val total = when (folderEntity.type) {
-                    FolderType.SLA_ALERTS -> emails.count { it.slaSeverity != SlaSeverity.NONE && it.slaSeverity != SlaSeverity.COMPLETED }
-                    FolderType.OUTBOX -> emails.count {
-                        it.deliveryStatus != app.jackdaw.client.core.model.DeliveryStatus.SENT && (it.folderId == folderEntity.id || it.folderId.contains("outbox"))
+                val (unread, total) = when (folderEntity.type) {
+                    FolderType.SLA_ALERTS -> (slaStats?.unreadCount ?: 0) to (slaStats?.totalCount ?: 0)
+                    FolderType.OUTBOX -> {
+                        val stat = outboxStats ?: statsMap[folderEntity.id]
+                        (stat?.unreadCount ?: 0) to (stat?.totalCount ?: 0)
                     }
-                    else -> emails.count { it.folderId == folderEntity.id }
+                    else -> {
+                        val stat = statsMap[folderEntity.id]
+                        if (stat != null) {
+                            stat.unreadCount to maxOf(stat.totalCount, folderEntity.totalCount)
+                        } else {
+                            folderEntity.unreadCount to folderEntity.totalCount
+                        }
+                    }
                 }
                 folderEntity.toDomain().copy(
                     unreadCount = unread,
@@ -791,30 +798,28 @@ class OfflineFirstMailRepository(
             }
 
             // 6. Dynamic SLA recalculation (30 minutes response SLA from receipt timestamp)
-            val allEmails = emailDao.getAllEmails(accountId).first()
-            for (item in allEmails) {
-                if (item.slaDeadlineTimestamp > 0L && item.slaSeverity != SlaSeverity.NONE && item.slaSeverity != SlaSeverity.COMPLETED) {
-                    // Strictly enforce 30-minute SLA window from receipt timestamp
-                    val effectiveDeadline = minOf(item.slaDeadlineTimestamp, item.timestamp + 30 * 60 * 1000L)
-                    val remainingMs = effectiveDeadline - now
-                    val (newSeverity, newLabel) = when {
-                        remainingMs <= 0 -> SlaSeverity.BREACHED to "Просрочено"
-                        remainingMs <= 10 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
-                            SlaSeverity.URGENT to "$mins мин"
-                        }
-                        remainingMs <= 20 * 60 * 1000L -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
-                            SlaSeverity.WARNING to "$mins мин"
-                        }
-                        else -> {
-                            val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
-                            SlaSeverity.NORMAL to "$mins мин"
-                        }
+            val activeSlaEmails = emailDao.getActiveSlaEmailsForRecalculation(accountId)
+            for (item in activeSlaEmails) {
+                // Strictly enforce 30-minute SLA window from receipt timestamp
+                val effectiveDeadline = minOf(item.slaDeadlineTimestamp, item.timestamp + 30 * 60 * 1000L)
+                val remainingMs = effectiveDeadline - now
+                val (newSeverity, newLabel) = when {
+                    remainingMs <= 0 -> SlaSeverity.BREACHED to "Просрочено"
+                    remainingMs <= 10 * 60 * 1000L -> {
+                        val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                        SlaSeverity.URGENT to "$mins мин"
                     }
-                    if (newSeverity != item.slaSeverity || newLabel != item.slaRemainingLabel || effectiveDeadline != item.slaDeadlineTimestamp) {
-                        emailDao.updateSlaInfo(item.id, newSeverity, effectiveDeadline, newLabel)
+                    remainingMs <= 20 * 60 * 1000L -> {
+                        val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                        SlaSeverity.WARNING to "$mins мин"
                     }
+                    else -> {
+                        val mins = (remainingMs / (60 * 1000L)).coerceIn(1, 30)
+                        SlaSeverity.NORMAL to "$mins мин"
+                    }
+                }
+                if (newSeverity != item.slaSeverity || newLabel != item.slaRemainingLabel || effectiveDeadline != item.slaDeadlineTimestamp) {
+                    emailDao.updateSlaInfo(item.id, newSeverity, effectiveDeadline, newLabel)
                 }
             }
 
