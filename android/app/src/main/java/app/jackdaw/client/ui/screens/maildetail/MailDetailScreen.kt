@@ -5,11 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -780,87 +777,68 @@ fun MailDetailScreen(
                 )
             }
 
-            val htmlDocument by produceState(
-                initialValue = "",
-                key1 = displayedEmail.id,
-                key2 = effectiveDark,
-                key3 = displayedEmail.bodyHtml?.length ?: displayedEmail.bodyText.length
-            ) {
-                value = withContext(Dispatchers.Default) {
-                    val raw = if (!displayedEmail.bodyHtml.isNullOrBlank()) {
-                        displayedEmail.bodyHtml!!
-                    } else {
-                        val displayText = when {
-                            displayedEmail.bodyText.isNotBlank() && displayedEmail.bodyText != displayedEmail.subject -> displayedEmail.bodyText
-                            displayedEmail.snippet.isNotBlank() -> displayedEmail.snippet
-                            else -> "(Письмо не содержит текста)"
-                        }
-                        plainTextToHtml(displayText)
+            val rawBodyContent = remember(displayedEmail.id, displayedEmail.bodyHtml, displayedEmail.bodyText, displayedEmail.snippet) {
+                if (!displayedEmail.bodyHtml.isNullOrBlank()) {
+                    displayedEmail.bodyHtml!!
+                } else {
+                    val displayText = when {
+                        displayedEmail.bodyText.isNotBlank() && displayedEmail.bodyText != displayedEmail.subject -> displayedEmail.bodyText
+                        displayedEmail.snippet.isNotBlank() -> displayedEmail.snippet
+                        else -> "(Письмо не содержит текста)"
                     }
-                    prepareEmailHtml(raw, effectiveDark)
+                    plainTextToHtml(displayText)
                 }
             }
 
-            val webViewTag = "${displayedEmail.id}_${effectiveDark}_${displayedEmail.bodyHtml?.length ?: displayedEmail.bodyText.length}"
-
-            if (htmlDocument.isNotBlank()) {
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            tag = webViewTag
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                    val uri = request?.url ?: return false
-                                    return handleUriRedirect(ctx, uri)
-                                }
-
-                                @Deprecated("Deprecated in Java")
-                                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                                    val uri = url?.let { Uri.parse(it) } ?: return false
-                                    return handleUriRedirect(ctx, uri)
-                                }
-                            }
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                loadWithOverviewMode = true
-                                useWideViewPort = false
-                                setSupportZoom(true)
-                                builtInZoomControls = true
-                                displayZoomControls = false
-                                cacheMode = WebSettings.LOAD_NO_CACHE
-                            }
-                            isVerticalScrollBarEnabled = true
-                            isHorizontalScrollBarEnabled = true
-                            setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
-                            loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
-                        }
-                    },
-                    update = { view ->
-                        if (view.tag != webViewTag && htmlDocument.isNotBlank()) {
-                            view.tag = webViewTag
-                            view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
-                            view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(28.dp),
-                        strokeWidth = 2.5.dp,
-                        color = JackdawAmber
-                    )
-                }
+            val htmlDocument = remember(displayedEmail.id, effectiveDark, rawBodyContent) {
+                prepareEmailHtml(rawBodyContent, effectiveDark)
             }
+
+            val webViewTag = "${displayedEmail.id}_${effectiveDark}_${rawBodyContent.hashCode()}"
+
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        tag = webViewTag
+                        webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val uri = request?.url ?: return false
+                                return handleUriRedirect(ctx, uri)
+                            }
+
+                            @Deprecated("Deprecated in Java")
+                            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                                val uri = url?.let { Uri.parse(it) } ?: return false
+                                return handleUriRedirect(ctx, uri)
+                            }
+                        }
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            loadWithOverviewMode = true
+                            useWideViewPort = false
+                            setSupportZoom(true)
+                            builtInZoomControls = true
+                            displayZoomControls = false
+                            cacheMode = WebSettings.LOAD_NO_CACHE
+                        }
+                        isVerticalScrollBarEnabled = true
+                        isHorizontalScrollBarEnabled = true
+                        setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                        loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
+                    }
+                },
+                update = { view ->
+                    if (view.tag != webViewTag) {
+                        view.tag = webViewTag
+                        view.setBackgroundColor(if (effectiveDark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.WHITE)
+                        view.loadDataWithBaseURL("https://outlook.office.com/", htmlDocument, "text/html", "UTF-8", null)
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            )
         }
         if (selectedAttachmentForAction != null) {
             val att = selectedAttachmentForAction
@@ -1120,95 +1098,6 @@ private val REGEX_FLOAT = Regex("""float\s*:\s*(left|right)[^;}"']*""", RegexOpt
 private val REGEX_HEAD_TAG = Regex("<head\\b[^>]*>", RegexOption.IGNORE_CASE)
 private val REGEX_HTML_TAG = Regex("<html\\b[^>]*>", RegexOption.IGNORE_CASE)
 
-private val REGEX_QUOTE_DELIMITERS = listOf(
-    // 1. Outlook stopSpelling divider
-    Regex("""<hr\s+[^>]*id=["']stopSpelling["'][^>]*>""", RegexOption.IGNORE_CASE),
-    // 2. Outlook OWA reply / forward container
-    Regex("""<div\s+[^>]*id=["']divRplyFwdMsg["'][^>]*>""", RegexOption.IGNORE_CASE),
-    // 3. Outlook desktop border divider with solid color
-    Regex("""<div\s+[^>]*style=["'][^"']*border-top:\s*solid\s*(?:#e1e1e1|#b5c4df|#d1d1d1|rgb\(225,\s*225,\s*225\))[^"']*["'][^>]*>""", RegexOption.IGNORE_CASE),
-    // 4. Gmail quote wrapper
-    Regex("""<(?:div|blockquote)\s+[^>]*class=["'][^"']*\bgmail_quote\b[^"']*["'][^>]*>""", RegexOption.IGNORE_CASE),
-    // 5. Apple Mail blockquote cite
-    Regex("""<blockquote\s+[^>]*type=["']cite["'][^>]*>""", RegexOption.IGNORE_CASE),
-    // 6. Russian / English Outlook header paragraph (with From and Sent/Date/To)
-    Regex("""<(?:p|div)[^>]*>\s*<b>(?:\s*<span[^>]*>)?\s*(?:От|From)\s*:[\s\S]*?<b>(?:\s*<span[^>]*>)?\s*(?:Отправлено|Sent|Дата|Date|Кому|To)\s*:[\s\S]*?</(?:p|div)>""", RegexOption.IGNORE_CASE),
-    // 7. Text divider in paragraph
-    Regex("""<(?:p|div)[^>]*>[\s\S]{0,100}-----?\s*(?:Исходное сообщение|Original Message|Пересылаемое сообщение|Forwarded Message)\s*-----?[\s\S]*?</(?:p|div)>""", RegexOption.IGNORE_CASE),
-    // 8. Standalone text divider
-    Regex("""-----?\s*(?:Исходное сообщение|Original Message|Пересылаемое сообщение|Forwarded Message)\s*-----?""", RegexOption.IGNORE_CASE),
-    // 9. Plain text quotes starting with &gt;
-    Regex("""(?:<br\s*/?>\s*)*&gt;\s+[\s\S]{10,}""", RegexOption.IGNORE_CASE)
-)
-
-private fun renderQuoteSpoiler(content: String, label: String, isDark: Boolean): String {
-    return """
-        <details class="jackdaw-quote-details">
-          <summary class="jackdaw-quote-summary">
-            <span class="jackdaw-dots-badge">···</span>
-            <span class="jackdaw-quote-caption">$label</span>
-            <span class="jackdaw-quote-chevron">▼</span>
-          </summary>
-          <div class="jackdaw-quote-content">
-            $content
-          </div>
-        </details>
-    """.trimIndent()
-}
-
-/**
- * Detects quoted email history and folds it into clean collapsible Google / Yandex style spoilers.
- */
-private fun foldEmailQuotes(html: String, isDark: Boolean): String {
-    if (html.length < 50 || html.contains("jackdaw-quote-details")) return html
-
-    val matches = mutableListOf<MatchResult>()
-    for (delimiter in REGEX_QUOTE_DELIMITERS) {
-        val m = delimiter.find(html)
-        if (m != null) {
-            matches.add(m)
-        }
-    }
-    if (matches.isEmpty()) return html
-
-    val firstQuote = matches.filter { it.range.first > 10 }.minByOrNull { it.range.first } ?: return html
-
-    val bodyEndIdx = html.indexOf("</body>", ignoreCase = true).let {
-        if (it != -1) it else html.indexOf("</html>", ignoreCase = true).let { h -> if (h != -1) h else html.length }
-    }
-    if (firstQuote.range.first >= bodyEndIdx) return html
-
-    val beforeQuote = html.substring(0, firstQuote.range.first)
-    val quotedContent = html.substring(firstQuote.range.first, bodyEndIdx)
-    val afterQuote = html.substring(bodyEndIdx)
-
-    // Look for inner quotes (2nd level thread history) inside quotedContent
-    val innerMatches = mutableListOf<MatchResult>()
-    for (delimiter in REGEX_QUOTE_DELIMITERS) {
-        val m = delimiter.find(quotedContent, 50)
-        if (m != null) {
-            innerMatches.add(m)
-        }
-    }
-    val processedQuotedContent = if (innerMatches.isNotEmpty()) {
-        val innerFirst = innerMatches.minByOrNull { it.range.first }!!
-        val innerBefore = quotedContent.substring(0, innerFirst.range.first)
-        val innerQuoted = quotedContent.substring(innerFirst.range.first)
-        buildString {
-            append(innerBefore)
-            append(renderQuoteSpoiler(innerQuoted, label = "Предыдущие сообщения", isDark = isDark))
-        }
-    } else {
-        quotedContent
-    }
-
-    return buildString {
-        append(beforeQuote)
-        append(renderQuoteSpoiler(processedQuotedContent, label = "История переписки", isDark = isDark))
-        append(afterQuote)
-    }
-}
-
 private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
     val textColor = if (isDark) "#E6E1E5" else "#1C1B1F"
     val bgColor = if (isDark) "#121212" else "#FFFFFF"
@@ -1230,9 +1119,6 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
     processedHtml = REGEX_FIXED_WIDTH_ATTR.replace(processedHtml, "")
     processedHtml = REGEX_WIDTH_PT.replace(processedHtml, "width: auto")
     processedHtml = REGEX_FLOAT.replace(processedHtml, "float: none")
-
-    // Fold quotes Google / Yandex style
-    processedHtml = foldEmailQuotes(processedHtml, isDark)
 
     val injectedHead = """
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
@@ -1350,77 +1236,6 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
             text-indent: 0 !important;
             padding-left: 0 !important;
           }
-          /* Google & Yandex style collapsible quote spoilers */
-          details.jackdaw-quote-details {
-            margin: 16px 0 12px 0 !important;
-            display: block !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary {
-            display: inline-flex !important;
-            align-items: center !important;
-            gap: 8px !important;
-            padding: 6px 14px !important;
-            background-color: ${if (isDark) "#26231E" else "#F1F3F4"} !important;
-            border: 1px solid ${if (isDark) "#3D3830" else "#DADCE0"} !important;
-            border-radius: 20px !important;
-            cursor: pointer !important;
-            user-select: none !important;
-            list-style: none !important;
-            outline: none !important;
-            -webkit-tap-highlight-color: transparent !important;
-            font-family: -apple-system, Roboto, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif !important;
-            transition: all 0.2s ease !important;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary::-webkit-details-marker {
-            display: none !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary:active {
-            transform: scale(0.97) !important;
-            background-color: ${if (isDark) "#332E27" else "#E5E7EB"} !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary .jackdaw-dots-badge {
-            display: inline-flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            background-color: ${if (isDark) "#3A342B" else "#E2E8F0"} !important;
-            color: ${if (isDark) "#F59E0B" else "#1E293B"} !important;
-            font-weight: 900 !important;
-            font-size: 13px !important;
-            letter-spacing: 2px !important;
-            line-height: 1 !important;
-            padding: 3px 6px !important;
-            border-radius: 6px !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary .jackdaw-quote-caption {
-            font-size: 13px !important;
-            font-weight: 600 !important;
-            color: ${if (isDark) "#F59E0B" else "#334155"} !important;
-          }
-          details.jackdaw-quote-details summary.jackdaw-quote-summary .jackdaw-quote-chevron {
-            font-size: 10px !important;
-            color: ${if (isDark) "#A09A90" else "#64748B"} !important;
-            transition: transform 0.2s ease !important;
-          }
-          details.jackdaw-quote-details[open] > summary.jackdaw-quote-summary {
-            margin-bottom: 12px !important;
-            background-color: ${if (isDark) "#1E1C18" else "#E9ECEF"} !important;
-            border-color: ${if (isDark) "#4D463B" else "#CBD5E1"} !important;
-          }
-          details.jackdaw-quote-details[open] > summary.jackdaw-quote-summary .jackdaw-quote-chevron {
-            transform: rotate(180deg) !important;
-          }
-          details.jackdaw-quote-details .jackdaw-quote-content {
-            border-left: 2px solid ${if (isDark) "#4D463B" else "#CBD5E1"} !important;
-            padding-left: 12px !important;
-            margin-left: 4px !important;
-            margin-top: 8px !important;
-            animation: jackdawFadeIn 0.2s ease-out;
-          }
-          @keyframes jackdawFadeIn {
-            from { opacity: 0; transform: translateY(-4px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
           ${if (isDark) """
           /* Transparent canvas and readable text for dark mode */
           table, tbody, tr, td, th, div, p {
@@ -1449,6 +1264,60 @@ private fun prepareEmailHtml(rawHtml: String, isDark: Boolean): String {
               alignTables[a].removeAttribute('align');
               alignTables[a].style.setProperty('float', 'none', 'important');
               alignTables[a].style.setProperty('width', '100%', 'important');
+            }
+
+            var allTables = document.querySelectorAll('table');
+            for (var t = 0; t < allTables.length; t++) {
+              allTables[t].style.setProperty('max-width', '100%', 'important');
+              if (!allTables[t].getAttribute('border') || allTables[t].getAttribute('border') === '0') {
+                allTables[t].style.setProperty('width', '100%', 'important');
+              }
+            }
+
+            var singleCells = document.querySelectorAll('tr > td:only-child, tr > th:only-child');
+            for (var sc = 0; sc < singleCells.length; sc++) {
+              singleCells[sc].style.setProperty('width', '100%', 'important');
+              singleCells[sc].style.setProperty('max-width', '100%', 'important');
+            }
+
+            var allCells = document.querySelectorAll('tr > td');
+            for (var c = 0; c < allCells.length; c++) {
+              var cell = allCells[c];
+              if (cell.parentElement && cell.parentElement.children.length > 1) {
+                if (cell.textContent.trim() === '' && !cell.querySelector('img, svg')) {
+                  var w = cell.getAttribute('width') || cell.style.width;
+                  if (w === '0' || w === '0px' || parseInt(w) < 25) {
+                    cell.style.setProperty('display', 'none', 'important');
+                  }
+                }
+              }
+              var pl = parseFloat(window.getComputedStyle(cell).paddingLeft) || 0;
+              var pr = parseFloat(window.getComputedStyle(cell).paddingRight) || 0;
+              if (pl > 12) cell.style.setProperty('padding-left', '4px', 'important');
+              if (pr > 12) cell.style.setProperty('padding-right', '4px', 'important');
+            }
+
+            var rows = document.querySelectorAll('table[border="0"] > tbody > tr, table:not([border]) > tbody > tr');
+            for (var r = 0; r < rows.length; r++) {
+              var row = rows[r];
+              var visibleCells = Array.from(row.children).filter(function(el) {
+                return el.style.display !== 'none' && (el.textContent.trim().length > 0 || el.querySelector('img'));
+              });
+              if (visibleCells.length > 1 && row.querySelector('p, h1, h2, h3') && row.querySelector('img')) {
+                for (var vc = 0; vc < visibleCells.length; vc++) {
+                  visibleCells[vc].style.setProperty('display', 'block', 'important');
+                  visibleCells[vc].style.setProperty('width', '100%', 'important');
+                  visibleCells[vc].style.setProperty('max-width', '100%', 'important');
+                }
+              }
+            }
+
+            var spans = document.querySelectorAll('p span, td span, li span');
+            for (var s = 0; s < spans.length; s++) {
+              var fs = parseFloat(window.getComputedStyle(spans[s]).fontSize) || 0;
+              if (fs > 0 && fs < 14) {
+                spans[s].style.setProperty('font-size', '15px', 'important');
+              }
             }
           });
         </script>

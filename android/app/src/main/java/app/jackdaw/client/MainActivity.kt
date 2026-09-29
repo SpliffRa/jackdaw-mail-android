@@ -431,7 +431,7 @@ fun JackdawMainApp(
                 val detailEmail by viewModel.getEmailById(targetEmailId).collectAsState(initial = initialEmail)
                 val currentEmail = detailEmail ?: initialEmail
 
-                val threadEmails by if (currentEmail?.threadId != null) {
+                val threadEmails by if (!currentEmail?.threadId.isNullOrBlank()) {
                     viewModel.getEmailsInThread(currentEmail.threadId!!).collectAsState(initial = emptyList())
                 } else {
                     androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(emptyList<app.jackdaw.client.core.model.EmailMessage>()) }

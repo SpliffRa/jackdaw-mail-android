@@ -197,7 +197,7 @@ interface EmailDao {
     """)
     fun searchEmails(query: String): Flow<List<EmailEntity>>
 
-    @Query("SELECT * FROM emails WHERE threadId = :threadId ORDER BY timestamp DESC, id DESC LIMIT 25")
+    @Query("SELECT * FROM emails WHERE threadId = :threadId AND threadId != '' ORDER BY timestamp DESC, id DESC LIMIT 50")
     fun getEmailsInThread(threadId: String): Flow<List<EmailEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
