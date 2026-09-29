@@ -314,7 +314,7 @@ class MailViewModel(
         } else if (!email.bodyHtml.isNullOrBlank()) {
             !hasPlaceholderAttachment && !needsAttachmentDetails
         } else {
-            email.bodyText.isNotBlank() && email.bodyText != email.snippet && !email.bodyText.endsWith("...") && !needsAttachmentDetails
+            false
         }
 
         if (!isFullBodyLoaded && !email.id.startsWith("mock_")) {

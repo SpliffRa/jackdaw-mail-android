@@ -885,10 +885,17 @@ class OfflineFirstMailRepository(
     override suspend fun fetchEmailFullDetails(account: MailAccount, emailId: String): Boolean {
         val details = mailProtocolEngine.fetchEmailFullDetails(account, emailId) ?: return false
         val hasAtt = details.attachments.isNotEmpty() || (details.hasAttachments == true)
+        val effectiveHtml = if (!details.bodyHtml.isNullOrBlank()) {
+            details.bodyHtml
+        } else if (details.bodyText.isNotBlank()) {
+            "<div>" + details.bodyText.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>") + "</div>"
+        } else {
+            "<p>(Письмо не содержит текста)</p>"
+        }
         emailDao.updateEmailBodyWithAttachments(
             emailId,
             details.bodyText,
-            details.bodyHtml,
+            effectiveHtml,
             details.bodyText.take(150),
             hasAtt
         )
@@ -915,10 +922,17 @@ class OfflineFirstMailRepository(
                     val detailsMap = owaEngine.fetchEmailDetails(account, chunk)
                     for ((id, details) in detailsMap) {
                         val hasAtt = details.attachments.isNotEmpty() || (details.hasAttachments == true)
+                        val effectiveHtml = if (!details.bodyHtml.isNullOrBlank()) {
+                            details.bodyHtml
+                        } else if (details.bodyText.isNotBlank()) {
+                            "<div>" + details.bodyText.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>") + "</div>"
+                        } else {
+                            "<p>(Письмо не содержит текста)</p>"
+                        }
                         emailDao.updateEmailBodyWithAttachments(
                             id,
                             details.bodyText,
-                            details.bodyHtml,
+                            effectiveHtml,
                             details.bodyText.take(150),
                             hasAtt
                         )

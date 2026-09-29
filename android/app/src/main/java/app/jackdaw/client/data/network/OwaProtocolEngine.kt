@@ -373,13 +373,16 @@ class OwaProtocolEngine : MailProtocolEngine {
                                 name.endsWith(".png", true) || name.endsWith(".jpg", true) ||
                                 name.endsWith(".jpeg", true) || name.endsWith(".gif", true) || name.endsWith(".webp", true)
 
-                            // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI
-                            if ((isInline || isReferencedInBody) && isImage) {
+                            val maxInlineImageBytes = 200 * 1024L
+                            val isSmallImage = (size in 1..maxInlineImageBytes) || (size == 0L)
+
+                            // If inline image (e.g. signature logo like SMART DS), resolve CID into inline base64 data URI only if small
+                            if ((isInline || isReferencedInBody) && isImage && isSmallImage) {
                                 try {
                                     val imgBytes = kotlinx.coroutines.withTimeoutOrNull(2500L) {
                                         downloadAttachment(account, attId)
                                     }
-                                    if (imgBytes != null && imgBytes.isNotEmpty()) {
+                                    if (imgBytes != null && imgBytes.isNotEmpty() && imgBytes.size <= maxInlineImageBytes) {
                                         val b64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
                                         val effectiveMime = if (mime.startsWith("image/", ignoreCase = true)) mime else when {
                                             name.endsWith(".png", true) -> "image/png"
@@ -398,7 +401,7 @@ class OwaProtocolEngine : MailProtocolEngine {
                             }
 
                             // Only filter out if it's purely an inline decorative/signature image referenced in HTML body
-                            val isPureInlineSignature = isReferencedInBody && (isInline || isImage)
+                            val isPureInlineSignature = isReferencedInBody && (isInline || isImage) && isSmallImage
                             if (!isPureInlineSignature) {
                                 attachmentsList.add(
                                     Attachment(
@@ -418,8 +421,8 @@ class OwaProtocolEngine : MailProtocolEngine {
 
                     val cleanText = when {
                         textBody.isNotBlank() -> textBody
-                        normBody.isNotBlank() -> normBody
                         resolvedHtml.isNotBlank() -> stripHtml(resolvedHtml)
+                        normBody.isNotBlank() -> normBody
                         preview.isNotBlank() -> preview
                         else -> ""
                     }
